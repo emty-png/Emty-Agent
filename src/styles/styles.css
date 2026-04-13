@@ -1,0 +1,69 @@
+@import 'tailwindcss';
+
+@theme {
+  /* Backgrounds */
+  --color-bg-base: #0c0a08;
+  --color-bg-surface: #111009;
+  --color-bg-card: #181410;
+  --color-bg-hover: #201a13;
+  --color-bg-elevated: #27211a;
+
+  /* Ember — primary accent */
+  --color-ember-dim: #7a3d12;
+  --color-ember-base: #c8651f;
+  --color-ember-bright: #e07830;
+  --color-ember-text: #f0a060;
+  --color-ember-glow: #e078301f;
+
+  /* Accent colors */
+  --color-gold: #a8843a;
+  --color-gold-text: #d4aa68;
+  --color-steel: #6aaec8;
+  --color-steel-text: #90cce0;
+  --color-sage: #5e9468;
+  --color-sage-text: #88be94;
+  --color-rose: #a85050;
+  --color-rose-text: #d88080;
+
+  /* Text */
+  --color-text-primary: #ede5d8;
+  --color-text-secondary: #8a7868;
+  --color-text-tertiary: #504438;
+  --color-code: #88c0d8;
+
+  /* Borders */
+  --color-border-subtle: #1e1812;
+  --color-border-mid: #2e2618;
+  --color-border-bright: #443a28;
+}
+
+/* ── Global custom scrollbar ───────────────────────────────────────────── */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-mid) transparent;
+}
+
+/* Chromium / WebKit (Tauri webview) */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-mid);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-bright);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
