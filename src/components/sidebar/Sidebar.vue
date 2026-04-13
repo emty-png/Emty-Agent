@@ -3,6 +3,13 @@ import { FolderOpen, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings } fr
 import { storeToRefs } from 'pinia'
 import { useSidebarStore } from '@/stores/sidebar'
 
+const props = defineProps<{
+  activeView?: 'chat' | 'projects'
+}>()
+
+const emit = defineEmits<{
+  selectView: [view: 'chat' | 'projects']
+}>()
 const sidebar = useSidebarStore()
 const { collapsed } = storeToRefs(sidebar) // reactive, persisted
 const { toggle } = sidebar
@@ -40,12 +47,22 @@ const { toggle } = sidebar
 
     <!-- ── nav items ─────────────────────────────────────────── -->
     <nav class="sidebar-nav">
-      <button class="sidebar-btn sidebar-btn--active" aria-label="Chat">
+      <button
+        class="sidebar-btn"
+        :class="{ 'sidebar-btn--active': props.activeView !== 'projects' }"
+        aria-label="Chat"
+        @click="emit('selectView', 'chat')"
+      >
         <MessageSquare :size="15" :stroke-width="1.7" class="flex-shrink-0" />
         <span class="sidebar-label">Chat</span>
       </button>
 
-      <button class="sidebar-btn" aria-label="Projects">
+      <button
+        class="sidebar-btn"
+        :class="{ 'sidebar-btn--active': props.activeView === 'projects' }"
+        aria-label="Projects"
+        @click="emit('selectView', 'projects')"
+      >
         <FolderOpen :size="15" :stroke-width="1.7" class="flex-shrink-0" />
         <span class="sidebar-label">Projects</span>
       </button>
@@ -184,9 +201,7 @@ const { toggle } = sidebar
   transition: opacity 180ms ease;
 }
 
-.icon-swap__icon--back {
-  /* sits behind, shown when collapsed */
-}
+/* .icon-swap__icon--back sits behind, shown when collapsed */
 
 .icon-swap__icon--hidden {
   opacity: 0;

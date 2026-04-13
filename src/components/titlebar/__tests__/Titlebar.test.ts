@@ -1,19 +1,13 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it } from 'vitest'
 import Titlebar from '../Titlebar.vue'
 
-vi.mock('@tauri-apps/api/window', () => ({
-  getCurrentWindow: () => ({
-    isMaximized: () => Promise.resolve(false),
-    onResized: () => Promise.resolve(() => {}),
-    minimize: vi.fn(),
-    maximize: vi.fn(),
-    unmaximize: vi.fn(),
-    close: vi.fn(),
-  }),
-}))
-
 describe('titlebar', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('renders the provided title', () => {
     const wrapper = mount(Titlebar, { props: { title: 'My App' } })
     expect(wrapper.text()).toContain('My App')
