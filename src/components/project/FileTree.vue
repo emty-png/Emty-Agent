@@ -4,10 +4,10 @@ import { storeToRefs } from 'pinia'
 import { useFileTreeStore, useFileTreeStore as useTreeStore } from '@/stores/fileTree'
 </script>
 
+<!-- ── recursive node component ────────────────────────────────────────────── -->
 <script lang="ts">
 import type { PropType } from 'vue'
 import type { FileNode } from '@/stores/fileTree'
-
 import { defineComponent, h, resolveComponent } from 'vue'
 
 const ft = useFileTreeStore()
@@ -129,7 +129,6 @@ export const FileTreeNode = defineComponent({
 })
 </script>
 
-<!-- ── recursive node component ────────────────────────────────────────────── -->
 <template>
   <div class="tree-root">
     <!-- loading skeleton -->
