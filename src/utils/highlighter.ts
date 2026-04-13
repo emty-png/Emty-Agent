@@ -294,6 +294,9 @@ export async function getHighlighter(): Promise<Highlighter> {
   }).then(h => {
     instance = h
     return h
+  }).catch(err => {
+    initPromise = null
+    throw err
   })
 
   return initPromise

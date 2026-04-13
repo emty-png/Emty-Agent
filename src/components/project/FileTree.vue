@@ -29,7 +29,6 @@ const { tree, selectedPath, loadingTree } = storeToRefs(ft)
         :key="node.path"
         :node="node"
         :selected-path="selectedPath"
-        @select="ft.selectFile(node)"
       />
     </template>
 

@@ -46,6 +46,7 @@ async function readLevel(dirPath: string, depth: number): Promise<FileNode[]> {
 
   for (const entry of entries) {
     if (!entry.name) continue
+    if (!entry.isFile && !entry.isDirectory) continue
     if (entry.isDirectory && EXCLUDED_DIRS.has(entry.name)) continue
     if (entry.isFile && EXCLUDED_FILES.has(entry.name)) continue
     // skip hidden files except .env variants and common dot-configs

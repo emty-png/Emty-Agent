@@ -14,7 +14,12 @@ export const useProjectStore = defineStore(
     })
 
     function setProject(path: string) {
-      projectPath.value = path
+      const trimmed = path.trim()
+      if (trimmed.length === 0) {
+        clearProject()
+        return
+      }
+      projectPath.value = trimmed
     }
 
     function clearProject() {
