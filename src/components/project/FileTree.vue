@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { ChevronRight, File, FileCode, FileJson, FileText, Folder, FolderOpen, Loader, Loader as NodeLoader, Settings } from 'lucide-vue-next'
+import type { FileNode } from '@/stores/fileTree'
+import {
+  ChevronRight,
+  File,
+  FileCode,
+  FileJson,
+  FileText,
+  Folder,
+  FolderOpen,
+  Loader,
+  Settings,
+} from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { useFileTreeStore, useFileTreeStore as useTreeStore } from '@/stores/fileTree'
+import { useFileTreeStore } from '@/stores/fileTree'
 </script>
 
-<!-- ── recursive node component ────────────────────────────────────────────── -->
 <script lang="ts">
 import type { PropType } from 'vue'
-import type { FileNode } from '@/stores/fileTree'
 import { defineComponent, h, resolveComponent } from 'vue'
 
 const ft = useFileTreeStore()
@@ -59,7 +68,7 @@ export const FileTreeNode = defineComponent({
   },
   emits: ['select'],
   setup(props, { emit }) {
-    const ft = useTreeStore()
+    const ft = useFileTreeStore()
 
     function onClick() {
       if (props.node.isDir) {
@@ -100,7 +109,7 @@ export const FileTreeNode = defineComponent({
       node.isDir
         ? h(FolderIcon, { size: 13, strokeWidth: 1.6, class: 'node-folder-icon' })
         : node.loading
-          ? h(NodeLoader, { size: 13, strokeWidth: 1.6, class: 'spin node-file-icon', style: { color: '#504438' } })
+          ? h(Loader, { size: 13, strokeWidth: 1.6, class: 'spin node-file-icon', style: { color: '#504438' } })
           : h(fs.icon, { size: 13, strokeWidth: 1.6, class: 'node-file-icon', style: { color: fs.color } }),
 
       // label
@@ -108,7 +117,7 @@ export const FileTreeNode = defineComponent({
 
       // loading spinner (dir expanding)
       node.loading
-        ? h(NodeLoader, { size: 11, strokeWidth: 2, class: 'spin node-loader' })
+        ? h(Loader, { size: 11, strokeWidth: 2, class: 'spin node-loader' })
         : null,
     ])
 
@@ -129,6 +138,7 @@ export const FileTreeNode = defineComponent({
 })
 </script>
 
+<!-- ── recursive node component ────────────────────────────────────────────── -->
 <template>
   <div class="tree-root">
     <!-- loading skeleton -->
@@ -145,10 +155,11 @@ export const FileTreeNode = defineComponent({
     <!-- tree -->
     <template v-else>
       <FileTreeNode
-        v-for="treeNode in tree"
-        :key="treeNode.path"
-        :node="treeNode"
+        v-for="node in tree"
+        :key="node.path"
+        :node="node"
         :selected-path="selectedPath"
+        @select="ft.selectFile(node)"
       />
     </template>
   </div>
