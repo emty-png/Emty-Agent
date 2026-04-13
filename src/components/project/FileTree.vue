@@ -1,87 +1,48 @@
 <script setup lang="ts">
-import { Loader } from 'lucide-vue-next'
+import { ChevronRight, File, FileCode, FileJson, FileText, Folder, FolderOpen, Loader, Loader as NodeLoader, Settings } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { useFileTreeStore } from '@/stores/fileTree'
+import { useFileTreeStore, useFileTreeStore as useTreeStore } from '@/stores/fileTree'
+</script>
+
+<script lang="ts">
+import type { PropType } from 'vue'
+import type { FileNode } from '@/stores/fileTree'
+
+import { defineComponent, h, resolveComponent } from 'vue'
 
 const ft = useFileTreeStore()
 const { tree, selectedPath, loadingTree } = storeToRefs(ft)
-
-</script>
-
-<template>
-  <div class="tree-root">
-
-    <!-- loading skeleton -->
-    <div v-if="loadingTree" class="tree-loading">
-      <Loader :size="14" :stroke-width="1.8" class="spin" />
-      <span>Reading project…</span>
-    </div>
-
-    <!-- empty -->
-    <div v-else-if="tree.length === 0" class="tree-empty">
-      No files found
-    </div>
-
-    <!-- tree -->
-    <template v-else>
-      <FileTreeNode
-        v-for="node in tree"
-        :key="node.path"
-        :node="node"
-        :selected-path="selectedPath"
-      />
-    </template>
-
-  </div>
-</template>
-
-<!-- ── recursive node component ────────────────────────────────────────────── -->
-<script lang="ts">
-import { defineComponent, h, resolveComponent } from 'vue'
-import type { PropType } from 'vue'
-import {
-  ChevronRight,
-  File,
-  FileCode,
-  FileJson,
-  FileText,
-  FolderOpen,
-  Folder,
-  Loader as NodeLoader,
-  Settings,
-} from 'lucide-vue-next'
-import { type FileNode, useFileTreeStore as useTreeStore } from '@/stores/fileTree'
 
 // ── file icon / color by extension ───────────────────────────────────────────
 interface FileStyle { icon: typeof File; color: string }
 
 const EXT_STYLE: Record<string, FileStyle> = {
   // typescript / javascript
-  ts:   { icon: FileCode, color: '#90cce0' },
-  tsx:  { icon: FileCode, color: '#90cce0' },
-  js:   { icon: FileCode, color: '#d4aa68' },
-  jsx:  { icon: FileCode, color: '#d4aa68' },
+  ts: { icon: FileCode, color: '#90cce0' },
+  tsx: { icon: FileCode, color: '#90cce0' },
+  js: { icon: FileCode, color: '#d4aa68' },
+  jsx: { icon: FileCode, color: '#d4aa68' },
   // vue
-  vue:  { icon: FileCode, color: '#88be94' },
+  vue: { icon: FileCode, color: '#88be94' },
   // styles
-  css:  { icon: FileCode, color: '#6aaec8' },
+  css: { icon: FileCode, color: '#6aaec8' },
   scss: { icon: FileCode, color: '#6aaec8' },
   // data
   json: { icon: FileJson, color: '#d4aa68' },
-  jsonc:{ icon: FileJson, color: '#d4aa68' },
+  jsonc: { icon: FileJson, color: '#d4aa68' },
   yaml: { icon: FileJson, color: '#f0a060' },
-  yml:  { icon: FileJson, color: '#f0a060' },
+  yml: { icon: FileJson, color: '#f0a060' },
   toml: { icon: FileJson, color: '#f0a060' },
   // markup
   html: { icon: FileCode, color: '#f0a060' },
-  md:   { icon: FileText, color: '#ede5d8' },
-  mdx:  { icon: FileText, color: '#ede5d8' },
+  md: { icon: FileText, color: '#ede5d8' },
+  mdx: { icon: FileText, color: '#ede5d8' },
   // rust
-  rs:   { icon: FileCode, color: '#e07830' },
+  rs: { icon: FileCode, color: '#e07830' },
   // python
-  py:   { icon: FileCode, color: '#88be94' },
+  py: { icon: FileCode, color: '#88be94' },
   // config
-  env:  { icon: Settings, color: '#d88080' },
+  env: { icon: Settings, color: '#d88080' },
   lock: { icon: Settings, color: '#504438' },
 }
 
@@ -93,7 +54,7 @@ function fileStyle(name: string): FileStyle {
 export const FileTreeNode = defineComponent({
   name: 'FileTreeNode',
   props: {
-    node:         { type: Object as PropType<FileNode>, required: true },
+    node: { type: Object as PropType<FileNode>, required: true },
     selectedPath: { type: String as PropType<string | null>, default: null },
   },
   emits: ['select'],
@@ -159,7 +120,7 @@ export const FileTreeNode = defineComponent({
             node: child,
             selectedPath,
             onSelect: () => this.$emit('select'),
-          })
+          }),
         )
       : []
 
@@ -167,6 +128,32 @@ export const FileTreeNode = defineComponent({
   },
 })
 </script>
+
+<!-- ── recursive node component ────────────────────────────────────────────── -->
+<template>
+  <div class="tree-root">
+    <!-- loading skeleton -->
+    <div v-if="loadingTree" class="tree-loading">
+      <Loader :size="14" :stroke-width="1.8" class="spin" />
+      <span>Reading project…</span>
+    </div>
+
+    <!-- empty -->
+    <div v-else-if="tree.length === 0" class="tree-empty">
+      No files found
+    </div>
+
+    <!-- tree -->
+    <template v-else>
+      <FileTreeNode
+        v-for="treeNode in tree"
+        :key="treeNode.path"
+        :node="treeNode"
+        :selected-path="selectedPath"
+      />
+    </template>
+  </div>
+</template>
 
 <style scoped>
 /* ── root ────────────────────────────────────────────────────────────────────── */
@@ -208,7 +195,9 @@ export const FileTreeNode = defineComponent({
   cursor: pointer;
   text-align: left;
   color: var(--color-text-secondary);
-  transition: background 100ms ease, color 100ms ease;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -277,6 +266,8 @@ export const FileTreeNode = defineComponent({
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

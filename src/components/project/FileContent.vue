@@ -13,11 +13,14 @@ const highlighted = ref<string | null>(null)
 const highlighting = ref(false)
 
 watch([fileContent, selectedPath], async ([content, path]) => {
-  if (!content || !path) { highlighted.value = null; return }
+  if (!content || !path) {
+    highlighted.value = null
+    return
+  }
 
   highlighting.value = true
   try {
-    const hl   = await getHighlighter()
+    const hl = await getHighlighter()
     const lang = langFromPath(path)
     highlighted.value = hl.codeToHtml(content, {
       lang,
@@ -48,11 +51,12 @@ function breadcrumb(path: string): string[] {
 
 <template>
   <div class="content-root">
-
     <!-- ── empty state ─────────────────────────────────────────────── -->
     <div v-if="!selectedPath" class="content-empty">
       <File :size="28" :stroke-width="1.3" class="empty-icon" />
-      <p class="empty-label">Select a file to view its contents</p>
+      <p class="empty-label">
+        Select a file to view its contents
+      </p>
     </div>
 
     <!-- ── loading file ────────────────────────────────────────────── -->
@@ -64,7 +68,7 @@ function breadcrumb(path: string): string[] {
             :key="i"
             class="breadcrumb-part"
           >
-            <span class="breadcrumb-sep" v-if="i > 0">/</span>
+            <span v-if="i > 0" class="breadcrumb-sep">/</span>
             {{ part }}
           </span>
         </div>
@@ -102,7 +106,6 @@ function breadcrumb(path: string): string[] {
         <div class="code-wrap" v-html="highlighted" />
       </div>
     </template>
-
   </div>
 </template>
 
@@ -127,7 +130,9 @@ function breadcrumb(path: string): string[] {
   color: var(--color-text-tertiary);
 }
 
-.empty-icon { opacity: 0.4; }
+.empty-icon {
+  opacity: 0.4;
+}
 
 .empty-label {
   font-size: 12.5px;
@@ -253,6 +258,8 @@ function breadcrumb(path: string): string[] {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
