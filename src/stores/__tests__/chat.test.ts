@@ -49,9 +49,9 @@ describe('chat store', () => {
     const store = useChatStore()
     store.addTab()
     store.addTab()
-    const secondId = store.activeId
+    const thirdId = store.activeId
     // 3 tabs total, active is the 3rd (idx=2)
-    store.closeTab(secondId)
+    store.closeTab(thirdId)
     expect(store.tabs.length).toBe(2)
     // should have switched to the previous tab (idx=1, which is the 2nd tab now)
     expect(store.activeId).toBe(store.tabs[1]!.id)
