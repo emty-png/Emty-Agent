@@ -1,4 +1,4 @@
 {
-  "src/**/*.{ts,vue}": "eslint --fix",
+  "src/**/*.{ts,vue}": "eslint",
   "src/**/*.{css,json,md}": "prettier --write"
 }
