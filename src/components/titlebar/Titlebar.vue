@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
-import { FolderOpen, Minus, Square, X } from 'lucide-vue-next'
+import { FolderOpen, Minus, Square, X, Copy } from 'lucide-vue-next'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useProjectStore } from '@/stores/project'
 
@@ -104,56 +104,18 @@ async function pickProject() {
 
       <!-- minimize -->
       <button class="ctrl-btn" aria-label="Minimize" @click.stop="minimize">
-        <Minus :size="16" :stroke-width="1.8" />
+        <Minus :size="15" :stroke-width="1.8" />
       </button>
 
       <!-- maximize / restore -->
       <button class="ctrl-btn" aria-label="Toggle maximise" @click.stop="toggleMaximize">
-        <svg
-          v-if="maximized"
-          width="22"
-          height="21"
-          style="margin-top: 6px"
-          viewBox="0 0 22 21"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          aria-hidden="true"
-        >
-          <g filter="url(#filter0_d_19_5)">
-            <path
-              d="M8.13043 4.5H5V12H13.3478V9.5M8.13043 4.5H13.3478V9.5M8.13043 4.5V1H17V9.5H13.3478"
-              stroke="currentColor"
-              stroke-width="2"
-              shape-rendering="crispEdges"
-            />
-          </g>
-          <defs>
-            <filter
-              id="filter0_d_19_5"
-              x="0"
-              y="0"
-              width="22"
-              height="21"
-              filterUnits="userSpaceOnUse"
-              color-interpolation-filters="sRGB"
-            >
-              <feFlood flood-opacity="0" result="BackgroundImageFix" />
-              <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha" />
-              <feOffset dy="4" />
-              <feGaussianBlur stdDeviation="2" />
-              <feComposite in2="hardAlpha" operator="out" />
-              <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.25 0" />
-              <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_19_5" />
-              <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_19_5" result="shape" />
-            </filter>
-          </defs>
-        </svg>
-        <Square v-else :size="14" :stroke-width="1.8" />
+        <Copy v-if="maximized" :size="13" :stroke-width="1.8" style="transform: rotate(90deg);" />
+        <Square v-else :size="13" :stroke-width="1.8" />
       </button>
 
       <!-- close -->
       <button class="ctrl-btn ctrl-btn--close" aria-label="Close" @click.stop="close">
-        <X :size="16" :stroke-width="1.8" />
+        <X :size="15" :stroke-width="1.8" />
       </button>
     </div>
   </header>

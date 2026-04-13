@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { FolderOpen, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-vue-next'
+import { FolderOpen, History, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { useSidebarStore } from '@/stores/sidebar'
 
 const props = defineProps<{
-  activeView?: 'chat' | 'projects'
+  activeView?: 'chat' | 'history' | 'projects'
 }>()
 
 const emit = defineEmits<{
-  selectView: [view: 'chat' | 'projects']
+  selectView: [view: 'chat' | 'history' | 'projects']
 }>()
 const sidebar = useSidebarStore()
 const { collapsed } = storeToRefs(sidebar) // reactive, persisted
@@ -49,12 +49,22 @@ const { toggle } = sidebar
     <nav class="sidebar-nav">
       <button
         class="sidebar-btn"
-        :class="{ 'sidebar-btn--active': props.activeView !== 'projects' }"
+        :class="{ 'sidebar-btn--active': props.activeView !== 'projects' && props.activeView !== 'history' }"
         aria-label="Chat"
         @click="emit('selectView', 'chat')"
       >
         <MessageSquare :size="15" :stroke-width="1.7" class="flex-shrink-0" />
         <span class="sidebar-label">Chat</span>
+      </button>
+
+      <button
+        class="sidebar-btn"
+        :class="{ 'sidebar-btn--active': props.activeView === 'history' }"
+        aria-label="History"
+        @click="emit('selectView', 'history')"
+      >
+        <History :size="15" :stroke-width="1.7" class="flex-shrink-0" />
+        <span class="sidebar-label">History</span>
       </button>
 
       <button
