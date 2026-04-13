@@ -13,14 +13,14 @@ import {
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { useFileTreeStore } from '@/stores/fileTree'
+
+const ft = useFileTreeStore()
+const { tree, selectedPath, loadingTree } = storeToRefs(ft)
 </script>
 
 <script lang="ts">
 import type { PropType } from 'vue'
 import { defineComponent, h, resolveComponent } from 'vue'
-
-const ft = useFileTreeStore()
-const { tree, selectedPath, loadingTree } = storeToRefs(ft)
 
 // ── file icon / color by extension ───────────────────────────────────────────
 interface FileStyle { icon: typeof File; color: string }
@@ -65,17 +65,17 @@ export const FileTreeNode = defineComponent({
   props: {
     node: { type: Object as PropType<FileNode>, required: true },
     selectedPath: { type: String as PropType<string | null>, default: null },
+    toggleDir: { type: Function as PropType<(node: FileNode) => void>, required: true },
+    selectFile: { type: Function as PropType<(node: FileNode) => void>, required: true },
   },
   emits: ['select'],
   setup(props, { emit }) {
-    const ft = useFileTreeStore()
-
     function onClick() {
       if (props.node.isDir) {
-        ft.toggleDir(props.node)
+        props.toggleDir(props.node)
       }
       else {
-        ft.selectFile(props.node)
+        props.selectFile(props.node)
         emit('select')
       }
     }
@@ -128,6 +128,8 @@ export const FileTreeNode = defineComponent({
             key: child.path,
             node: child,
             selectedPath,
+            toggleDir: this.toggleDir,
+            selectFile: this.selectFile,
             onSelect: () => this.$emit('select'),
           }),
         )
@@ -159,6 +161,8 @@ export const FileTreeNode = defineComponent({
         :key="node.path"
         :node="node"
         :selected-path="selectedPath"
+        :toggle-dir="ft.toggleDir"
+        :select-file="ft.selectFile"
         @select="ft.selectFile(node)"
       />
     </template>
