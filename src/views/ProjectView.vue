@@ -7,25 +7,27 @@ import { useFileTreeStore } from '@/stores/fileTree'
 import { useProjectStore } from '@/stores/project'
 
 const project = useProjectStore()
-const ft      = useFileTreeStore()
+const ft = useFileTreeStore()
 const { projectPath, projectName } = storeToRefs(project)
 
 // ── load tree when project changes ───────────────────────────────────────────
 // fires when the user picks a NEW folder mid-session
 watch(projectPath, async (newPath, oldPath) => {
-  if (newPath === oldPath) return
+  if (newPath === oldPath)
+    return
   ft.reset()
-  if (newPath) await ft.loadTree()
+  if (newPath)
+    await ft.loadTree()
 })
 
 // ── resizable split ───────────────────────────────────────────────────────────
-const SPLIT_MIN = 18   // %
-const SPLIT_MAX = 60   // %
+const SPLIT_MIN = 18 // %
+const SPLIT_MAX = 60 // %
 const SPLIT_DEFAULT = 38
 
 const splitPercent = ref(SPLIT_DEFAULT)
 const containerRef = ref<HTMLElement | null>(null)
-const dragging     = ref(false)
+const dragging = ref(false)
 
 function onDragStart(e: MouseEvent) {
   e.preventDefault()
@@ -33,9 +35,10 @@ function onDragStart(e: MouseEvent) {
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (!dragging.value || !containerRef.value) return
-  const rect   = containerRef.value.getBoundingClientRect()
-  const raw    = ((e.clientX - rect.left) / rect.width) * 100
+  if (!dragging.value || !containerRef.value)
+    return
+  const rect = containerRef.value.getBoundingClientRect()
+  const raw = ((e.clientX - rect.left) / rect.width) * 100
   splitPercent.value = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, raw))
 }
 
@@ -49,7 +52,8 @@ onMounted(async () => {
 
   // persistence has rehydrated by the time onMounted runs —
   // load the tree if a project path was already saved
-  if (projectPath.value) await ft.loadTree()
+  if (projectPath.value)
+    await ft.loadTree()
 })
 
 onUnmounted(() => {
@@ -60,11 +64,14 @@ onUnmounted(() => {
 
 <template>
   <div class="project-root">
-
     <!-- ── no project open ─────────────────────────────────────────── -->
     <div v-if="!projectPath" class="project-empty">
-      <div class="project-empty-icon">⬡</div>
-      <p class="project-empty-title">No project open</p>
+      <div class="project-empty-icon">
+        ⬡
+      </div>
+      <p class="project-empty-title">
+        No project open
+      </p>
       <p class="project-empty-sub">
         Click the folder icon in the title bar to open a project
       </p>
@@ -72,11 +79,10 @@ onUnmounted(() => {
 
     <!-- ── split view ──────────────────────────────────────────────── -->
     <div v-else ref="containerRef" class="split" :class="{ 'split--dragging': dragging }">
-
       <!-- left: file tree -->
       <div
         class="split-panel split-panel--left"
-        :style="{ width: splitPercent + '%' }"
+        :style="{ width: `${splitPercent}%` }"
       >
         <div class="panel-header">
           <span class="panel-title">{{ projectName }}</span>
@@ -99,7 +105,6 @@ onUnmounted(() => {
       <div class="split-panel split-panel--right">
         <FileContent />
       </div>
-
     </div>
   </div>
 </template>

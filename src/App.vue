@@ -2,10 +2,10 @@
 import { onMounted, ref } from 'vue'
 import SideBar from './components/sidebar/Sidebar.vue'
 import TitleBar from './components/titlebar/Titlebar.vue'
+import { getDb } from './db/database'
 import ChatView from './views/Chatview.vue'
 import HistoryView from './views/HistoryView.vue'
 import ProjectView from './views/ProjectView.vue'
-import { getDb } from './db/database'
 
 type ViewType = 'chat' | 'history' | 'projects'
 

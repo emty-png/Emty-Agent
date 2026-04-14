@@ -1,4 +1,5 @@
-import { createHighlighter, type Highlighter } from 'shiki'
+import type { Highlighter } from 'shiki'
+import { createHighlighter } from 'shiki'
 
 // ── custom ember-dark theme ───────────────────────────────────────────────────
 const emberDark = {
@@ -271,13 +272,28 @@ const emberDark = {
 
 // ── languages to pre-load ─────────────────────────────────────────────────────
 const LANGS = [
-  'typescript', 'javascript', 'tsx', 'jsx',
-  'vue', 'html', 'css', 'scss',
-  'json', 'jsonc', 'yaml', 'toml',
-  'rust', 'python', 'bash', 'sh',
-  'markdown', 'mdx',
-  'sql', 'graphql',
-  'diff', 'plaintext',
+  'typescript',
+  'javascript',
+  'tsx',
+  'jsx',
+  'vue',
+  'html',
+  'css',
+  'scss',
+  'json',
+  'jsonc',
+  'yaml',
+  'toml',
+  'rust',
+  'python',
+  'bash',
+  'sh',
+  'markdown',
+  'mdx',
+  'sql',
+  'graphql',
+  'diff',
+  'plaintext',
 ] as const
 
 // ── singleton ─────────────────────────────────────────────────────────────────
@@ -285,8 +301,10 @@ let instance: Highlighter | null = null
 let initPromise: Promise<Highlighter> | null = null
 
 export async function getHighlighter(): Promise<Highlighter> {
-  if (instance) return instance
-  if (initPromise) return initPromise
+  if (instance)
+    return instance
+  if (initPromise)
+    return initPromise
 
   initPromise = createHighlighter({
     themes: [emberDark],
@@ -304,13 +322,30 @@ export async function getHighlighter(): Promise<Highlighter> {
 
 // ── extension → language map ──────────────────────────────────────────────────
 const EXT_MAP: Record<string, string> = {
-  ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-  vue: 'vue', html: 'html', css: 'css', scss: 'scss',
-  json: 'json', jsonc: 'jsonc', yaml: 'yaml', yml: 'yaml',
-  toml: 'toml', rs: 'rust', py: 'python',
-  sh: 'bash', bash: 'bash', md: 'markdown', mdx: 'mdx',
-  sql: 'sql', graphql: 'graphql', gql: 'graphql',
-  env: 'bash', lock: 'plaintext',
+  ts: 'typescript',
+  tsx: 'tsx',
+  js: 'javascript',
+  jsx: 'jsx',
+  vue: 'vue',
+  html: 'html',
+  css: 'css',
+  scss: 'scss',
+  json: 'json',
+  jsonc: 'jsonc',
+  yaml: 'yaml',
+  yml: 'yaml',
+  toml: 'toml',
+  rs: 'rust',
+  py: 'python',
+  sh: 'bash',
+  bash: 'bash',
+  md: 'markdown',
+  mdx: 'mdx',
+  sql: 'sql',
+  graphql: 'graphql',
+  gql: 'graphql',
+  env: 'bash',
+  lock: 'plaintext',
 }
 
 export function langFromPath(filePath: string): string {

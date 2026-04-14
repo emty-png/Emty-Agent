@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PropType } from 'vue'
 import type { FileNode } from '@/stores/fileTree'
 import {
   ChevronRight,
@@ -12,15 +13,11 @@ import {
   Settings,
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
+import { defineComponent, h, resolveComponent } from 'vue'
 import { useFileTreeStore } from '@/stores/fileTree'
 
 const ft = useFileTreeStore()
 const { tree, selectedPath, loadingTree } = storeToRefs(ft)
-</script>
-
-<script lang="ts">
-import type { PropType } from 'vue'
-import { defineComponent, h, resolveComponent } from 'vue'
 
 // ── file icon / color by extension ───────────────────────────────────────────
 interface FileStyle { icon: typeof File; color: string }
@@ -60,7 +57,7 @@ function fileStyle(name: string): FileStyle {
   return EXT_STYLE[ext] ?? { icon: File, color: '#8a7868' }
 }
 
-export const FileTreeNode = defineComponent({
+const FileTreeNode = defineComponent({
   name: 'FileTreeNode',
   props: {
     node: { type: Object as PropType<FileNode>, required: true },
@@ -157,13 +154,13 @@ export const FileTreeNode = defineComponent({
     <!-- tree -->
     <template v-else>
       <FileTreeNode
-        v-for="node in tree"
-        :key="node.path"
-        :node="node"
+        v-for="treeNode in tree"
+        :key="treeNode.path"
+        :node="treeNode"
         :selected-path="selectedPath"
         :toggle-dir="ft.toggleDir"
         :select-file="ft.selectFile"
-        @select="ft.selectFile(node)"
+        @select="ft.selectFile(treeNode)"
       />
     </template>
   </div>

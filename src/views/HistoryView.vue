@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { MoreHorizontal, Plus, Search, Trash2, Pencil, MessageSquare, X } from 'lucide-vue-next'
+import type { ConversationRow } from '@/db/database'
+import { MessageSquare, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { nextTick, onMounted, ref } from 'vue'
-import { type ConversationRow } from '@/db/database'
 import { useHistoryStore } from '@/stores/history'
 
+// ── open ──────────────────────────────────────────────────────────────────────
+const emit = defineEmits<{
+  (e: 'newChat'): void
+  (e: 'openChat'): void
+}>()
 const history = useHistoryStore()
 const { conversations, loading, hasMore, isEmpty, searchQuery } = storeToRefs(history)
 
@@ -15,60 +20,63 @@ onMounted(() => history.load(true))
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 function onSearch(e: Event) {
   const q = (e.target as HTMLInputElement).value
-  if (searchTimer) clearTimeout(searchTimer)
+  if (searchTimer)
+    clearTimeout(searchTimer)
   searchTimer = setTimeout(() => history.search(q), 220)
 }
 
 // ── infinite scroll ───────────────────────────────────────────────────────────
 function onScroll(e: Event) {
   const el = e.target as HTMLElement
-  if (!hasMore.value || loading.value) return
+  if (!hasMore.value || loading.value)
+    return
   if (el.scrollTop + el.clientHeight >= el.scrollHeight - 80) {
     history.load(false)
   }
 }
 
 // ── context menu ──────────────────────────────────────────────────────────────
-const menuOpen  = ref<string | null>(null)
-const menuPos   = ref({ x: 0, y: 0 })
+const menuOpen = ref<string | null>(null)
+const menuPos = ref({ x: 0, y: 0 })
 
 function openMenu(e: MouseEvent, id: string) {
   e.stopPropagation()
   menuOpen.value = id
-  
+
   const menuWidth = 170 // width + padding/shadow
   const menuHeight = 90 // height + padding/shadow
-  
+
   let x = e.clientX
   let y = e.clientY
-  
+
   if (x + menuWidth > window.innerWidth) {
     x = window.innerWidth - menuWidth - 10
   }
   if (y + menuHeight > window.innerHeight) {
     y = window.innerHeight - menuHeight - 10
   }
-  
+
   menuPos.value = { x, y }
 }
 
 function closeMenu() { menuOpen.value = null }
 
 // ── rename ────────────────────────────────────────────────────────────────────
-const renamingId    = ref<string | null>(null)
-const renameValue   = ref('')
+const renamingId = ref<string | null>(null)
+const renameValue = ref('')
 const renameInputRef = ref<HTMLInputElement | null>(null)
 
 async function startRename(conv: ConversationRow) {
   closeMenu()
-  renamingId.value  = conv.id
+  renamingId.value = conv.id
   renameValue.value = conv.title
   await nextTick()
   renameInputRef.value?.select()
 }
 
 async function commitRename(id: string) {
-  if (renameValue.value.trim()) await history.rename(id, renameValue.value)
+  if (renameValue.value.trim())
+    await history.rename(id, renameValue.value)
   renamingId.value = null
 }
 
@@ -83,44 +91,45 @@ function startDelete(id: string) {
 }
 
 async function confirmDelete() {
-  if (confirmDeleteId.value) await history.remove(confirmDeleteId.value)
+  if (confirmDeleteId.value)
+    await history.remove(confirmDeleteId.value)
   confirmDeleteId.value = null
 }
 
-// ── open ──────────────────────────────────────────────────────────────────────
-const emit = defineEmits<{
-  (e: 'new-chat'): void
-  (e: 'open-chat'): void
-}>()
-
 function open(conv: ConversationRow) {
-  if (renamingId.value === conv.id) return
+  if (renamingId.value === conv.id)
+    return
   history.openInTab(conv)
-  emit('open-chat')
+  emit('openChat')
 }
 
 // ── relative time ──────────────────────────────────────────────────────────────
 function relativeTime(ts: number): string {
-  const diff   = Date.now() - ts
-  const mins   = Math.floor(diff / 60_000)
-  const hours  = Math.floor(diff / 3_600_000)
-  const days   = Math.floor(diff / 86_400_000)
+  const diff = Date.now() - ts
+  const mins = Math.floor(diff / 60_000)
+  const hours = Math.floor(diff / 3_600_000)
+  const days = Math.floor(diff / 86_400_000)
 
-  if (mins < 1)   return 'just now'
-  if (mins < 60)  return `${mins}m ago`
-  if (hours < 24) return `${hours}h ago`
-  if (days < 7)   return `${days}d ago`
+  if (mins < 1)
+    return 'just now'
+  if (mins < 60)
+    return `${mins}m ago`
+  if (hours < 24)
+    return `${hours}h ago`
+  if (days < 7)
+    return `${days}d ago`
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 </script>
 
 <template>
   <div class="history-root" @click="closeMenu">
-
     <!-- ── header ──────────────────────────────────────────────────────── -->
     <div class="history-header">
-      <h1 class="history-title">History</h1>
-      <button class="new-btn" @click="$emit('new-chat')">
+      <h1 class="history-title">
+        History
+      </h1>
+      <button class="new-btn" @click="$emit('newChat')">
         <Plus :size="13" :stroke-width="2" />
         New chat
       </button>
@@ -135,12 +144,11 @@ function relativeTime(ts: number): string {
         placeholder="Search conversations…"
         :value="searchQuery"
         @input="onSearch"
-      />
+      >
     </div>
 
     <!-- ── list ────────────────────────────────────────────────────────── -->
     <div class="conv-list" @scroll="onScroll">
-
       <!-- empty -->
       <div v-if="isEmpty" class="list-empty">
         <MessageSquare :size="22" :stroke-width="1.3" class="empty-icon" />
@@ -165,7 +173,7 @@ function relativeTime(ts: number): string {
               @keydown.escape="cancelRename"
               @blur="commitRename(conv.id)"
               @click.stop
-            />
+            >
           </template>
 
           <!-- normal row -->
@@ -200,7 +208,7 @@ function relativeTime(ts: number): string {
       <div
         v-if="menuOpen"
         class="ctx-menu"
-        :style="{ top: menuPos.y + 'px', left: menuPos.x + 'px' }"
+        :style="{ top: `${menuPos.y}px`, left: `${menuPos.x}px` }"
         @click.stop
       >
         <button
@@ -228,7 +236,9 @@ function relativeTime(ts: number): string {
           <button class="dialog-close" @click="confirmDeleteId = null">
             <X :size="14" :stroke-width="1.8" />
           </button>
-          <h2 class="dialog-title">Delete conversation?</h2>
+          <h2 class="dialog-title">
+            Delete conversation?
+          </h2>
           <p class="dialog-body">
             This will permanently delete the conversation and all its messages.
             This cannot be undone.
@@ -244,7 +254,6 @@ function relativeTime(ts: number): string {
         </div>
       </div>
     </Teleport>
-
   </div>
 </template>
 
@@ -288,7 +297,10 @@ function relativeTime(ts: number): string {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 130ms ease, color 130ms ease, border-color 130ms ease;
+  transition:
+    background 130ms ease,
+    color 130ms ease,
+    border-color 130ms ease;
 }
 
 .new-btn:hover {
@@ -328,7 +340,9 @@ function relativeTime(ts: number): string {
   box-sizing: border-box;
 }
 
-.search-input::placeholder { color: var(--color-text-tertiary); }
+.search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
 
 .search-input:focus {
   border-color: var(--color-border-bright);
@@ -352,7 +366,9 @@ function relativeTime(ts: number): string {
   font-size: 12.5px;
 }
 
-.empty-icon { opacity: 0.4; }
+.empty-icon {
+  opacity: 0.4;
+}
 
 /* ── conversation item ───────────────────────────────────────────────────────── */
 .conv-item {
@@ -420,7 +436,9 @@ function relativeTime(ts: number): string {
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  transition: background 110ms ease, color 110ms ease;
+  transition:
+    background 110ms ease,
+    color 110ms ease;
 }
 
 .action-btn:hover {
@@ -462,12 +480,24 @@ function relativeTime(ts: number): string {
   animation: bounce 1.1s ease-in-out infinite;
 }
 
-.loading-dots span:nth-child(2) { animation-delay: 0.18s; }
-.loading-dots span:nth-child(3) { animation-delay: 0.36s; }
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.36s;
+}
 
 @keyframes bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-4px); opacity: 1; }
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
 }
 </style>
 
@@ -488,7 +518,7 @@ function relativeTime(ts: number): string {
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-mid);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   transform: translateY(-4px); /* open slightly above click point */
 }
 
@@ -506,7 +536,9 @@ function relativeTime(ts: number): string {
   font-size: 13px;
   cursor: pointer;
   text-align: left;
-  transition: background 110ms ease, color 110ms ease;
+  transition:
+    background 110ms ease,
+    color 110ms ease;
 }
 
 .ctx-item:hover {
@@ -514,8 +546,13 @@ function relativeTime(ts: number): string {
   color: var(--color-text-primary);
 }
 
-.ctx-item--danger { color: var(--color-rose-text); }
-.ctx-item--danger:hover { background: var(--color-rose); color: #fff; }
+.ctx-item--danger {
+  color: var(--color-rose-text);
+}
+.ctx-item--danger:hover {
+  background: var(--color-rose);
+  color: #fff;
+}
 
 .ctx-divider {
   height: 1px;
@@ -528,7 +565,7 @@ function relativeTime(ts: number): string {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -541,7 +578,7 @@ function relativeTime(ts: number): string {
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-mid);
   border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
 .dialog-close {
@@ -560,7 +597,9 @@ function relativeTime(ts: number): string {
   transition: background 110ms ease;
 }
 
-.dialog-close:hover { background: var(--color-bg-hover); }
+.dialog-close:hover {
+  background: var(--color-bg-hover);
+}
 
 .dialog-title {
   font-size: 15px;
@@ -590,7 +629,9 @@ function relativeTime(ts: number): string {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 110ms ease, color 110ms ease;
+  transition:
+    background 110ms ease,
+    color 110ms ease;
 }
 
 .dialog-btn--cancel {

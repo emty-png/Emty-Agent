@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   dbInsertConversation,
   dbInsertMessage,
@@ -34,11 +34,12 @@ export const useChatStore = defineStore('chat', () => {
   const activeId = ref(tabs.value[0]!.id)
 
   const activeTab = computed(
-    () => tabs.value.find(t => t.id === activeId.value) ?? tabs.value[0]!
+    () => tabs.value.find(t => t.id === activeId.value) ?? tabs.value[0]!,
   )
 
   function addTab(): void {
-    if (tabs.value.length >= 9) return
+    if (tabs.value.length >= 9)
+      return
     const tab = newTab()
     tabs.value.push(tab)
     activeId.value = tab.id
@@ -87,7 +88,8 @@ export const useChatStore = defineStore('chat', () => {
 
   async function sendMessage(content: string): Promise<void> {
     const tab = activeTab.value
-    if (!content.trim()) return
+    if (!content.trim())
+      return
     const now = Date.now()
     const text = content.trim()
 
@@ -119,9 +121,11 @@ export const useChatStore = defineStore('chat', () => {
 
   async function renameTab(tabId: string, newTitle: string): Promise<void> {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab) return
+    if (!tab)
+      return
     tab.title = newTitle
-    if (tab.conversationId) await dbUpdateConversationTitle(tab.conversationId, newTitle)
+    if (tab.conversationId)
+      await dbUpdateConversationTitle(tab.conversationId, newTitle)
   }
 
   return { tabs, activeId, activeTab, addTab, closeTab, openConversation, sendMessage, renameTab }
