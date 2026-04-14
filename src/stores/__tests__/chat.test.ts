@@ -2,10 +2,23 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatStore } from '../chat'
 
+// Mock DB before importing the store
+vi.mock('@/db/database', () => ({
+  dbInsertConversation: vi.fn().mockResolvedValue(undefined),
+  dbInsertMessage: vi.fn().mockResolvedValue(undefined),
+  dbTouchConversation: vi.fn().mockResolvedValue(undefined),
+  dbUpdateConversationTitle: vi.fn().mockResolvedValue(undefined),
+  dbDeleteConversation: vi.fn().mockResolvedValue(undefined),
+  dbListConversations: vi.fn().mockResolvedValue([]),
+  dbSearchConversations: vi.fn().mockResolvedValue([]),
+  dbLoadMessages: vi.fn().mockResolvedValue([]),
+}))
+
 describe('chat store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
+    vi.clearAllMocks()
   })
 
   afterEach(() => {
@@ -66,40 +79,41 @@ describe('chat store', () => {
     expect(store.activeTab.messages).toEqual([])
   })
 
-  it('adds a user message and sets tab title from first message', () => {
+  it('adds a user message and sets tab title from first message', async () => {
     const store = useChatStore()
-    store.sendMessage('Hello world')
+    await store.sendMessage('Hello world')
     expect(store.activeTab.messages.length).toBe(1)
     expect(store.activeTab.messages[0]!.role).toBe('user')
     expect(store.activeTab.messages[0]!.content).toBe('Hello world')
     expect(store.activeTab.title).toBe('Hello world')
   })
 
-  it('truncates tab title to 28 chars with ellipsis', () => {
+  it('truncates tab title to 60 chars with ellipsis', async () => {
     const store = useChatStore()
-    const long = 'a'.repeat(50)
-    store.sendMessage(long)
-    expect(store.activeTab.title).toBe(`${'a'.repeat(28)}…`)
+    const long = 'a'.repeat(80)
+    await store.sendMessage(long)
+    expect(store.activeTab.title).toBe(`${'a'.repeat(60)}…`)
   })
 
-  it('does not change tab title after the first message', () => {
+  it('does not change tab title after the first message', async () => {
     const store = useChatStore()
-    store.sendMessage('First message')
-    store.sendMessage('Second message')
+    await store.sendMessage('First message')
+    await store.sendMessage('Second message')
     expect(store.activeTab.title).toBe('First message')
   })
 
-  it('ignores blank input', () => {
+  it('ignores blank input', async () => {
     const store = useChatStore()
-    store.sendMessage('   ')
+    await store.sendMessage('   ')
     expect(store.activeTab.messages.length).toBe(0)
   })
 
-  it('schedules an assistant reply after user message', () => {
+  it('schedules an assistant reply after user message', async () => {
     const store = useChatStore()
-    store.sendMessage('Hey')
+    await store.sendMessage('Hey')
     expect(store.activeTab.messages.length).toBe(1)
     vi.advanceTimersByTime(700)
+    await vi.dynamicImportSettled()
     expect(store.activeTab.messages.length).toBe(2)
     expect(store.activeTab.messages[1]!.role).toBe('assistant')
   })

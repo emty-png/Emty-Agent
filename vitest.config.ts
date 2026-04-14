@@ -12,6 +12,7 @@ export default defineConfig({
       '@tauri-apps/plugin-fs': resolve(__dirname, 'src/__mocks__/fs.ts'),
       '@tauri-apps/api/path': resolve(__dirname, 'src/__mocks__/path.ts'),
       '@tauri-apps/api/window': resolve(__dirname, 'src/__mocks__/window.ts'),
+      '@tauri-apps/plugin-sql': resolve(__dirname, 'src/__mocks__/sql.ts'),
     },
   },
   test: {
