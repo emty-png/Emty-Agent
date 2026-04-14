@@ -172,8 +172,7 @@ function formatTime(date: Date) {
   border-left: 1px solid transparent;
   border-right: 1px solid transparent;
   border-bottom: 1px solid var(--color-border-subtle);
-  outline: none;
-  border-radius: 6px 6px 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: transparent;
   cursor: pointer;
   color: var(--color-text-tertiary);
@@ -216,7 +215,7 @@ function formatTime(date: Date) {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--color-text-tertiary);
   opacity: 0; /* hidden by default on inactive tabs */
   transition:
@@ -249,8 +248,7 @@ function formatTime(date: Date) {
   height: 28px;
   margin-bottom: 4px; /* sit just above the tab bottom-border line */
   border: none;
-  outline: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -342,7 +340,7 @@ function formatTime(date: Date) {
 .avatar {
   width: 26px;
   height: 26px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--color-ember-glow);
   border: 1px solid var(--color-ember-dim);
   display: flex;
@@ -360,7 +358,7 @@ function formatTime(date: Date) {
 /* ── bubble ──────────────────────────────────────────────────────────────── */
 .bubble {
   padding: 9px 13px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   font-size: 13.5px;
   line-height: 1.6;
   word-break: break-word;
@@ -408,19 +406,6 @@ function formatTime(date: Date) {
 }
 .typing span:nth-child(3) {
   animation-delay: 0.36s;
-}
-
-@keyframes bounce {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-5px);
-    opacity: 1;
-  }
 }
 
 /* ── pinned input ────────────────────────────────────────────────────────── */

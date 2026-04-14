@@ -291,16 +291,16 @@ function relativeTime(ts: number): string {
   height: 30px;
   padding-inline: 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: var(--color-bg-card);
   color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition:
-    background 130ms ease,
-    color 130ms ease,
-    border-color 130ms ease;
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
 .new-btn:hover {
@@ -332,11 +332,10 @@ function relativeTime(ts: number): string {
   padding-right: 12px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: 13px;
-  outline: none;
-  transition: border-color 140ms ease;
+  transition: border-color 120ms ease;
   box-sizing: border-box;
 }
 
@@ -377,9 +376,9 @@ function relativeTime(ts: number): string {
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background 110ms ease;
+  transition: background 120ms ease;
   position: relative;
   min-height: 52px;
 }
@@ -392,7 +391,7 @@ function relativeTime(ts: number): string {
 /* show actions only on hover or when menu is open */
 .conv-item .conv-actions {
   opacity: 0;
-  transition: opacity 110ms ease;
+  transition: opacity 120ms ease;
   flex-shrink: 0;
 }
 
@@ -432,13 +431,13 @@ function relativeTime(ts: number): string {
   width: 26px;
   height: 26px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
   transition:
-    background 110ms ease,
-    color 110ms ease;
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .action-btn:hover {
@@ -453,10 +452,9 @@ function relativeTime(ts: number): string {
   padding-inline: 8px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-ember-dim);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: 13px;
-  outline: none;
 }
 
 /* ── loading dots ────────────────────────────────────────────────────────────── */
@@ -486,19 +484,6 @@ function relativeTime(ts: number): string {
 .loading-dots span:nth-child(3) {
   animation-delay: 0.36s;
 }
-
-@keyframes bounce {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
-}
 </style>
 
 <!-- ── global styles for teleported elements ─────────────────────────────────── -->
@@ -517,7 +502,7 @@ function relativeTime(ts: number): string {
   padding: 4px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   transform: translateY(-4px); /* open slightly above click point */
 }
@@ -530,15 +515,15 @@ function relativeTime(ts: number): string {
   height: 32px;
   padding-inline: 10px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 13px;
   cursor: pointer;
   text-align: left;
   transition:
-    background 110ms ease,
-    color 110ms ease;
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .ctx-item:hover {
@@ -551,7 +536,7 @@ function relativeTime(ts: number): string {
 }
 .ctx-item--danger:hover {
   background: var(--color-rose);
-  color: #fff;
+  color: var(--color-text-primary);
 }
 
 .ctx-divider {
@@ -577,7 +562,7 @@ function relativeTime(ts: number): string {
   padding: 24px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-mid);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
@@ -590,11 +575,11 @@ function relativeTime(ts: number): string {
   width: 26px;
   height: 26px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  transition: background 110ms ease;
+  transition: background 120ms ease;
 }
 
 .dialog-close:hover {
@@ -624,14 +609,14 @@ function relativeTime(ts: number): string {
 .dialog-btn {
   height: 32px;
   padding-inline: 16px;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition:
-    background 110ms ease,
-    color 110ms ease;
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .dialog-btn--cancel {
@@ -647,10 +632,10 @@ function relativeTime(ts: number): string {
 
 .dialog-btn--delete {
   background: var(--color-rose);
-  color: #fff;
+  color: var(--color-text-primary);
 }
 
 .dialog-btn--delete:hover {
-  background: #c06060;
+  background: var(--color-rose-hover);
 }
 </style>

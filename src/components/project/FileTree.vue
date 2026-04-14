@@ -201,14 +201,13 @@ const FileTreeNode = defineComponent({
   height: 24px;
   padding-right: 8px;
   border: none;
-  outline: none;
   background: transparent;
   cursor: pointer;
   text-align: left;
   color: var(--color-text-secondary);
   transition:
-    background 100ms ease,
-    color 100ms ease;
+    background 120ms ease,
+    color 120ms ease;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -231,7 +230,7 @@ const FileTreeNode = defineComponent({
 :deep(.node-chevron) {
   flex-shrink: 0;
   color: var(--color-text-tertiary);
-  transition: transform 150ms ease;
+  transition: transform 120ms ease;
 }
 
 :deep(.node-chevron--open) {

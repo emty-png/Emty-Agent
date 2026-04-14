@@ -74,10 +74,10 @@ function onInput(e: Event) {
   width: 100%;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  transition: border-color 150ms ease;
+  transition: border-color 120ms ease;
   overflow: hidden;
 }
 
@@ -93,7 +93,6 @@ function onInput(e: Event) {
   padding: 12px 14px 4px;
   background: transparent;
   border: none;
-  outline: none;
   resize: none;
   color: var(--color-text-primary);
   font-size: 13.5px;
@@ -126,8 +125,7 @@ function onInput(e: Event) {
   width: 28px;
   height: 28px;
   border: none;
-  outline: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -153,8 +151,7 @@ function onInput(e: Event) {
   height: 28px;
   padding-inline: 8px 6px;
   border: none;
-  outline: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
   transition: background 120ms ease;

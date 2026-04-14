@@ -9,9 +9,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   selectView: [view: 'chat' | 'history' | 'projects']
+  openSettings: []
 }>()
+
 const sidebar = useSidebarStore()
-const { collapsed } = storeToRefs(sidebar) // reactive, persisted
+const { collapsed } = storeToRefs(sidebar)
 const { toggle } = sidebar
 </script>
 
@@ -77,7 +79,6 @@ const { toggle } = sidebar
         <span class="sidebar-label">Projects</span>
       </button>
 
-      <!-- slot: add more nav items here -->
       <slot />
     </nav>
 
@@ -85,7 +86,7 @@ const { toggle } = sidebar
     <div class="sidebar-bottom">
       <div class="sidebar-divider" />
       <div class="sidebar-section--bottom">
-        <button class="sidebar-btn" aria-label="Settings">
+        <button class="sidebar-btn" aria-label="Settings" @click="emit('openSettings')">
           <Settings :size="15" :stroke-width="1.7" class="flex-shrink-0" />
           <span class="sidebar-label">Settings</span>
         </button>
@@ -95,7 +96,6 @@ const { toggle } = sidebar
 </template>
 
 <style scoped>
-/* ── shell ───────────────────────────────────────────────────────────────────── */
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -119,12 +119,10 @@ const { toggle } = sidebar
   max-width: 49px;
 }
 
-/* ── top section (toggle button) ────────────────────────────────────────────── */
 .sidebar-section--top {
   padding: 8px 7px 6px;
 }
 
-/* ── divider ─────────────────────────────────────────────────────────────────── */
 .sidebar-divider {
   height: 1px;
   background: var(--color-border-subtle);
@@ -132,7 +130,6 @@ const { toggle } = sidebar
   flex-shrink: 0;
 }
 
-/* ── nav ─────────────────────────────────────────────────────────────────────── */
 .sidebar-nav {
   display: flex;
   flex-direction: column;
@@ -141,7 +138,6 @@ const { toggle } = sidebar
   flex: 1;
 }
 
-/* ── shared button base ──────────────────────────────────────────────────────── */
 .sidebar-btn {
   display: flex;
   align-items: center;
@@ -150,15 +146,14 @@ const { toggle } = sidebar
   height: 32px;
   padding-inline: 8px;
   border: none;
-  outline: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
   white-space: nowrap;
   transition:
-    background 130ms ease,
-    color 130ms ease;
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .sidebar-btn:hover {
@@ -170,16 +165,13 @@ const { toggle } = sidebar
   background: var(--color-bg-elevated);
 }
 
-/* ── toggle button specific ──────────────────────────────────────────────────── */
 .sidebar-btn--toggle {
   color: var(--color-text-tertiary);
 }
-
 .sidebar-btn--toggle:hover {
   color: var(--color-text-secondary);
 }
 
-/* ── active nav item ─────────────────────────────────────────────────────────── */
 .sidebar-btn--active {
   background: var(--color-ember-glow);
   color: var(--color-ember-text);
@@ -190,7 +182,6 @@ const { toggle } = sidebar
   color: var(--color-ember-bright);
 }
 
-/* ── icon crossfade ──────────────────────────────────────────────────────────── */
 .icon-swap {
   position: relative;
   display: flex;
@@ -208,26 +199,21 @@ const { toggle } = sidebar
   align-items: center;
   justify-content: center;
   opacity: 1;
-  transition: opacity 180ms ease;
+  transition: opacity 200ms ease;
 }
-
-/* .icon-swap__icon--back sits behind, shown when collapsed */
 
 .icon-swap__icon--hidden {
   opacity: 0;
   pointer-events: none;
 }
 
-/* ── bottom section (settings) ───────────────────────────────────────────────── */
 .sidebar-bottom {
   flex-shrink: 0;
 }
-
 .sidebar-section--bottom {
   padding: 6px 7px 8px;
 }
 
-/* ── label ───────────────────────────────────────────────────────────────────── */
 .sidebar-label {
   font-size: 12.5px;
   font-weight: 450;
@@ -239,7 +225,7 @@ const { toggle } = sidebar
   opacity: 1;
   transition:
     max-width 200ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 150ms ease 60ms;
+    opacity 120ms ease 60ms;
 }
 
 .sidebar--collapsed .sidebar-label {

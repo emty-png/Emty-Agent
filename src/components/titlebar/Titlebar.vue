@@ -219,7 +219,6 @@ async function pickProject() {
   width: 46px;
   height: 100%;
   border: none;
-  outline: none;
   background: transparent;
   color: var(--color-text-secondary);
   cursor: default;
@@ -257,11 +256,11 @@ async function pickProject() {
 /* close */
 .ctrl-btn--close:hover {
   background: var(--color-rose);
-  color: #fff;
+  color: var(--color-text-primary);
 }
 
 .ctrl-btn--close:active {
   background: var(--color-rose-text);
-  color: #fff;
+  color: var(--color-text-primary);
 }
 </style>

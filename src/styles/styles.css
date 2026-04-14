@@ -28,13 +28,22 @@
   /* Text */
   --color-text-primary: #ede5d8;
   --color-text-secondary: #a59688;
-  --color-text-tertiary: #766556;
+  --color-text-tertiary: #8a7868;
   --color-code: #88c0d8;
 
   /* Borders */
   --color-border-subtle: #1e1812;
   --color-border-mid: #2e2618;
   --color-border-bright: #443a28;
+
+  /* Hover states */
+  --color-rose-hover: #c06060;
+
+  /* Border radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 99px;
 }
 
 /* ── Global custom scrollbar ───────────────────────────────────────────── */
@@ -57,7 +66,7 @@
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-border-mid);
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -66,4 +75,31 @@
 
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* ── Focus styles ─────────────────────────────────────────────────────── */
+button:focus,
+input:focus,
+textarea:focus {
+  outline: none;
+}
+
+/* ── Global keyframes ─────────────────────────────────────────────────── */
+@keyframes bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
