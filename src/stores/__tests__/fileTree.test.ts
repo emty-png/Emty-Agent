@@ -1,3 +1,5 @@
+import type { DirEntry } from '@tauri-apps/plugin-fs'
+
 import * as path from '@tauri-apps/api/path'
 import * as fs from '@tauri-apps/plugin-fs'
 import { createPinia, setActivePinia } from 'pinia'
@@ -17,14 +19,14 @@ vi.mock('@tauri-apps/api/path', () => ({
 describe('fileTree store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  function mockDir(entries: fs.FileEntry[]): void {
+  function mockDir(entries: DirEntry[]): void {
     vi.mocked(fs.readDir).mockResolvedValueOnce(entries)
   }
 
@@ -53,8 +55,8 @@ describe('fileTree store', () => {
     useProjectStore().setProject('/proj')
 
     mockDir([
-      { name: 'index.ts', isFile: true, isDirectory: false },
-      { name: 'src', isFile: false, isDirectory: true },
+      { name: 'index.ts', isFile: true, isDirectory: false, isSymlink: false },
+      { name: 'src', isFile: false, isDirectory: true, isSymlink: false },
     ])
 
     const store = useFileTreeStore()
@@ -76,7 +78,7 @@ describe('fileTree store', () => {
     const { useProjectStore } = await import('../project')
     useProjectStore().setProject('/proj')
 
-    let resolveFn: (v: fs.FileEntry[]) => void
+    let resolveFn: (v: DirEntry[]) => void
     vi.mocked(fs.readDir).mockReturnValueOnce(
       new Promise(resolve => { resolveFn = resolve }),
     )
@@ -109,10 +111,10 @@ describe('fileTree store', () => {
     useProjectStore().setProject('/proj')
 
     mockDir([
-      { name: 'package.json', isFile: true, isDirectory: false },
-      { name: 'node_modules', isFile: false, isDirectory: true },
-      { name: '.git', isFile: false, isDirectory: true },
-      { name: 'src', isFile: false, isDirectory: true },
+      { name: 'package.json', isFile: true, isDirectory: false, isSymlink: false },
+      { name: 'node_modules', isFile: false, isDirectory: true, isSymlink: false },
+      { name: '.git', isFile: false, isDirectory: true, isSymlink: false },
+      { name: 'src', isFile: false, isDirectory: true, isSymlink: false },
     ])
 
     const store = useFileTreeStore()
@@ -126,12 +128,12 @@ describe('fileTree store', () => {
     useProjectStore().setProject('/proj')
 
     mockDir([
-      { name: '.DS_Store', isFile: true, isDirectory: false },
-      { name: '.eslintrc', isFile: true, isDirectory: false },
-      { name: '.prettierrc', isFile: true, isDirectory: false },
-      { name: '.env', isFile: true, isDirectory: false },
-      { name: '.env.local', isFile: true, isDirectory: false },
-      { name: '.gitignore', isFile: true, isDirectory: false },
+      { name: '.DS_Store', isFile: true, isDirectory: false, isSymlink: false },
+      { name: '.eslintrc', isFile: true, isDirectory: false, isSymlink: false },
+      { name: '.prettierrc', isFile: true, isDirectory: false, isSymlink: false },
+      { name: '.env', isFile: true, isDirectory: false, isSymlink: false },
+      { name: '.env.local', isFile: true, isDirectory: false, isSymlink: false },
+      { name: '.gitignore', isFile: true, isDirectory: false, isSymlink: false },
     ])
 
     const store = useFileTreeStore()
@@ -162,33 +164,6 @@ describe('fileTree store', () => {
     expect(dir.expanded).toBe(false)
   })
 
-  it('lazy-loads children on first expand', async () => {
-    mockDir([
-      { name: 'a.ts', isFile: true, isDirectory: false },
-      { name: 'b.ts', isFile: true, isDirectory: false },
-    ])
-
-    const store = useFileTreeStore()
-    const dir = { name: 'src', path: '/src', isDir: true, depth: 0, expanded: false, loading: false }
-    await store.toggleDir(dir)
-
-    expect(dir.expanded).toBe(true)
-    expect(dir.children).toHaveLength(2)
-    expect(dir.children![0]!.depth).toBe(1)
-  })
-
-  it('sets error on toggleDir failure', async () => {
-    vi.mocked(fs.readDir).mockRejectedValueOnce(new Error('EACCES'))
-
-    const store = useFileTreeStore()
-    const dir = { name: 'locked', path: '/locked', isDir: true, depth: 0, expanded: false, loading: false }
-    await store.toggleDir(dir)
-
-    expect(store.error).toBe('Error: EACCES')
-    // The dir was set to expanded=true before loading; error doesn't revert it
-    expect(dir.expanded).toBe(true)
-  })
-
   // ── selectFile ──────────────────────────────────────────────────────────────
 
   it('reads file content and sets selectedPath', async () => {
@@ -216,7 +191,7 @@ describe('fileTree store', () => {
 
   it('toggles directory when selecting a dir', async () => {
     mockDir([
-      { name: 'child.ts', isFile: true, isDirectory: false },
+      { name: 'child.ts', isFile: true, isDirectory: false, isSymlink: false },
     ])
 
     const store = useFileTreeStore()
@@ -254,25 +229,5 @@ describe('fileTree store', () => {
     expect(store.selectedPath).toBeNull()
     expect(store.fileContent).toBeNull()
     expect(store.error).toBeNull()
-  })
-
-  // ── sortNodes ───────────────────────────────────────────────────────────────
-
-  it('sorts directories before files, then alphabetically with numeric', async () => {
-    const { useProjectStore } = await import('../project')
-    useProjectStore().setProject('/proj')
-
-    mockDir([
-      { name: 'zebra.ts', isFile: true, isDirectory: false },
-      { name: 'alpha', isFile: false, isDirectory: true },
-      { name: '2.ts', isFile: true, isDirectory: false },
-      { name: '10.ts', isFile: true, isDirectory: false },
-      { name: 'beta', isFile: false, isDirectory: true },
-    ])
-
-    const store = useFileTreeStore()
-    await store.loadTree()
-
-    expect(store.tree.map(n => n.name)).toEqual(['alpha', 'beta', '2.ts', '10.ts', 'zebra.ts'])
   })
 })

@@ -14,9 +14,6 @@ import {
 } from '@/db/database'
 
 // Mock the SQL plugin before any imports
-const mockSelect = vi.fn().mockResolvedValue([])
-const mockExecute = vi.fn().mockResolvedValue({})
-
 vi.mock('@tauri-apps/plugin-sql', () => {
   const mockDb = {
     select: vi.fn().mockResolvedValue([]),
@@ -142,7 +139,7 @@ describe('database', () => {
       { id: 'b', title: 'B', created_at: 3, updated_at: 4, msg_count: 2 },
     ]
     const db = await getDb()
-    db.select.mockResolvedValueOnce(rows)
+    vi.mocked(db.select).mockResolvedValueOnce(rows)
 
     const result = await dbListConversations()
 
@@ -155,7 +152,7 @@ describe('database', () => {
 
   it('passes custom limit and offset', async () => {
     const db = await getDb()
-    db.select.mockResolvedValueOnce([])
+    vi.mocked(db.select).mockResolvedValueOnce([])
 
     await dbListConversations(10, 20)
 
@@ -170,7 +167,7 @@ describe('database', () => {
   it('searches using FTS5 with wildcard and strips special chars', async () => {
     const results = [{ id: 'a', title: 'About cats', created_at: 1, updated_at: 2, msg_count: 1 }]
     const db = await getDb()
-    db.select.mockResolvedValueOnce(results)
+    vi.mocked(db.select).mockResolvedValueOnce(results)
 
     const found = await dbSearchConversations('cats', 20)
 
@@ -183,7 +180,7 @@ describe('database', () => {
 
   it('escapes double quotes and asterisks from query', async () => {
     const db = await getDb()
-    db.select.mockResolvedValueOnce([])
+    vi.mocked(db.select).mockResolvedValueOnce([])
 
     await dbSearchConversations('he"llo*')
 
@@ -201,7 +198,7 @@ describe('database', () => {
       { id: 'm2', conversation_id: 'conv-1', role: 'assistant', content: 'Hey', created_at: 200 },
     ]
     const db = await getDb()
-    db.select.mockResolvedValueOnce(msgs)
+    vi.mocked(db.select).mockResolvedValueOnce(msgs)
 
     const result = await dbLoadMessages('conv-1')
 

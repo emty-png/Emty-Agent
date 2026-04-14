@@ -75,7 +75,7 @@ describe('fileContent component', () => {
     store.loadingFile = false
     store.error = null
 
-    const wrapper = mount(FileContent)
+    mount(FileContent)
     await flushPromises()
 
     expect(highlighter.getHighlighter).toHaveBeenCalled()
