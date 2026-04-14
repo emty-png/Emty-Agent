@@ -52,6 +52,7 @@ async function pickProject() {
   try {
     const selected = await open({
       directory: true,
+      recursive: true,
       multiple: false,
       title: 'Open project folder',
     })
