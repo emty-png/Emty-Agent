@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
-import { FolderOpen, Minus, Square, X, Copy } from 'lucide-vue-next'
+import { Copy, FolderOpen, Minus, Square, X } from 'lucide-vue-next'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useProjectStore } from '@/stores/project'
 
