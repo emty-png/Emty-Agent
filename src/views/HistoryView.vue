@@ -59,7 +59,9 @@ function openMenu(e: MouseEvent, id: string) {
   menuPos.value = { x, y }
 }
 
-function closeMenu() { menuOpen.value = null }
+function closeMenu() {
+  menuOpen.value = null
+}
 
 // ── rename ────────────────────────────────────────────────────────────────────
 const renamingId = ref<string | null>(null)
@@ -80,7 +82,9 @@ async function commitRename(id: string) {
   renamingId.value = null
 }
 
-function cancelRename() { renamingId.value = null }
+function cancelRename() {
+  renamingId.value = null
+}
 
 // ── delete ────────────────────────────────────────────────────────────────────
 const confirmDeleteId = ref<string | null>(null)
@@ -198,7 +202,11 @@ function relativeTime(ts: number): string {
 
         <!-- load more spinner -->
         <div v-if="loading" class="list-loading">
-          <span class="loading-dots"><span /><span /><span /></span>
+          <span class="loading-dots">
+            <span />
+            <span />
+            <span />
+          </span>
         </div>
       </template>
     </div>
@@ -211,10 +219,7 @@ function relativeTime(ts: number): string {
         :style="{ top: `${menuPos.y}px`, left: `${menuPos.x}px` }"
         @click.stop
       >
-        <button
-          class="ctx-item"
-          @click="startRename(conversations.find(c => c.id === menuOpen)!)"
-        >
+        <button class="ctx-item" @click="startRename(conversations.find(c => c.id === menuOpen)!)">
           <Pencil :size="13" :stroke-width="1.8" />
           Rename
         </button>
@@ -240,8 +245,8 @@ function relativeTime(ts: number): string {
             Delete conversation?
           </h2>
           <p class="dialog-body">
-            This will permanently delete the conversation and all its messages.
-            This cannot be undone.
+            This will permanently delete the conversation and all its messages. This cannot be
+            undone.
           </p>
           <div class="dialog-actions">
             <button class="dialog-btn dialog-btn--cancel" @click="confirmDeleteId = null">

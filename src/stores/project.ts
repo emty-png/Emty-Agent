@@ -10,7 +10,12 @@ export const useProjectStore = defineStore(
     const projectName = computed(() => {
       if (!projectPath.value)
         return null
-      return projectPath.value.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? null
+      return (
+        projectPath.value
+          .replace(/[/\\]+$/, '')
+          .split(/[/\\]/)
+          .pop() ?? null
+      )
     })
 
     function setProject(path: string) {

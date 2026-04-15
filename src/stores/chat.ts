@@ -33,9 +33,7 @@ export const useChatStore = defineStore('chat', () => {
   const tabs = ref<ChatTab[]>([newTab()])
   const activeId = ref(tabs.value[0]!.id)
 
-  const activeTab = computed(
-    () => tabs.value.find(t => t.id === activeId.value) ?? tabs.value[0]!,
-  )
+  const activeTab = computed(() => tabs.value.find(t => t.id === activeId.value) ?? tabs.value[0]!)
 
   function addTab(): void {
     if (tabs.value.length >= 9)
@@ -100,19 +98,42 @@ export const useChatStore = defineStore('chat', () => {
       tab.conversationId = convId
       tab.title = title
       const { useHistoryStore } = await import('./history')
-      useHistoryStore().prepend({ id: convId, title, created_at: now, updated_at: now, msg_count: 0 })
+      useHistoryStore().prepend({
+        id: convId,
+        title,
+        created_at: now,
+        updated_at: now,
+        msg_count: 0,
+      })
     }
 
     const userMsg: Message = { id: makeId(), role: 'user', content: text, timestamp: new Date(now) }
-    await dbInsertMessage({ id: userMsg.id, conversation_id: tab.conversationId!, role: 'user', content: text, created_at: now })
+    await dbInsertMessage({
+      id: userMsg.id,
+      conversation_id: tab.conversationId!,
+      role: 'user',
+      content: text,
+      created_at: now,
+    })
     await dbTouchConversation(tab.conversationId!)
     tab.messages.push(userMsg)
 
     const assistantId = makeId()
     setTimeout(async () => {
-      const assistantMsg: Message = { id: assistantId, role: 'assistant', content: '...', timestamp: new Date() }
+      const assistantMsg: Message = {
+        id: assistantId,
+        role: 'assistant',
+        content: '...',
+        timestamp: new Date(),
+      }
       if (tab.conversationId) {
-        await dbInsertMessage({ id: assistantId, conversation_id: tab.conversationId, role: 'assistant', content: '...', created_at: Date.now() })
+        await dbInsertMessage({
+          id: assistantId,
+          conversation_id: tab.conversationId,
+          role: 'assistant',
+          content: '...',
+          created_at: Date.now(),
+        })
         await dbTouchConversation(tab.conversationId)
       }
       tab.messages.push(assistantMsg)

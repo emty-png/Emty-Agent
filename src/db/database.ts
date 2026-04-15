@@ -73,29 +73,33 @@ const MIGRATIONS: string[] = [
 ]
 
 async function migrate(instance: Database): Promise<void> {
-  const rows = await instance.select<{ version: number }[]>(
-    'SELECT version FROM schema_version LIMIT 1',
-  ).catch(() => [] as { version: number }[])
+  const rows = await instance
+    .select<{ version: number }[]>('SELECT version FROM schema_version LIMIT 1')
+    .catch(() => [] as { version: number }[])
 
   const current = rows[0]?.version ?? 0
 
   // Ensure created_at exists in messages table for existing databases
   // that were created before the column was added to the schema
-  const msgsInfo = await instance.select<{ name: string }[]>(
-    'PRAGMA table_info(messages)',
-  ).catch(() => [])
+  const msgsInfo = await instance
+    .select<{ name: string }[]>('PRAGMA table_info(messages)')
+    .catch(() => [])
   if (msgsInfo.length > 0 && !msgsInfo.some(c => c.name === 'created_at')) {
     await instance.execute('ALTER TABLE messages ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0')
   }
 
-  const convsInfo = await instance.select<{ name: string }[]>(
-    'PRAGMA table_info(conversations)',
-  ).catch(() => [])
+  const convsInfo = await instance
+    .select<{ name: string }[]>('PRAGMA table_info(conversations)')
+    .catch(() => [])
   if (convsInfo.length > 0 && !convsInfo.some(c => c.name === 'created_at')) {
-    await instance.execute('ALTER TABLE conversations ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0')
+    await instance.execute(
+      'ALTER TABLE conversations ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0',
+    )
   }
   if (convsInfo.length > 0 && !convsInfo.some(c => c.name === 'updated_at')) {
-    await instance.execute('ALTER TABLE conversations ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0')
+    await instance.execute(
+      'ALTER TABLE conversations ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0',
+    )
   }
 
   if (current >= MIGRATIONS.length)
@@ -105,10 +109,9 @@ async function migrate(instance: Database): Promise<void> {
     await instance.execute(MIGRATIONS[i]!)
   }
 
-  await instance.execute(
-    'INSERT OR REPLACE INTO schema_version (version) VALUES (?)',
-    [MIGRATIONS.length],
-  )
+  await instance.execute('INSERT OR REPLACE INTO schema_version (version) VALUES (?)', [
+    MIGRATIONS.length,
+  ])
 }
 
 // ── typed query helpers ───────────────────────────────────────────────────────
@@ -139,15 +142,13 @@ export async function dbInsertConversation(
   )
 }
 
-export async function dbUpdateConversationTitle(
-  id: string,
-  title: string,
-): Promise<void> {
+export async function dbUpdateConversationTitle(id: string, title: string): Promise<void> {
   const d = await getDb()
-  await d.execute(
-    'UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?',
-    [title, Date.now(), id],
-  )
+  await d.execute('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?', [
+    title,
+    Date.now(),
+    id,
+  ])
 }
 
 export async function dbTouchConversation(id: string): Promise<void> {
@@ -175,10 +176,7 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
   )
 }
 
-export async function dbListConversations(
-  limit = 50,
-  offset = 0,
-): Promise<ConversationRow[]> {
+export async function dbListConversations(limit = 50, offset = 0): Promise<ConversationRow[]> {
   const d = await getDb()
   return d.select<ConversationRow[]>(
     'SELECT * FROM conversations ORDER BY updated_at DESC LIMIT ? OFFSET ?',
@@ -186,10 +184,7 @@ export async function dbListConversations(
   )
 }
 
-export async function dbSearchConversations(
-  query: string,
-  limit = 50,
-): Promise<ConversationRow[]> {
+export async function dbSearchConversations(query: string, limit = 50): Promise<ConversationRow[]> {
   const d = await getDb()
   // FTS5 with rank ordering; escape special chars
   const safe = query.replace(/["*]/g, '')
@@ -202,9 +197,7 @@ export async function dbSearchConversations(
   )
 }
 
-export async function dbLoadMessages(
-  conversationId: string,
-): Promise<MessageRow[]> {
+export async function dbLoadMessages(conversationId: string): Promise<MessageRow[]> {
   const d = await getDb()
   return d.select<MessageRow[]>(
     'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC',

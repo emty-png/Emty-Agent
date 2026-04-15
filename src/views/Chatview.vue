@@ -37,7 +37,8 @@ function formatTime(date: Date) {
         <button
           v-for="tab in tabs"
           :key="tab.id"
-          class="tab" :class="[{ 'tab--active': tab.id === activeId }]"
+          class="tab"
+          :class="[{ 'tab--active': tab.id === activeId }]"
           @click="activeId = tab.id"
         >
           <span class="tab-title">{{ tab.title }}</span>
@@ -86,7 +87,8 @@ function formatTime(date: Date) {
               <div
                 v-for="msg in activeTab.messages"
                 :key="msg.id"
-                class="msg-row" :class="[`msg-row--${msg.role}`]"
+                class="msg-row"
+                :class="[`msg-row--${msg.role}`]"
               >
                 <!-- assistant avatar -->
                 <div v-if="msg.role === 'assistant'" class="avatar">
@@ -97,7 +99,9 @@ function formatTime(date: Date) {
                   <div class="bubble" :class="[`bubble--${msg.role}`]">
                     <template v-if="msg.content === '...'">
                       <div class="typing">
-                        <span /><span /><span />
+                        <span />
+                        <span />
+                        <span />
                       </div>
                     </template>
                     <template v-else>

@@ -2,7 +2,6 @@ import type { ConversationRow } from '@/db/database'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
-
   dbDeleteConversation,
   dbListConversations,
   dbLoadMessages,

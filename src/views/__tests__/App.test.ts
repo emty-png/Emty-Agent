@@ -45,7 +45,7 @@ describe('app component', () => {
   it('switches to HistoryView when activeView changes', async () => {
     const wrapper = mount(App)
     // Get the component instance to change activeView
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as { activeView: string }
     vm.activeView = 'history'
     await wrapper.vm.$nextTick()
 
@@ -55,7 +55,7 @@ describe('app component', () => {
 
   it('switches to ProjectView when activeView changes', async () => {
     const wrapper = mount(App)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as { activeView: string }
     vm.activeView = 'projects'
     await wrapper.vm.$nextTick()
 
@@ -65,7 +65,7 @@ describe('app component', () => {
 
   it('switches back to chat from history', async () => {
     const wrapper = mount(App)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as { activeView: string }
     vm.activeView = 'history'
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.history-root').exists()).toBe(true)
@@ -86,7 +86,7 @@ describe('app component', () => {
 
   it('has activeView reactive state', () => {
     const wrapper = mount(App)
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as { activeView: string }
     expect(vm.activeView).toBe('chat')
   })
 })

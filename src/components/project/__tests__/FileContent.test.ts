@@ -66,7 +66,9 @@ describe('fileContent component', () => {
     const mockHighlighter = {
       codeToHtml: vi.fn(() => '<pre class="shiki"><code>const x = 1</code></pre>'),
     }
-    vi.mocked(highlighter.getHighlighter).mockResolvedValue(mockHighlighter as any)
+    vi.mocked(highlighter.getHighlighter).mockResolvedValue(
+      mockHighlighter as unknown as Awaited<ReturnType<typeof highlighter.getHighlighter>>,
+    )
 
     const { useFileTreeStore } = await import('@/stores/fileTree')
     const store = useFileTreeStore()
@@ -89,7 +91,9 @@ describe('fileContent component', () => {
     const mockHighlighter = {
       codeToHtml: vi.fn(() => '<pre class="shiki"><code>const x = 1</code></pre>'),
     }
-    vi.mocked(highlighter.getHighlighter).mockResolvedValue(mockHighlighter as any)
+    vi.mocked(highlighter.getHighlighter).mockResolvedValue(
+      mockHighlighter as unknown as Awaited<ReturnType<typeof highlighter.getHighlighter>>,
+    )
 
     const { useFileTreeStore } = await import('@/stores/fileTree')
     const store = useFileTreeStore()
@@ -126,7 +130,9 @@ describe('fileContent component', () => {
     const mockHighlighter = {
       codeToHtml: vi.fn(() => '<pre class="shiki"><code>content</code></pre>'),
     }
-    vi.mocked(highlighter.getHighlighter).mockResolvedValue(mockHighlighter as any)
+    vi.mocked(highlighter.getHighlighter).mockResolvedValue(
+      mockHighlighter as unknown as Awaited<ReturnType<typeof highlighter.getHighlighter>>,
+    )
 
     const { useFileTreeStore } = await import('@/stores/fileTree')
     const store = useFileTreeStore()

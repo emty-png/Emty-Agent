@@ -63,10 +63,12 @@ describe('database', () => {
     await dbInsertConversation(conv)
 
     const db = await getDb()
-    expect(db.execute).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO conversations'),
-      [conv.id, conv.title, conv.created_at, conv.updated_at],
-    )
+    expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO conversations'), [
+      conv.id,
+      conv.title,
+      conv.created_at,
+      conv.updated_at,
+    ])
   })
 
   // ── dbUpdateConversationTitle ───────────────────────────────────────────────
@@ -93,10 +95,10 @@ describe('database', () => {
     await dbTouchConversation('conv-1')
 
     const db = await getDb()
-    expect(db.execute).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE conversations'),
-      [now, 'conv-1'],
-    )
+    expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('UPDATE conversations'), [
+      now,
+      'conv-1',
+    ])
   })
 
   // ── dbDeleteConversation ────────────────────────────────────────────────────
@@ -105,10 +107,7 @@ describe('database', () => {
     await dbDeleteConversation('conv-1')
 
     const db = await getDb()
-    expect(db.execute).toHaveBeenCalledWith(
-      'DELETE FROM conversations WHERE id = ?',
-      ['conv-1'],
-    )
+    expect(db.execute).toHaveBeenCalledWith('DELETE FROM conversations WHERE id = ?', ['conv-1'])
   })
 
   // ── dbInsertMessage ─────────────────────────────────────────────────────────
@@ -125,10 +124,13 @@ describe('database', () => {
     await dbInsertMessage(msg)
 
     const db = await getDb()
-    expect(db.execute).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO messages'),
-      [msg.id, msg.conversation_id, msg.role, msg.content, msg.created_at],
-    )
+    expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO messages'), [
+      msg.id,
+      msg.conversation_id,
+      msg.role,
+      msg.content,
+      msg.created_at,
+    ])
   })
 
   // ── dbListConversations ─────────────────────────────────────────────────────
@@ -156,10 +158,7 @@ describe('database', () => {
 
     await dbListConversations(10, 20)
 
-    expect(db.select).toHaveBeenCalledWith(
-      expect.any(String),
-      [10, 20],
-    )
+    expect(db.select).toHaveBeenCalledWith(expect.any(String), [10, 20])
   })
 
   // ── dbSearchConversations ───────────────────────────────────────────────────
@@ -171,10 +170,10 @@ describe('database', () => {
 
     const found = await dbSearchConversations('cats', 20)
 
-    expect(db.select).toHaveBeenCalledWith(
-      expect.stringContaining('conversations_fts MATCH ?'),
-      ['cats*', 20],
-    )
+    expect(db.select).toHaveBeenCalledWith(expect.stringContaining('conversations_fts MATCH ?'), [
+      'cats*',
+      20,
+    ])
     expect(found).toEqual(results)
   })
 
@@ -184,10 +183,7 @@ describe('database', () => {
 
     await dbSearchConversations('he"llo*')
 
-    expect(db.select).toHaveBeenCalledWith(
-      expect.any(String),
-      ['hello*', 50],
-    )
+    expect(db.select).toHaveBeenCalledWith(expect.any(String), ['hello*', 50])
   })
 
   // ── dbLoadMessages ──────────────────────────────────────────────────────────
@@ -202,10 +198,9 @@ describe('database', () => {
 
     const result = await dbLoadMessages('conv-1')
 
-    expect(db.select).toHaveBeenCalledWith(
-      expect.stringContaining('WHERE conversation_id = ?'),
-      ['conv-1'],
-    )
+    expect(db.select).toHaveBeenCalledWith(expect.stringContaining('WHERE conversation_id = ?'), [
+      'conv-1',
+    ])
     expect(result).toEqual(msgs)
   })
 })

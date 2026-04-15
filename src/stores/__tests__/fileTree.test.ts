@@ -80,7 +80,9 @@ describe('fileTree store', () => {
 
     let resolveFn: (v: DirEntry[]) => void
     vi.mocked(fs.readDir).mockReturnValueOnce(
-      new Promise(resolve => { resolveFn = resolve }),
+      new Promise(resolve => {
+        resolveFn = resolve
+      }),
     )
 
     const store = useFileTreeStore()
@@ -152,14 +154,29 @@ describe('fileTree store', () => {
 
   it('does nothing for files', async () => {
     const store = useFileTreeStore()
-    const file = { name: 'x.ts', path: '/x.ts', isDir: false, depth: 0, expanded: false, loading: false }
+    const file = {
+      name: 'x.ts',
+      path: '/x.ts',
+      isDir: false,
+      depth: 0,
+      expanded: false,
+      loading: false,
+    }
     await store.toggleDir(file)
     expect(file.expanded).toBe(false)
   })
 
   it('collapses an expanded directory', async () => {
     const store = useFileTreeStore()
-    const dir = { name: 'src', path: '/src', isDir: true, depth: 0, expanded: true, loading: false, children: [] }
+    const dir = {
+      name: 'src',
+      path: '/src',
+      isDir: true,
+      depth: 0,
+      expanded: true,
+      loading: false,
+      children: [],
+    }
     await store.toggleDir(dir)
     expect(dir.expanded).toBe(false)
   })
@@ -170,7 +187,14 @@ describe('fileTree store', () => {
     vi.mocked(fs.readTextFile).mockResolvedValueOnce('export const x = 1')
 
     const store = useFileTreeStore()
-    const file = { name: 'x.ts', path: '/x.ts', isDir: false, depth: 0, expanded: false, loading: false }
+    const file = {
+      name: 'x.ts',
+      path: '/x.ts',
+      isDir: false,
+      depth: 0,
+      expanded: false,
+      loading: false,
+    }
     await store.selectFile(file)
 
     expect(fs.readTextFile).toHaveBeenCalledWith('/x.ts')
@@ -183,19 +207,31 @@ describe('fileTree store', () => {
     const store = useFileTreeStore()
     store.selectedPath = '/x.ts'
 
-    const file = { name: 'x.ts', path: '/x.ts', isDir: false, depth: 0, expanded: false, loading: false }
+    const file = {
+      name: 'x.ts',
+      path: '/x.ts',
+      isDir: false,
+      depth: 0,
+      expanded: false,
+      loading: false,
+    }
     await store.selectFile(file)
 
     expect(fs.readTextFile).not.toHaveBeenCalled()
   })
 
   it('toggles directory when selecting a dir', async () => {
-    mockDir([
-      { name: 'child.ts', isFile: true, isDirectory: false, isSymlink: false },
-    ])
+    mockDir([{ name: 'child.ts', isFile: true, isDirectory: false, isSymlink: false }])
 
     const store = useFileTreeStore()
-    const dir = { name: 'src', path: '/src', isDir: true, depth: 0, expanded: false, loading: false }
+    const dir = {
+      name: 'src',
+      path: '/src',
+      isDir: true,
+      depth: 0,
+      expanded: false,
+      loading: false,
+    }
     await store.selectFile(dir)
 
     expect(dir.expanded).toBe(true)
@@ -206,7 +242,14 @@ describe('fileTree store', () => {
     vi.mocked(fs.readTextFile).mockRejectedValueOnce(new Error('ENOENT'))
 
     const store = useFileTreeStore()
-    const file = { name: 'missing.ts', path: '/missing.ts', isDir: false, depth: 0, expanded: false, loading: false }
+    const file = {
+      name: 'missing.ts',
+      path: '/missing.ts',
+      isDir: false,
+      depth: 0,
+      expanded: false,
+      loading: false,
+    }
     await store.selectFile(file)
 
     expect(store.error).toBe('Error: ENOENT')
@@ -218,7 +261,9 @@ describe('fileTree store', () => {
 
   it('clears all state', () => {
     const store = useFileTreeStore()
-    store.tree = [{ name: 'x', path: '/x', isDir: false, depth: 0, expanded: false, loading: false }]
+    store.tree = [
+      { name: 'x', path: '/x', isDir: false, depth: 0, expanded: false, loading: false },
+    ]
     store.selectedPath = '/x'
     store.fileContent = 'content'
     store.error = 'err'

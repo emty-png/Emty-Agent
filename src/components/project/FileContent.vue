@@ -12,35 +12,36 @@ const { selectedPath, fileContent, loadingFile, error } = storeToRefs(ft)
 const highlighted = ref<string | null>(null)
 const highlighting = ref(false)
 
-watch([fileContent, selectedPath], async ([content, path]) => {
-  if (!content || !path) {
-    highlighted.value = null
-    return
-  }
+watch(
+  [fileContent, selectedPath],
+  async ([content, path]) => {
+    if (!content || !path) {
+      highlighted.value = null
+      return
+    }
 
-  highlighting.value = true
-  try {
-    const hl = await getHighlighter()
-    const lang = langFromPath(path)
-    highlighted.value = hl.codeToHtml(content, {
-      lang,
-      theme: 'ember-dark',
-    })
-  }
-  catch {
-    // fallback: wrap in pre as plain text
-    highlighted.value = `<pre>${escapeHtml(content)}</pre>`
-  }
-  finally {
-    highlighting.value = false
-  }
-}, { immediate: true })
+    highlighting.value = true
+    try {
+      const hl = await getHighlighter()
+      const lang = langFromPath(path)
+      highlighted.value = hl.codeToHtml(content, {
+        lang,
+        theme: 'ember-dark',
+      })
+    }
+    catch {
+      // fallback: wrap in pre as plain text
+      highlighted.value = `<pre>${escapeHtml(content)}</pre>`
+    }
+    finally {
+      highlighting.value = false
+    }
+  },
+  { immediate: true },
+)
 
 function escapeHtml(str: string) {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 // ── breadcrumb from path ──────────────────────────────────────────────────────
@@ -63,11 +64,7 @@ function breadcrumb(path: string): string[] {
     <template v-else-if="loadingFile || highlighting">
       <div class="content-header">
         <div class="breadcrumb">
-          <span
-            v-for="(part, i) in breadcrumb(selectedPath)"
-            :key="i"
-            class="breadcrumb-part"
-          >
+          <span v-for="(part, i) in breadcrumb(selectedPath)" :key="i" class="breadcrumb-part">
             <span v-if="i > 0" class="breadcrumb-sep">/</span>
             {{ part }}
           </span>

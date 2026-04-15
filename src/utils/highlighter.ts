@@ -58,12 +58,7 @@ const emberDark = {
 
     // ── strings ───────────────────────────────────────────────────────────────
     {
-      scope: [
-        'string',
-        'string.quoted',
-        'string.template',
-        'string.regexp',
-      ],
+      scope: ['string', 'string.quoted', 'string.template', 'string.regexp'],
       settings: { foreground: '#88be94' },
     },
     {
@@ -92,21 +87,13 @@ const emberDark = {
 
     // ── constants / enum members ──────────────────────────────────────────────
     {
-      scope: [
-        'constant',
-        'variable.other.constant',
-        'support.constant',
-      ],
+      scope: ['constant', 'variable.other.constant', 'support.constant'],
       settings: { foreground: '#d4aa68' },
     },
 
     // ── function names ─────────────────────────────────────────────────────────
     {
-      scope: [
-        'entity.name.function',
-        'meta.function-call.generic',
-        'support.function',
-      ],
+      scope: ['entity.name.function', 'meta.function-call.generic', 'support.function'],
       settings: { foreground: '#90cce0' },
     },
 
@@ -192,11 +179,7 @@ const emberDark = {
 
     // ── HTML / JSX / Vue tags ─────────────────────────────────────────────────
     {
-      scope: [
-        'entity.name.tag',
-        'meta.tag.sgml',
-        'markup.deleted.git_gutter',
-      ],
+      scope: ['entity.name.tag', 'meta.tag.sgml', 'markup.deleted.git_gutter'],
       settings: { foreground: '#f0a060' },
     },
     {
@@ -309,13 +292,15 @@ export async function getHighlighter(): Promise<Highlighter> {
   initPromise = createHighlighter({
     themes: [emberDark],
     langs: [...LANGS],
-  }).then(h => {
-    instance = h
-    return h
-  }).catch(err => {
-    initPromise = null
-    throw err
   })
+    .then(h => {
+      instance = h
+      return h
+    })
+    .catch(err => {
+      initPromise = null
+      throw err
+    })
 
   return initPromise
 }

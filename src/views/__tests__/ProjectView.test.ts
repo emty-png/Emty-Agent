@@ -1,7 +1,16 @@
+import type { ComponentPublicInstance } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProjectView from '../ProjectView.vue'
+
+type ProjectVm = ComponentPublicInstance & {
+  dragging: boolean
+  splitPercent: number
+  onDragStart: (e: MouseEvent) => void
+  onMouseMove: (e: MouseEvent) => void
+  onMouseUp: () => void
+}
 
 vi.mock('@/utils/highlighter', () => ({
   getHighlighter: vi.fn(),
@@ -83,12 +92,12 @@ describe('projectView component', () => {
     const wrapper = mount(ProjectView)
     await flushPromises()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as ProjectVm
     // Directly call the internal handlers to test logic
     vm.onDragStart({ preventDefault: () => {} } as MouseEvent)
     await wrapper.vm.$nextTick()
 
-    expect((wrapper.vm as any).dragging).toBe(true)
+    expect((wrapper.vm as unknown as ProjectVm).dragging).toBe(true)
 
     vm.onMouseMove({ clientX: 300 } as MouseEvent)
     await wrapper.vm.$nextTick()
@@ -107,7 +116,7 @@ describe('projectView component', () => {
     const wrapper = mount(ProjectView)
     await flushPromises()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as ProjectVm
     // Test the SPLIT_MIN/SPLIT_MAX constants are used by checking the logic
     // We can verify the refs exist
     expect(typeof vm.splitPercent).toBe('number')
@@ -121,7 +130,7 @@ describe('projectView component', () => {
     const wrapper = mount(ProjectView)
     await flushPromises()
 
-    const vm = wrapper.vm as any
+    const vm = wrapper.vm as unknown as ProjectVm
     vm.onDragStart({ preventDefault: () => {} } as MouseEvent)
     await wrapper.vm.$nextTick()
 

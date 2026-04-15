@@ -85,9 +85,7 @@ describe('history store', () => {
   it('appends on second load with correct offset', async () => {
     const page1 = [makeConv({ id: 'a' })]
     const page2 = [makeConv({ id: 'b' })]
-    vi.mocked(db.dbListConversations)
-      .mockResolvedValueOnce(page1)
-      .mockResolvedValueOnce(page2)
+    vi.mocked(db.dbListConversations).mockResolvedValueOnce(page1).mockResolvedValueOnce(page2)
 
     const store = useHistoryStore()
     await store.load()
@@ -143,7 +141,9 @@ describe('history store', () => {
   it('does not run concurrent loads', async () => {
     let resolveFn: (v: db.ConversationRow[]) => void
     vi.mocked(db.dbListConversations).mockReturnValue(
-      new Promise(resolve => { resolveFn = resolve }),
+      new Promise(resolve => {
+        resolveFn = resolve
+      }),
     )
 
     const store = useHistoryStore()
@@ -252,8 +252,20 @@ describe('history store', () => {
   it('loads messages and opens a conversation in a new tab', async () => {
     const conv = makeConv({ id: 'open1', title: 'Open Me' })
     const msgs = [
-      { id: 'm1', conversation_id: 'open1', role: 'user' as const, content: 'Hi', created_at: 1000 },
-      { id: 'm2', conversation_id: 'open1', role: 'assistant' as const, content: 'Hello', created_at: 2000 },
+      {
+        id: 'm1',
+        conversation_id: 'open1',
+        role: 'user' as const,
+        content: 'Hi',
+        created_at: 1000,
+      },
+      {
+        id: 'm2',
+        conversation_id: 'open1',
+        role: 'assistant' as const,
+        content: 'Hello',
+        created_at: 2000,
+      },
     ]
     vi.mocked(db.dbLoadMessages).mockResolvedValue(msgs)
 

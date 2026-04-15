@@ -43,11 +43,7 @@ const EXCLUDED_DIRS = new Set([
   '.vscode',
 ])
 
-const EXCLUDED_FILES = new Set([
-  '.DS_Store',
-  'Thumbs.db',
-  'desktop.ini',
-])
+const EXCLUDED_FILES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini'])
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortNodes(nodes: FileNode[]): FileNode[] {

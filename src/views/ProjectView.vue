@@ -80,10 +80,7 @@ onUnmounted(() => {
     <!-- ── split view ──────────────────────────────────────────────── -->
     <div v-else ref="containerRef" class="split" :class="{ 'split--dragging': dragging }">
       <!-- left: file tree -->
-      <div
-        class="split-panel split-panel--left"
-        :style="{ width: `${splitPercent}%` }"
-      >
+      <div class="split-panel split-panel--left" :style="{ width: `${splitPercent}%` }">
         <div class="panel-header">
           <span class="panel-title">{{ projectName }}</span>
         </div>

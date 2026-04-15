@@ -30,7 +30,9 @@ onMounted(async () => {
 onUnmounted(() => unlisten?.())
 
 // ── window controls ───────────────────────────────────────────────────────────
-async function minimize() { await appWindow.minimize() }
+async function minimize() {
+  await appWindow.minimize()
+}
 async function toggleMaximize() {
   if (await appWindow.isMaximized()) {
     await appWindow.unmaximize()
@@ -39,7 +41,9 @@ async function toggleMaximize() {
     await appWindow.maximize()
   }
 }
-async function close() { await appWindow.close() }
+async function close() {
+  await appWindow.close()
+}
 
 // ── project picker ────────────────────────────────────────────────────────────
 const picking = ref(false)
@@ -110,7 +114,7 @@ async function pickProject() {
 
       <!-- maximize / restore -->
       <button class="ctrl-btn" aria-label="Toggle maximise" @click.stop="toggleMaximize">
-        <Copy v-if="maximized" :size="13" :stroke-width="1.8" style="transform: rotate(90deg);" />
+        <Copy v-if="maximized" :size="13" :stroke-width="1.8" style="transform: rotate(90deg)" />
         <Square v-else :size="13" :stroke-width="1.8" />
       </button>
 

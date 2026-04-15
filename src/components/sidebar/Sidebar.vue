@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { FolderOpen, History, MessageSquare, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-vue-next'
+import {
+  FolderOpen,
+  History,
+  MessageSquare,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+} from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { useSidebarStore } from '@/stores/sidebar'
 
@@ -51,7 +58,9 @@ const { toggle } = sidebar
     <nav class="sidebar-nav">
       <button
         class="sidebar-btn"
-        :class="{ 'sidebar-btn--active': props.activeView !== 'projects' && props.activeView !== 'history' }"
+        :class="{
+          'sidebar-btn--active': props.activeView !== 'projects' && props.activeView !== 'history',
+        }"
         aria-label="Chat"
         @click="emit('selectView', 'chat')"
       >

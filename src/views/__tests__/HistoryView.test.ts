@@ -26,7 +26,15 @@ describe('historyView component', () => {
     vi.restoreAllMocks()
   })
 
-  function makeConv(overrides: Record<string, any> = {}) {
+  function makeConv(
+    overrides: Partial<{
+      id: string
+      title: string
+      created_at: number
+      updated_at: number
+      msg_count: number
+    }> = {},
+  ) {
     return {
       id: `c-${Math.random().toString(36).slice(2, 9)}`,
       title: 'Test Conversation',

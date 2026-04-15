@@ -20,7 +20,10 @@ const ft = useFileTreeStore()
 const { tree, selectedPath, loadingTree } = storeToRefs(ft)
 
 // ── file icon / color by extension ───────────────────────────────────────────
-interface FileStyle { icon: typeof File; color: string }
+interface FileStyle {
+  icon: typeof File
+  color: string
+}
 
 const EXT_STYLE: Record<string, FileStyle> = {
   // typescript / javascript
@@ -88,49 +91,62 @@ const FileTreeNode = defineComponent({
     const indent = { paddingLeft: `${node.depth * 14 + 8}px` }
     const isSelected = !node.isDir && node.path === selectedPath
 
-    const row = h('button', {
-      class: ['node-row', isSelected && 'node-row--selected'],
-      style: indent,
-      onClick: this.onClick,
-    }, [
-      // chevron (dir only)
-      node.isDir
-        ? h(ChevronRight, {
-            size: 12,
-            strokeWidth: 2,
-            class: ['node-chevron', node.expanded && 'node-chevron--open'],
-          })
-        : h('span', { class: 'node-chevron-spacer' }),
+    const row = h(
+      'button',
+      {
+        class: ['node-row', isSelected && 'node-row--selected'],
+        style: indent,
+        onClick: this.onClick,
+      },
+      [
+        // chevron (dir only)
+        node.isDir
+          ? h(ChevronRight, {
+              size: 12,
+              strokeWidth: 2,
+              class: ['node-chevron', node.expanded && 'node-chevron--open'],
+            })
+          : h('span', { class: 'node-chevron-spacer' }),
 
-      // icon
-      node.isDir
-        ? h(FolderIcon, { size: 13, strokeWidth: 1.6, class: 'node-folder-icon' })
-        : node.loading
-          ? h(Loader, { size: 13, strokeWidth: 1.6, class: 'spin node-file-icon', style: { color: '#504438' } })
-          : h(fs.icon, { size: 13, strokeWidth: 1.6, class: 'node-file-icon', style: { color: fs.color } }),
+        // icon
+        node.isDir
+          ? h(FolderIcon, { size: 13, strokeWidth: 1.6, class: 'node-folder-icon' })
+          : node.loading
+            ? h(Loader, {
+                size: 13,
+                strokeWidth: 1.6,
+                class: 'spin node-file-icon',
+                style: { color: '#504438' },
+              })
+            : h(fs.icon, {
+                size: 13,
+                strokeWidth: 1.6,
+                class: 'node-file-icon',
+                style: { color: fs.color },
+              }),
 
-      // label
-      h('span', { class: 'node-label' }, node.name),
+        // label
+        h('span', { class: 'node-label' }, node.name),
 
-      // loading spinner (dir expanding)
-      node.loading
-        ? h(Loader, { size: 11, strokeWidth: 2, class: 'spin node-loader' })
-        : null,
-    ])
+        // loading spinner (dir expanding)
+        node.loading ? h(Loader, { size: 11, strokeWidth: 2, class: 'spin node-loader' }) : null,
+      ],
+    )
 
     // children
-    const children = node.isDir && node.expanded && node.children
-      ? node.children.map(child =>
-          h(FileTreeNodeComp, {
-            key: child.path,
-            node: child,
-            selectedPath,
-            toggleDir: this.toggleDir,
-            selectFile: this.selectFile,
-            onSelect: () => this.$emit('select'),
-          }),
-        )
-      : []
+    const children
+      = node.isDir && node.expanded && node.children
+        ? node.children.map(child =>
+            h(FileTreeNodeComp, {
+              key: child.path,
+              node: child,
+              selectedPath,
+              toggleDir: this.toggleDir,
+              selectFile: this.selectFile,
+              onSelect: () => this.$emit('select'),
+            }),
+          )
+        : []
 
     return h('div', { class: 'node-wrap' }, [row, ...children])
   },

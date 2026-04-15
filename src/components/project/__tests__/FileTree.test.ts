@@ -44,8 +44,22 @@ describe('fileTree component', () => {
   it('renders file nodes with labels', () => {
     const store = useFileTreeStore()
     store.tree = [
-      { name: 'index.ts', path: '/index.ts', isDir: false, depth: 0, expanded: false, loading: false },
-      { name: 'package.json', path: '/package.json', isDir: false, depth: 0, expanded: false, loading: false },
+      {
+        name: 'index.ts',
+        path: '/index.ts',
+        isDir: false,
+        depth: 0,
+        expanded: false,
+        loading: false,
+      },
+      {
+        name: 'package.json',
+        path: '/package.json',
+        isDir: false,
+        depth: 0,
+        expanded: false,
+        loading: false,
+      },
     ]
 
     const wrapper = mount(FileTree)
@@ -69,7 +83,14 @@ describe('fileTree component', () => {
     const store = useFileTreeStore()
     store.selectedPath = '/index.ts'
     store.tree = [
-      { name: 'index.ts', path: '/index.ts', isDir: false, depth: 0, expanded: false, loading: false },
+      {
+        name: 'index.ts',
+        path: '/index.ts',
+        isDir: false,
+        depth: 0,
+        expanded: false,
+        loading: false,
+      },
     ]
 
     const wrapper = mount(FileTree)
@@ -80,7 +101,14 @@ describe('fileTree component', () => {
   it('applies depth-based indentation to nodes', () => {
     const store = useFileTreeStore()
     store.tree = [
-      { name: 'deep.ts', path: '/deep.ts', isDir: false, depth: 3, expanded: false, loading: false },
+      {
+        name: 'deep.ts',
+        path: '/deep.ts',
+        isDir: false,
+        depth: 3,
+        expanded: false,
+        loading: false,
+      },
     ]
 
     const wrapper = mount(FileTree)
@@ -111,7 +139,14 @@ describe('fileTree component', () => {
         expanded: true,
         loading: false,
         children: [
-          { name: 'index.ts', path: '/src/index.ts', isDir: false, depth: 1, expanded: false, loading: false },
+          {
+            name: 'index.ts',
+            path: '/src/index.ts',
+            isDir: false,
+            depth: 1,
+            expanded: false,
+            loading: false,
+          },
         ],
       },
     ]
