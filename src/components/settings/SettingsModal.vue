@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CompatibleProvider } from '@/stores/settings'
 import {
+  Brain,
   Check,
   ChevronRight,
   Loader,
@@ -16,6 +17,7 @@ import {
 import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { PROVIDER_PRESETS, useSettingsStore } from '@/stores/settings'
+import { PRESET_MDEV_IDS, providerIconUrl } from '@/utils/modelsdev'
 
 // ── props / emits ─────────────────────────────────────────────────────────────
 const emit = defineEmits<{ close: [] }>()
@@ -49,7 +51,9 @@ function submitAdd() {
     addError.value = 'Base URL is required'
     return
   }
-  s.addProvider({ name: newName.value.trim(), baseURL: newBaseURL.value.trim(), apiKey: newApiKey.value.trim() })
+  const name = newName.value.trim()
+  const mdevId = PRESET_MDEV_IDS[name] ?? name.toLowerCase().replace(/\s+/g, '')
+  s.addProvider({ name, baseURL: newBaseURL.value.trim(), apiKey: newApiKey.value.trim(), mdevId })
   newName.value = ''
   newBaseURL.value = ''
   newApiKey.value = ''
@@ -121,6 +125,38 @@ function applyPreset(preset: (typeof PROVIDER_PRESETS)[0]) {
 const visibleKeys = ref<Record<string, boolean>>({})
 const showAnthropicKey = ref(false)
 const showGoogleKey = ref(false)
+
+// ── provider icon helpers ─────────────────────────────────────────────────────
+// Eagerly import every SVG from src/assets/providers/ as a resolved URL.
+// Keys are absolute paths like '/src/assets/providers/groq.svg'.
+const _localIcons = import.meta.glob<string>(
+  '/src/assets/providers/*.svg',
+  { eager: true, query: '?url', import: 'default' },
+)
+
+/** Returns the local asset URL for a mdevId, or null if not bundled. */
+function localIconUrl(mdevId: string): string | null {
+  const key = `/src/assets/providers/${mdevId}.svg`
+  const url = _localIcons[key] ?? null
+  // Vite's ?url glob returns 'data:image/svg+xml,' for 0-byte files.
+  // We treat that as null so we can fall back to the CDN.
+  if (url === 'data:image/svg+xml,')
+    return null
+  return url
+}
+
+// Track which provider icons failed to load so we can show the Puzzle fallback.
+const failedIcons = ref(new Set<string>())
+
+function onIconError(providerId: string) {
+  failedIcons.value = new Set([...failedIcons.value, providerId])
+}
+
+function compatProviderIconUrl(p: CompatibleProvider): string | null {
+  if (!p.mdevId)
+    return null
+  return localIconUrl(p.mdevId) ?? providerIconUrl(p.mdevId)
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -452,8 +488,19 @@ function onKeydown(e: KeyboardEvent) {
               >
                 <div class="provider-card-header">
                   <div class="provider-info">
+                    <!-- ── provider icon: local asset → CDN fallback → Puzzle ── -->
                     <span class="provider-logo compat-logo">
-                      <Puzzle :size="12" :stroke-width="1.8" />
+                      <template v-if="compatProviderIconUrl(p) && !failedIcons.has(p.id)">
+                        <img
+                          :src="compatProviderIconUrl(p)!"
+                          width="18"
+                          height="18"
+                          class="provider-mdev-icon"
+                          :alt="p.name"
+                          @error="onIconError(p.id)"
+                        >
+                      </template>
+                      <Puzzle v-else :size="12" :stroke-width="1.8" />
                     </span>
                     <div>
                       <span class="provider-name">{{ p.name }}</span>
@@ -592,12 +639,30 @@ function onKeydown(e: KeyboardEvent) {
                     >
                       <div class="model-row-left">
                         <span class="model-row-name">{{ m.name }}</span>
-                        <span v-if="m.supportsThinking" class="model-thinking-badge">thinking</span>
+                        <!-- detected thinking badge -->
+                        <span v-if="m.supportsThinking" class="model-thinking-badge">
+                          thinking
+                        </span>
+                        <!-- user-forced thinking badge -->
+                        <span v-else-if="m.thinkingForced" class="model-thinking-badge model-thinking-badge--forced">
+                          think ✦
+                        </span>
                       </div>
 
                       <div class="model-row-right">
-                        <!-- thinking effort (only when enabled + supports it) -->
-                        <div v-if="m.enabled && m.supportsThinking" class="effort-seg">
+                        <!-- force-think toggle: only for models NOT auto-detected as reasoning -->
+                        <button
+                          v-if="m.enabled && !m.supportsThinking"
+                          class="force-think-btn"
+                          :class="{ 'force-think-btn--on': m.thinkingForced }"
+                          :title="m.thinkingForced ? 'Disable thinking' : 'Force enable thinking'"
+                          @click="s.forceModelThinking(m.uid, !m.thinkingForced)"
+                        >
+                          <Brain :size="12" :stroke-width="m.thinkingForced ? 2.2 : 1.6" />
+                        </button>
+
+                        <!-- thinking effort: show when enabled and thinking is active (detected OR forced) -->
+                        <div v-if="m.enabled && (m.supportsThinking || m.thinkingForced)" class="effort-seg">
                           <button
                             v-for="lvl in (['low', 'medium', 'high'] as const)"
                             :key="lvl"
@@ -830,6 +895,7 @@ function onKeydown(e: KeyboardEvent) {
   display: flex;
   align-items: center;
   gap: 10px;
+  position: relative;
 }
 
 .provider-logo {
@@ -848,9 +914,19 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .compat-logo {
-  background: var(--color-ember-glow);
-  color: var(--color-ember-text);
-  border: 1px solid var(--color-ember-dim);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-border-mid);
+}
+
+/* models.dev icon — rendered inside the compat-logo box */
+.provider-mdev-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  /* SVGs from models.dev are often dark; invert on dark backgrounds */
+  filter: brightness(0) invert(0.75);
 }
 
 .anthropic-logo {
@@ -1413,6 +1489,7 @@ function onKeydown(e: KeyboardEvent) {
   white-space: nowrap;
 }
 
+/* ── thinking badges ─────────────────────────────────────────────────────────── */
 .model-thinking-badge {
   font-size: 9.5px;
   font-weight: 700;
@@ -1426,11 +1503,51 @@ function onKeydown(e: KeyboardEvent) {
   flex-shrink: 0;
 }
 
+/* forced thinking badge — steel tint to distinguish from auto-detected */
+.model-thinking-badge--forced {
+  color: var(--color-steel-text);
+  background: #6aaec810;
+  border-color: #6aaec830;
+}
+
 .model-row-right {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+/* ── force-thinking button ───────────────────────────────────────────────────── */
+.force-think-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  border: 1px solid var(--color-border-mid);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition:
+    background 110ms ease,
+    color 110ms ease,
+    border-color 110ms ease;
+}
+
+.force-think-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+}
+
+.force-think-btn--on {
+  background: #6aaec810;
+  color: var(--color-steel-text);
+  border-color: #6aaec830;
+}
+
+.force-think-btn--on:hover {
+  background: #6aaec820;
+  border-color: #6aaec850;
 }
 
 /* ── thinking effort segmented control ───────────────────────────────────────── */

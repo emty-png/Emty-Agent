@@ -1,5 +1,14 @@
+import type { MDevData } from '@/utils/modelsdev'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import {
+  CORE_MDEV_IDS,
+  getModelsDevData,
+  isChatModel,
+  modelDisplayName,
+  PRESET_MDEV_IDS,
+  supportsReasoning,
+} from '@/utils/modelsdev'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +38,7 @@ export interface CompatibleProvider {
   name: string
   baseURL: string
   apiKey: string
+  mdevId?: string
   status: ConnectionStatus
   statusMessage: string
 }
@@ -39,8 +49,10 @@ export interface DiscoveredModel {
   name: string // formatted display name
   providerId: string // 'openai' | 'anthropic' | 'google' | compat.id
   providerName: string
+  mdevProviderId?: string
   enabled: boolean
-  supportsThinking: boolean
+  supportsThinking: boolean // detected via models.dev or heuristic
+  thinkingForced: boolean // user override — show thinking controls even when not detected
   thinkingEffort: ThinkingEffort
 }
 
@@ -136,34 +148,10 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 
 // ── model helpers ─────────────────────────────────────────────────────────────
 
-function formatModelName(rawId: string): string {
-  return rawId
-    .replace(/^models\//, '')
-    .replace(/-(\d{8})$/, '') // strip date suffixes like -20250514
-    .replace(/[-_]/g, ' ')
-    .replace(/\bgpt\b/gi, 'GPT')
-    .replace(/\bllm\b/gi, 'LLM')
-    .replace(/\bai\b/gi, 'AI')
-    .replace(/\b(\w)/g, (_, c: string) => c.toUpperCase())
-    .trim()
-}
-
-function detectSupportsThinking(providerId: string, modelId: string): boolean {
-  const id = modelId.toLowerCase().replace(/^models\//, '')
-  if (providerId === 'openai')
-    return /^o[134]/.test(id) || id.startsWith('o1-') || id.startsWith('o3') || id.startsWith('o4')
-  if (providerId === 'anthropic') {
-    return (
-      id.includes('3-7')
-      || id.includes('opus-4')
-      || id.includes('sonnet-4')
-      || id.includes('haiku-4-5')
-      || id.includes('haiku-4.5')
-    )
-  }
-  if (providerId === 'google')
-    return id.includes('2.5') || id.includes('gemini-3')
-  return false
+function resolveMdevId(providerId: string, providerName: string): string {
+  return CORE_MDEV_IDS[providerId]
+    ?? PRESET_MDEV_IDS[providerName]
+    ?? providerId
 }
 
 function mergeProviderModels(
@@ -171,21 +159,28 @@ function mergeProviderModels(
   providerId: string,
   providerName: string,
   rawModels: { id: string }[],
+  mdevData: MDevData,
+  mdevId: string,
 ): DiscoveredModel[] {
   const prevMap = new Map(existing.filter(m => m.providerId === providerId).map(m => [m.id, m]))
-  const updated: DiscoveredModel[] = rawModels.map(raw => {
-    const prev = prevMap.get(raw.id)
-    return {
-      uid: `${providerId}::${raw.id}`,
-      id: raw.id,
-      name: formatModelName(raw.id),
-      providerId,
-      providerName,
-      enabled: prev?.enabled ?? true,
-      supportsThinking: detectSupportsThinking(providerId, raw.id),
-      thinkingEffort: prev?.thinkingEffort ?? 'medium',
-    }
-  })
+  const updated: DiscoveredModel[] = rawModels
+    .filter(raw => isChatModel(mdevData, mdevId, raw.id))
+    .map(raw => {
+      const prev = prevMap.get(raw.id)
+      return {
+        uid: `${providerId}::${raw.id}`,
+        id: raw.id,
+        name: modelDisplayName(mdevData, mdevId, raw.id),
+        providerId,
+        providerName,
+        mdevProviderId: mdevId,
+        enabled: prev?.enabled ?? true,
+        supportsThinking: supportsReasoning(mdevData, mdevId, raw.id),
+        // preserve user override across refreshes
+        thinkingForced: prev?.thinkingForced ?? false,
+        thinkingEffort: prev?.thinkingEffort ?? 'medium',
+      }
+    })
   return [...existing.filter(m => m.providerId !== providerId), ...updated]
 }
 
@@ -269,16 +264,15 @@ async function fetchGoogle(apiKey: string): Promise<TestResult> {
   try {
     const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(8000) })
     if (res.ok) {
-      const data = (await res.json()) as { models?: { name: string }[] }
+      const data = (await res.json()) as {
+        models?: {
+          name: string
+          supportedGenerationMethods?: string[]
+        }[]
+      }
       // Flatten to { id } shape; keep only generateContent-capable models
       const rawModels = (data?.models ?? [])
-        .filter(
-          m =>
-            !m.name.includes('embedding')
-            && !m.name.includes('aqa')
-            && !m.name.includes('tts')
-            && !m.name.includes('vision'),
-        )
+        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
         .map(m => ({ id: m.name.replace(/^models\//, '') }))
       return { ok: true, message: `Connected — ${rawModels.length} models available`, rawModels }
     }
@@ -353,6 +347,18 @@ export const useSettingsStore = defineStore(
         m.thinkingEffort = effort
     }
 
+    /**
+     * Manually force-enable or disable thinking for a model that wasn't
+     * auto-detected as a reasoning model (e.g. a local Ollama model where
+     * the name doesn't match our heuristics, or a new model we don't know).
+     * The override is persisted across refreshes via thinkingForced.
+     */
+    function forceModelThinking(uid: string, forced: boolean): void {
+      const m = discoveredModels.value.find(x => x.uid === uid)
+      if (m)
+        m.thinkingForced = forced
+    }
+
     function setActiveModel(uid: string): void {
       activeModelUid.value = uid
     }
@@ -370,18 +376,26 @@ export const useSettingsStore = defineStore(
         openai.value.statusMessage = 'API key is required'
         return
       }
+      const mdevData = await getModelsDevData()
       openai.value.status = 'testing'
       openai.value.statusMessage = ''
       const r = await fetchOpenAI(openai.value.baseURL, openai.value.apiKey)
       openai.value.status = r.ok ? 'ok' : 'error'
-      openai.value.statusMessage = r.message
       if (r.ok) {
+        const mdevId = resolveMdevId('openai', 'OpenAI')
         discoveredModels.value = mergeProviderModels(
           discoveredModels.value,
           'openai',
           'OpenAI',
           r.rawModels,
+          mdevData,
+          mdevId,
         )
+        const count = discoveredModels.value.filter(m => m.providerId === 'openai').length
+        openai.value.statusMessage = `Connected — ${count} chat models`
+      }
+      else {
+        openai.value.statusMessage = r.message
       }
     }
     function resetOpenAIStatus(): void {
@@ -396,18 +410,26 @@ export const useSettingsStore = defineStore(
         anthropic.value.statusMessage = 'API key is required'
         return
       }
+      const mdevData = await getModelsDevData()
       anthropic.value.status = 'testing'
       anthropic.value.statusMessage = ''
       const r = await fetchAnthropic(anthropic.value.baseURL, anthropic.value.apiKey)
       anthropic.value.status = r.ok ? 'ok' : 'error'
-      anthropic.value.statusMessage = r.message
       if (r.ok) {
+        const mdevId = resolveMdevId('anthropic', 'Anthropic')
         discoveredModels.value = mergeProviderModels(
           discoveredModels.value,
           'anthropic',
           'Anthropic',
           r.rawModels,
+          mdevData,
+          mdevId,
         )
+        const count = discoveredModels.value.filter(m => m.providerId === 'anthropic').length
+        anthropic.value.statusMessage = `Connected — ${count} chat models`
+      }
+      else {
+        anthropic.value.statusMessage = r.message
       }
     }
     function resetAnthropicStatus(): void {
@@ -422,18 +444,26 @@ export const useSettingsStore = defineStore(
         google.value.statusMessage = 'API key is required'
         return
       }
+      const mdevData = await getModelsDevData()
       google.value.status = 'testing'
       google.value.statusMessage = ''
       const r = await fetchGoogle(google.value.apiKey)
       google.value.status = r.ok ? 'ok' : 'error'
-      google.value.statusMessage = r.message
       if (r.ok) {
+        const mdevId = resolveMdevId('google', 'Google Gemini')
         discoveredModels.value = mergeProviderModels(
           discoveredModels.value,
           'google',
           'Google Gemini',
           r.rawModels,
+          mdevData,
+          mdevId,
         )
+        const count = discoveredModels.value.filter(m => m.providerId === 'google').length
+        google.value.statusMessage = `Connected — ${count} chat models`
+      }
+      else {
+        google.value.statusMessage = r.message
       }
     }
     function resetGoogleStatus(): void {
@@ -442,7 +472,7 @@ export const useSettingsStore = defineStore(
     }
 
     // ── compatible providers ──────────────────────────────────────────────────
-    function addProvider(partial: Pick<CompatibleProvider, 'name' | 'baseURL' | 'apiKey'>): void {
+    function addProvider(partial: Pick<CompatibleProvider, 'name' | 'baseURL' | 'apiKey' | 'mdevId'>): void {
       compatibleProviders.value.push({
         id: makeId(),
         ...partial,
@@ -468,18 +498,26 @@ export const useSettingsStore = defineStore(
         }
         return
       }
+      const mdevData = await getModelsDevData()
       p.status = 'testing'
       p.statusMessage = ''
       const r = await fetchOpenAI(p.baseURL, p.apiKey)
       p.status = r.ok ? 'ok' : 'error'
-      p.statusMessage = r.message
       if (r.ok) {
+        const mdevId = p.mdevId ?? resolveMdevId(p.id, p.name)
         discoveredModels.value = mergeProviderModels(
           discoveredModels.value,
           p.id,
           p.name,
           r.rawModels,
+          mdevData,
+          mdevId,
         )
+        const count = discoveredModels.value.filter(m => m.providerId === p.id).length
+        p.statusMessage = `Connected — ${count} chat models`
+      }
+      else {
+        p.statusMessage = r.message
       }
     }
     function resetProviderStatus(id: string): void {
@@ -512,6 +550,7 @@ export const useSettingsStore = defineStore(
       enabledModels,
       toggleModel,
       setModelThinking,
+      forceModelThinking,
       setActiveModel,
       removeProviderModels,
     }
