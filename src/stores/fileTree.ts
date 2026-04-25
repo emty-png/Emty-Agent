@@ -45,6 +45,14 @@ const EXCLUDED_DIRS = new Set([
 
 const EXCLUDED_FILES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini'])
 
+const EXCLUDED_HIDDEN = new Set([
+  '.prettierrc',
+  '.eslintrc',
+  '.gitignore',
+  '.npmrc',
+  '.nvmrc',
+])
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 function sortNodes(nodes: FileNode[]): FileNode[] {
   return nodes.sort((a, b) => {
@@ -67,12 +75,8 @@ async function readLevel(dirPath: string, depth: number): Promise<FileNode[]> {
       continue
     if (entry.isFile && EXCLUDED_FILES.has(entry.name))
       continue
-    // skip hidden files except .env variants and common dot-configs
-    if (entry.name.startsWith('.') && !entry.name.startsWith('.env')) {
-      const allowed = new Set(['.prettierrc', '.eslintrc', '.gitignore', '.npmrc', '.nvmrc'])
-      if (!allowed.has(entry.name))
-        continue
-    }
+    if (entry.name.startsWith('.') && !EXCLUDED_HIDDEN.has(entry.name))
+      continue
 
     const fullPath = await join(dirPath, entry.name)
 

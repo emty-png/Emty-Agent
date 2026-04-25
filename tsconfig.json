@@ -2,41 +2,30 @@
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "preserve",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "useDefineForClassFields": true,
-    /* Path aliases */
-    "baseUrl": ".",
+
     "module": "ESNext",
-    /* Bundler mode */
     "moduleResolution": "bundler",
     "paths": {
-      "@/*": [
-        "src/*"
-      ]
+      "@/*": ["./src/*"]
     },
+
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
-    /* Strictness */
+
     "strict": true,
     "exactOptionalPropertyTypes": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    /* Output */
+
     "noEmit": true,
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "references": [
-    {
-      "path": "./tsconfig.node.json"
-    }
-  ],
+  "references": [{ "path": "./tsconfig.node.json" }],
   "include": [
     "src/**/*.ts",
     "src/**/*.d.ts",

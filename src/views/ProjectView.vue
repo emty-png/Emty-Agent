@@ -23,7 +23,7 @@ watch(projectPath, async (newPath, oldPath) => {
 // ── resizable split ───────────────────────────────────────────────────────────
 const SPLIT_MIN = 18 // %
 const SPLIT_MAX = 60 // %
-const SPLIT_DEFAULT = 38
+const SPLIT_DEFAULT = 30
 
 const splitPercent = ref(SPLIT_DEFAULT)
 const containerRef = ref<HTMLElement | null>(null)
@@ -130,7 +130,7 @@ onUnmounted(() => {
 
 .project-empty-icon {
   font-size: 32px;
-  color: var(--color-ember-dim);
+  color: var(--color-accent-dim);
   opacity: 0.5;
   margin-bottom: 4px;
   line-height: 1;
@@ -229,7 +229,7 @@ onUnmounted(() => {
 
 .split-handle:hover,
 .split-handle--active {
-  background: var(--color-ember-glow);
+  background: var(--color-accent-muted);
 }
 
 .split-handle-line {
@@ -241,6 +241,6 @@ onUnmounted(() => {
 
 .split-handle:hover .split-handle-line,
 .split-handle--active .split-handle-line {
-  background: var(--color-ember-dim);
+  background: var(--color-accent-dim);
 }
 </style>

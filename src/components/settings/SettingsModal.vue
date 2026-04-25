@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
 import type { CompatibleProvider } from '@/stores/settings'
 import {
-  Brain,
   Check,
   ChevronRight,
   Loader,
+  Palette,
   Plus,
   Puzzle,
   Search,
@@ -18,19 +19,21 @@ import { storeToRefs } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { PROVIDER_PRESETS, useSettingsStore } from '@/stores/settings'
 import { PRESET_MDEV_IDS, providerIconUrl } from '@/utils/modelsdev'
+import ThemeSwitcher from './ThemeSwitcher.vue'
 
 // ── props / emits ─────────────────────────────────────────────────────────────
 const emit = defineEmits<{ close: [] }>()
 
 const s = useSettingsStore()
-const { openai, anthropic, google, compatibleProviders } = storeToRefs(s)
+const { openai, anthropic, google, tavily, compatibleProviders } = storeToRefs(s)
 
 // ── navigation ────────────────────────────────────────────────────────────────
-type Section = 'general' | 'providers' | 'models'
+type Section = 'general' | 'theme' | 'providers' | 'models'
 const activeSection = ref<Section>('providers')
 
-const NAV: { id: Section; label: string; icon: typeof Settings }[] = [
+const NAV: { id: Section; label: string; icon: Component }[] = [
   { id: 'general', label: 'General', icon: Settings },
+  { id: 'theme', label: 'Theme', icon: Palette },
   { id: 'providers', label: 'Providers', icon: Puzzle },
   { id: 'models', label: 'Models', icon: Zap },
 ]
@@ -78,6 +81,7 @@ watch(() => openai.value.baseURL, () => s.resetOpenAIStatus())
 watch(() => anthropic.value.apiKey, () => s.resetAnthropicStatus())
 watch(() => anthropic.value.baseURL, () => s.resetAnthropicStatus())
 watch(() => google.value.apiKey, () => s.resetGoogleStatus())
+watch(() => tavily.value.apiKey, () => s.resetTavilyStatus())
 
 // ── models section ───────────────────────────────────────────────────────────
 const { discoveredModels } = storeToRefs(s)
@@ -125,6 +129,7 @@ function applyPreset(preset: (typeof PROVIDER_PRESETS)[0]) {
 const visibleKeys = ref<Record<string, boolean>>({})
 const showAnthropicKey = ref(false)
 const showGoogleKey = ref(false)
+const showTavilyKey = ref(false)
 
 // ── provider icon helpers ─────────────────────────────────────────────────────
 // Eagerly import every SVG from src/assets/providers/ as a resolved URL.
@@ -169,6 +174,15 @@ function onProviderInput(p: CompatibleProvider) {
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape')
     emit('close')
+}
+
+/** Format context limit for display (e.g. 128000 → "128K") */
+function formatContext(n: number): string {
+  if (n >= 1_000_000)
+    return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1000)
+    return `${Math.round(n / 1000)}K`
+  return String(n)
 }
 </script>
 
@@ -217,8 +231,25 @@ function onKeydown(e: KeyboardEvent) {
               <h2 class="section-title">
                 General
               </h2>
+
               <div class="placeholder-card">
                 <span class="placeholder-text">General settings coming soon</span>
+              </div>
+            </section>
+
+            <!-- ════════════════════════════════════
+                 THEME
+                 ════════════════════════════════════ -->
+            <section v-else-if="activeSection === 'theme'" class="content-section">
+              <h2 class="section-title">
+                Appearance
+              </h2>
+
+              <div class="field-group">
+                <label class="field-label">System Theme</label>
+                <div style="margin-top: 4px;">
+                  <ThemeSwitcher />
+                </div>
               </div>
             </section>
 
@@ -412,6 +443,61 @@ function onKeydown(e: KeyboardEvent) {
                 <div class="card-footer">
                   <button class="test-btn" :disabled="google.status === 'testing' || !google.apiKey.trim()" @click="s.testGoogle()">
                     <Loader v-if="google.status === 'testing'" :size="12" class="spin" />
+                    <Zap v-else :size="12" :stroke-width="2" />
+                    Test connection
+                  </button>
+                </div>
+              </div>
+
+              <!-- ── Tavily Search ─────────────────────────────────── -->
+              <div class="provider-card">
+                <div class="provider-card-header">
+                  <div class="provider-info">
+                    <span class="provider-logo tavily-logo">
+                      <!-- Tavily wordmark "T" -->
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+                      </svg>
+                    </span>
+                    <div>
+                      <span class="provider-name">Tavily Search</span>
+                      <span class="provider-url">api.tavily.com · web_search tool</span>
+                    </div>
+                  </div>
+
+                  <div v-if="tavily.status !== 'idle'" class="status-badge" :class="`status-badge--${tavily.status}`">
+                    <Loader v-if="tavily.status === 'testing'" :size="11" class="spin" />
+                    <Check v-else-if="tavily.status === 'ok'" :size="11" />
+                    <TriangleAlert v-else :size="11" />
+                    <span>{{ tavily.status === 'testing' ? 'Testing…' : tavily.statusMessage }}</span>
+                  </div>
+                </div>
+
+                <div class="field-group">
+                  <label class="field-label">API Key <span class="field-optional">from app.tavily.com</span></label>
+                  <div class="key-input-wrap">
+                    <input
+                      v-model="tavily.apiKey"
+                      :type="showTavilyKey ? 'text' : 'password'"
+                      class="field-input"
+                      placeholder="tvly-…"
+                      autocomplete="off"
+                      spellcheck="false"
+                    >
+                    <button class="key-toggle" @click="showTavilyKey = !showTavilyKey">
+                      {{ showTavilyKey ? 'Hide' : 'Show' }}
+                    </button>
+                  </div>
+                  <span class="field-hint">
+                    Free tier available at
+                    <a class="field-link" href="https://app.tavily.com" target="_blank">app.tavily.com</a>
+                    — 1 000 free searches/month
+                  </span>
+                </div>
+
+                <div class="card-footer">
+                  <button class="test-btn" :disabled="tavily.status === 'testing' || !tavily.apiKey.trim()" @click="s.testTavily()">
+                    <Loader v-if="tavily.status === 'testing'" :size="12" class="spin" />
                     <Zap v-else :size="12" :stroke-width="2" />
                     Test connection
                   </button>
@@ -639,30 +725,17 @@ function onKeydown(e: KeyboardEvent) {
                     >
                       <div class="model-row-left">
                         <span class="model-row-name">{{ m.name }}</span>
-                        <!-- detected thinking badge -->
-                        <span v-if="m.supportsThinking" class="model-thinking-badge">
-                          thinking
-                        </span>
-                        <!-- user-forced thinking badge -->
-                        <span v-else-if="m.thinkingForced" class="model-thinking-badge model-thinking-badge--forced">
-                          think ✦
-                        </span>
+                        <span v-if="m.supportsThinking" class="model-cap-badge model-cap-badge--thinking">thinking</span>
+                        <span v-if="m.supportsToolCalls" class="model-cap-badge model-cap-badge--tools">tools</span>
+                        <span v-if="m.supportsAttachments" class="model-cap-badge model-cap-badge--vision">vision</span>
+                        <span v-if="m.contextLimit" class="model-cap-badge model-cap-badge--context">{{ formatContext(m.contextLimit) }}</span>
                       </div>
 
                       <div class="model-row-right">
-                        <!-- force-think toggle: only for models NOT auto-detected as reasoning -->
-                        <button
-                          v-if="m.enabled && !m.supportsThinking"
-                          class="force-think-btn"
-                          :class="{ 'force-think-btn--on': m.thinkingForced }"
-                          :title="m.thinkingForced ? 'Disable thinking' : 'Force enable thinking'"
-                          @click="s.forceModelThinking(m.uid, !m.thinkingForced)"
-                        >
-                          <Brain :size="12" :stroke-width="m.thinkingForced ? 2.2 : 1.6" />
-                        </button>
+                        <!-- force-think removed: UI only shows auto-detected thinking -->
 
-                        <!-- thinking effort: show when enabled and thinking is active (detected OR forced) -->
-                        <div v-if="m.enabled && (m.supportsThinking || m.thinkingForced)" class="effort-seg">
+                        <!-- thinking effort: show when enabled and thinking is active (detected) -->
+                        <div v-if="m.enabled && m.supportsThinking" class="effort-seg">
                           <button
                             v-for="lvl in (['low', 'medium', 'high'] as const)"
                             :key="lvl"
@@ -822,13 +895,13 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .nav-item--active {
-  background: var(--color-ember-glow);
-  color: var(--color-ember-text);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-text);
 }
 
 .nav-item--active:hover {
-  background: var(--color-ember-glow);
-  color: var(--color-ember-text);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-text);
 }
 
 .nav-icon {
@@ -908,9 +981,9 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .openai-logo {
-  background: #10a37f18;
-  color: #10a37f;
-  border: 1px solid #10a37f30;
+  background: var(--color-openai-muted);
+  color: var(--color-openai);
+  border: 1px solid var(--color-openai-muted);
 }
 
 .compat-logo {
@@ -930,14 +1003,20 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .anthropic-logo {
-  background: #cc785218;
-  color: #cc7852;
-  border: 1px solid #cc785230;
+  background: var(--color-anthropic-muted);
+  color: var(--color-anthropic);
+  border: 1px solid var(--color-anthropic-muted);
 }
 
 .google-logo {
-  background: #4285f418;
-  border: 1px solid #4285f430;
+  background: var(--color-google-muted);
+  border: 1px solid var(--color-google-muted);
+}
+
+.tavily-logo {
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: var(--color-info-text);
+  border: 1px solid color-mix(in srgb, var(--color-info) 25%, transparent);
 }
 
 /* ── field hint / link ───────────────────────────────────────────────────────── */
@@ -948,13 +1027,13 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .field-link {
-  color: var(--color-steel-text);
+  color: var(--color-info-text);
   text-decoration: none;
   transition: color 120ms ease;
 }
 
 .field-link:hover {
-  color: var(--color-steel);
+  color: var(--color-info);
   text-decoration: underline;
 }
 
@@ -1003,15 +1082,15 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .status-badge--ok {
-  background: #5e946818;
-  color: var(--color-sage-text);
-  border: 1px solid #5e946830;
+  background: var(--color-success-muted);
+  color: var(--color-success-text);
+  border: 1px solid var(--color-success-muted);
 }
 
 .status-badge--error {
-  background: #a8505018;
-  color: var(--color-rose-text);
-  border: 1px solid #a8505030;
+  background: var(--color-danger-muted);
+  color: var(--color-danger-text);
+  border: 1px solid var(--color-danger-muted);
 }
 
 /* ── fields ──────────────────────────────────────────────────────────────────── */
@@ -1048,7 +1127,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .field-input:focus {
-  border-color: var(--color-ember-dim);
+  border-color: var(--color-accent-dim);
 }
 
 .field-input::placeholder {
@@ -1119,9 +1198,9 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .test-btn:hover:not(:disabled) {
-  background: var(--color-ember-glow);
-  color: var(--color-ember-text);
-  border-color: var(--color-ember-dim);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-text);
+  border-color: var(--color-accent-dim);
 }
 
 .test-btn:disabled {
@@ -1170,7 +1249,7 @@ function onKeydown(e: KeyboardEvent) {
 /* ── add form ────────────────────────────────────────────────────────────────── */
 .add-form {
   background: var(--color-bg-surface);
-  border: 1px solid var(--color-ember-dim);
+  border: 1px solid var(--color-accent-dim);
   border-radius: 10px;
   padding: 16px;
 }
@@ -1190,7 +1269,7 @@ function onKeydown(e: KeyboardEvent) {
 
 .add-error {
   font-size: 12px;
-  color: var(--color-rose-text);
+  color: var(--color-danger-text);
   margin-top: 6px;
 }
 
@@ -1224,10 +1303,10 @@ function onKeydown(e: KeyboardEvent) {
 .primary-btn {
   height: 30px;
   padding-inline: 16px;
-  border: 1px solid var(--color-ember-dim);
+  border: 1px solid var(--color-accent-dim);
   border-radius: 7px;
-  background: var(--color-ember-glow);
-  color: var(--color-ember-text);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-text);
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
@@ -1237,8 +1316,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .primary-btn:hover {
-  background: #e0783030;
-  border-color: var(--color-ember-base);
+  background: var(--color-accent-muted-plus);
+  border-color: var(--color-accent);
 }
 
 /* ── danger icon btn ─────────────────────────────────────────────────────────── */
@@ -1258,8 +1337,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .icon-danger-btn:hover {
-  background: #a8505020;
-  color: var(--color-rose-text);
+  background: var(--color-danger-muted);
+  color: var(--color-danger-text);
 }
 
 /* ── compatible empty ────────────────────────────────────────────────────────── */
@@ -1334,9 +1413,9 @@ function onKeydown(e: KeyboardEvent) {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--color-sage-text);
-  background: #5e946818;
-  border: 1px solid #5e946828;
+  color: var(--color-success-text);
+  background: var(--color-success-muted);
+  border: 1px solid var(--color-success-muted);
   border-radius: 3px;
   padding: 1px 4px;
 }
@@ -1489,25 +1568,35 @@ function onKeydown(e: KeyboardEvent) {
   white-space: nowrap;
 }
 
-/* ── thinking badges ─────────────────────────────────────────────────────────── */
-.model-thinking-badge {
-  font-size: 9.5px;
+/* ── capability badges ───────────────────────────────────────────────────────── */
+.model-cap-badge {
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--color-ember-text);
-  background: var(--color-ember-glow);
-  border: 1px solid var(--color-ember-dim);
   border-radius: 3px;
   padding: 1px 5px;
   flex-shrink: 0;
 }
-
-/* forced thinking badge — steel tint to distinguish from auto-detected */
-.model-thinking-badge--forced {
-  color: var(--color-steel-text);
-  background: #6aaec810;
-  border-color: #6aaec830;
+.model-cap-badge--thinking {
+  color: var(--color-accent-text);
+  background: var(--color-accent-muted);
+  border: 1px solid var(--color-accent-dim);
+}
+.model-cap-badge--tools {
+  color: var(--color-success-text);
+  background: var(--color-success-muted);
+  border: 1px solid var(--color-success-muted);
+}
+.model-cap-badge--vision {
+  color: var(--color-info-text);
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-info) 25%, transparent);
+}
+.model-cap-badge--context {
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-mid);
 }
 
 .model-row-right {
@@ -1517,38 +1606,7 @@ function onKeydown(e: KeyboardEvent) {
   flex-shrink: 0;
 }
 
-/* ── force-thinking button ───────────────────────────────────────────────────── */
-.force-think-btn {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 22px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: 5px;
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition:
-    background 110ms ease,
-    color 110ms ease,
-    border-color 110ms ease;
-}
-
-.force-think-btn:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-secondary);
-}
-
-.force-think-btn--on {
-  background: #6aaec810;
-  color: var(--color-steel-text);
-  border-color: #6aaec830;
-}
-
-.force-think-btn--on:hover {
-  background: #6aaec820;
-  border-color: #6aaec850;
-}
+/* force-thinking UI removed — related CSS deleted */
 
 /* ── thinking effort segmented control ───────────────────────────────────────── */
 .effort-seg {
@@ -1586,8 +1644,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .effort-btn--active {
-  background: var(--color-ember-glow);
-  color: var(--color-ember-text);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-text);
 }
 
 /* ── model toggle ────────────────────────────────────────────────────────────── */
@@ -1608,8 +1666,8 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .model-toggle--on {
-  background: var(--color-ember-dim);
-  border-color: var(--color-ember-base);
+  background: var(--color-accent-dim);
+  border-color: var(--color-accent);
 }
 
 .model-toggle-thumb {

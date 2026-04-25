@@ -1,5 +1,22 @@
 @import 'tailwindcss';
 
+/* ── Viewport Lock ─────────────────────────────────────────────────────── */
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--color-bg-base);
+  overscroll-behavior: none;
+}
+
+#app {
+  height: 100%;
+  width: 100%;
+}
+
 @theme {
   /* Backgrounds */
   --color-bg-base: #0c0a08;
@@ -8,36 +25,68 @@
   --color-bg-hover: #201a13;
   --color-bg-elevated: #27211a;
 
-  /* Ember — primary accent */
-  --color-ember-dim: #7a3d12;
-  --color-ember-base: #c8651f;
-  --color-ember-bright: #e07830;
-  --color-ember-text: #f0a060;
-  --color-ember-glow: #e078301f;
+  /* Accent — primary brand */
+  --color-accent-dim: #7a3d12;
+  --color-accent: #c8651f;
+  --color-accent-bright: #e07830;
+  --color-accent-text: #f0a060;
+  --color-accent-muted: #e078301f;
+  --color-accent-muted-plus: #e0783030;
 
-  /* Accent colors */
-  --color-gold: #a8843a;
-  --color-gold-text: #d4aa68;
-  --color-steel: #6aaec8;
-  --color-steel-text: #90cce0;
-  --color-sage: #5e9468;
-  --color-sage-text: #88be94;
-  --color-rose: #a85050;
-  --color-rose-text: #d88080;
+  /* Info — neutrals and secondary actions */
+  --color-info: #6aaec8;
+  --color-info-text: #90cce0;
+  --color-info-muted: #6aaec810;
+  --color-info-muted-plus: #6aaec820;
 
-  /* Text */
+  /* Success — positive feedback */
+  --color-success: #5e9468;
+  --color-success-text: #88be94;
+  --color-success-muted: #5e946818;
+
+  /* Warning — attention required */
+  --color-warning: #a8843a;
+  --color-warning-text: #d4aa68;
+
+  /* Danger — errors and destructive actions */
+  --color-danger: #a85050;
+  --color-danger-hover: #c06060;
+  --color-danger-text: #d88080;
+  --color-danger-muted: #a8505018;
+
+  /* Provider Brand Colors */
+  --color-openai: #10a37f;
+  --color-openai-glow: #10a37f18;
+  --color-anthropic: #cc7852;
+  --color-anthropic-glow: #cc785218;
+  --color-google: #4285f4;
+  --color-google-glow: #4285f418;
+
+  /* Text Typography */
   --color-text-primary: #ede5d8;
   --color-text-secondary: #a59688;
   --color-text-tertiary: #8a7868;
+  --color-text-dim: #504438;
   --color-code: #88c0d8;
 
-  /* Borders */
+  /* Borders & Dividers */
   --color-border-subtle: #1e1812;
   --color-border-mid: #2e2618;
   --color-border-bright: #443a28;
 
-  /* Hover states */
-  --color-rose-hover: #c06060;
+  /* Syntax Highlighting */
+  --color-syntax-base: var(--color-text-primary);
+  --color-syntax-comment: var(--color-text-dim);
+  --color-syntax-keyword: var(--color-accent-text);
+  --color-syntax-storage: var(--color-accent-bright);
+  --color-syntax-operator: var(--color-accent);
+  --color-syntax-string: var(--color-success-text);
+  --color-syntax-string-punct: var(--color-success);
+  --color-syntax-number: var(--color-warning-text);
+  --color-syntax-function: var(--color-info-text);
+  --color-syntax-type: var(--color-warning-text);
+  --color-syntax-generic: var(--color-danger-text);
+  --color-syntax-punct: var(--color-text-tertiary);
 
   /* Border radius */
   --radius-sm: 6px;
@@ -92,6 +141,7 @@ textarea:focus {
     transform: translateY(0);
     opacity: 0.4;
   }
+
   30% {
     transform: translateY(-4px);
     opacity: 1;
@@ -102,4 +152,166 @@ textarea:focus {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── Chat artifacts ───────────────────────────────────────────────────────── */
+.artifact-card {
+  width: 100%;
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-card);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.artifact-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.artifact-type {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-accent-text);
+}
+
+.artifact-title {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.artifact-subtitle,
+.artifact-description {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.artifact-graph,
+.artifact-showcase {
+  display: grid;
+  gap: 10px;
+}
+
+.artifact-graph {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.artifact-column,
+.artifact-section-card,
+.artifact-swatches {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  padding: 10px;
+}
+
+.artifact-section-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.artifact-list,
+.artifact-bullets {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.artifact-list-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.artifact-list-key {
+  color: var(--color-info-text);
+  font-weight: 600;
+}
+
+.artifact-list-value {
+  color: var(--color-text-secondary);
+}
+
+.artifact-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.artifact-section-description {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.artifact-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.artifact-swatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  padding: 7px 8px;
+}
+
+.artifact-swatch-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--color-accent-bright);
+  box-shadow: 0 0 0 1px var(--color-border-mid);
+  flex-shrink: 0;
+}
+
+.artifact-swatch-role {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.artifact-swatch-token {
+  margin-left: auto;
+  color: var(--color-info-text);
+  font-size: 11px;
+}
+
+.artifact-svg-wrap {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  padding: 10px;
+}
+
+.artifact-svg {
+  width: 100%;
+}
+
+.artifact-svg svg {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  display: block;
 }

@@ -24,15 +24,20 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-fs": "^2.4.5",
+    "@tauri-apps/plugin-http": "~2",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "^2.3.2",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-sql": "^2.4.0",
     "@tauri-apps/plugin-window-state": "~2",
     "ai": "^6.0.159",
     "lucide-vue-next": "^1.0.0",
+    "mermaid": "^11.14.0",
     "pinia": "^3.0.4",
     "pinia-plugin-persistedstate": "^4.7.1",
     "shiki": "^4.0.2",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^8.2.0",

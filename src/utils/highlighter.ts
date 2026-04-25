@@ -6,24 +6,24 @@ const emberDark = {
   name: 'ember-dark',
   type: 'dark' as const,
   colors: {
-    'editor.background': '#0c0a08',
-    'editor.foreground': '#ede5d8',
-    'editor.lineHighlightBackground': '#111009',
-    'editor.selectionBackground': '#e0783022',
-    'editorLineNumber.foreground': '#2e2618',
-    'editorLineNumber.activeForeground': '#504438',
+    'editor.background': 'var(--color-bg-base)',
+    'editor.foreground': 'var(--color-text-primary)',
+    'editor.lineHighlightBackground': 'var(--color-bg-surface)',
+    'editor.selectionBackground': 'var(--color-accent-muted-plus)',
+    'editorLineNumber.foreground': 'var(--color-border-mid)',
+    'editorLineNumber.activeForeground': 'var(--color-text-dim)',
   },
   tokenColors: [
     // ── base ──────────────────────────────────────────────────────────────────
     {
       scope: [''],
-      settings: { foreground: '#ede5d8' },
+      settings: { foreground: 'var(--color-syntax-base)' },
     },
 
     // ── comments ──────────────────────────────────────────────────────────────
     {
       scope: ['comment', 'punctuation.definition.comment'],
-      settings: { foreground: '#504438', fontStyle: 'italic' },
+      settings: { foreground: 'var(--color-syntax-comment)', fontStyle: 'italic' },
     },
 
     // ── keywords ──────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ const emberDark = {
         'keyword.operator.of',
         'storage.modifier',
       ],
-      settings: { foreground: '#f0a060' },
+      settings: { foreground: 'var(--color-syntax-keyword)' },
     },
 
     // ── storage types (class, function, var) ───────────────────────────────────
@@ -53,23 +53,23 @@ const emberDark = {
         'storage.type.enum',
         'storage.type.type',
       ],
-      settings: { foreground: '#e07830' },
+      settings: { foreground: 'var(--color-syntax-storage)' },
     },
 
     // ── strings ───────────────────────────────────────────────────────────────
     {
       scope: ['string', 'string.quoted', 'string.template', 'string.regexp'],
-      settings: { foreground: '#88be94' },
+      settings: { foreground: 'var(--color-syntax-string)' },
     },
     {
       scope: ['punctuation.definition.string'],
-      settings: { foreground: '#5e9468' },
+      settings: { foreground: 'var(--color-syntax-string-punct)' },
     },
 
     // ── template expression ───────────────────────────────────────────────────
     {
       scope: ['punctuation.definition.template-expression'],
-      settings: { foreground: '#c8651f' },
+      settings: { foreground: 'var(--color-syntax-operator)' },
     },
 
     // ── numbers / booleans / null ─────────────────────────────────────────────
@@ -82,19 +82,19 @@ const emberDark = {
         'constant.language.nan',
         'constant.language.infinity',
       ],
-      settings: { foreground: '#d4aa68' },
+      settings: { foreground: 'var(--color-syntax-number)' },
     },
 
     // ── constants / enum members ──────────────────────────────────────────────
     {
       scope: ['constant', 'variable.other.constant', 'support.constant'],
-      settings: { foreground: '#d4aa68' },
+      settings: { foreground: 'var(--color-syntax-number)' },
     },
 
     // ── function names ─────────────────────────────────────────────────────────
     {
       scope: ['entity.name.function', 'meta.function-call.generic', 'support.function'],
-      settings: { foreground: '#90cce0' },
+      settings: { foreground: 'var(--color-syntax-function)' },
     },
 
     // ── types / classes / interfaces ──────────────────────────────────────────
@@ -108,19 +108,19 @@ const emberDark = {
         'support.class',
         'support.type',
       ],
-      settings: { foreground: '#d4aa68' },
+      settings: { foreground: 'var(--color-syntax-type)' },
     },
 
     // ── type parameters / generics ────────────────────────────────────────────
     {
       scope: ['entity.name.type.type-parameter'],
-      settings: { foreground: '#d88080' },
+      settings: { foreground: 'var(--color-syntax-generic)' },
     },
 
     // ── decorators ────────────────────────────────────────────────────────────
     {
       scope: ['meta.decorator', 'entity.name.function.decorator'],
-      settings: { foreground: '#c8651f' },
+      settings: { foreground: 'var(--color-syntax-operator)' },
     },
 
     // ── operators ─────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ const emberDark = {
         'keyword.operator.spread',
         'keyword.operator.type',
       ],
-      settings: { foreground: '#c8651f' },
+      settings: { foreground: 'var(--color-syntax-operator)' },
     },
 
     // ── punctuation ───────────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ const emberDark = {
         'punctuation.accessor',
         'meta.brace',
       ],
-      settings: { foreground: '#8a7868' },
+      settings: { foreground: 'var(--color-syntax-punct)' },
     },
 
     // ── variables / parameters ────────────────────────────────────────────────
@@ -162,7 +162,7 @@ const emberDark = {
         'variable.parameter',
         'meta.parameter',
       ],
-      settings: { foreground: '#ede5d8' },
+      settings: { foreground: 'var(--color-syntax-base)' },
     },
 
     // ── properties / members ──────────────────────────────────────────────────
@@ -174,81 +174,81 @@ const emberDark = {
         'meta.object-literal.key',
         'entity.name.tag.yaml',
       ],
-      settings: { foreground: '#ede5d8' },
+      settings: { foreground: 'var(--color-syntax-base)' },
     },
 
     // ── HTML / JSX / Vue tags ─────────────────────────────────────────────────
     {
       scope: ['entity.name.tag', 'meta.tag.sgml', 'markup.deleted.git_gutter'],
-      settings: { foreground: '#f0a060' },
+      settings: { foreground: 'var(--color-syntax-keyword)' },
     },
     {
       scope: ['entity.other.attribute-name'],
-      settings: { foreground: '#d4aa68' },
+      settings: { foreground: 'var(--color-syntax-number)' },
     },
 
     // ── CSS ───────────────────────────────────────────────────────────────────
     {
       scope: ['entity.name.tag.css', 'entity.other.attribute-name.pseudo-class'],
-      settings: { foreground: '#f0a060' },
+      settings: { foreground: 'var(--color-syntax-keyword)' },
     },
     {
       scope: ['support.type.property-name.css'],
-      settings: { foreground: '#90cce0' },
+      settings: { foreground: 'var(--color-syntax-function)' },
     },
     {
       scope: ['constant.other.color', 'support.constant.property-value.css'],
-      settings: { foreground: '#88be94' },
+      settings: { foreground: 'var(--color-syntax-string)' },
     },
 
     // ── imports / modules ─────────────────────────────────────────────────────
     {
       scope: ['keyword.control.import', 'keyword.control.export', 'keyword.control.from'],
-      settings: { foreground: '#f0a060' },
+      settings: { foreground: 'var(--color-syntax-keyword)' },
     },
 
     // ── Rust-specific ─────────────────────────────────────────────────────────
     {
       scope: ['entity.name.type.primitive.rust', 'storage.type.rust'],
-      settings: { foreground: '#d88080' },
+      settings: { foreground: 'var(--color-syntax-generic)' },
     },
     {
       scope: ['keyword.operator.macro.dollar.rust', 'entity.name.function.macro.rust'],
-      settings: { foreground: '#c8651f' },
+      settings: { foreground: 'var(--color-syntax-operator)' },
     },
 
     // ── TOML ─────────────────────────────────────────────────────────────────
     {
       scope: ['keyword.key.toml', 'support.type.property-name.toml'],
-      settings: { foreground: '#90cce0' },
+      settings: { foreground: 'var(--color-syntax-function)' },
     },
 
     // ── Markdown ─────────────────────────────────────────────────────────────
     {
       scope: ['markup.heading', 'entity.name.section.markdown'],
-      settings: { foreground: '#f0a060', fontStyle: 'bold' },
+      settings: { foreground: 'var(--color-syntax-keyword)', fontStyle: 'bold' },
     },
     {
       scope: ['markup.italic'],
-      settings: { foreground: '#ede5d8', fontStyle: 'italic' },
+      settings: { foreground: 'var(--color-syntax-base)', fontStyle: 'italic' },
     },
     {
       scope: ['markup.bold'],
-      settings: { foreground: '#ede5d8', fontStyle: 'bold' },
+      settings: { foreground: 'var(--color-syntax-base)', fontStyle: 'bold' },
     },
     {
       scope: ['markup.inline.raw', 'markup.fenced_code'],
-      settings: { foreground: '#88c0d8' },
+      settings: { foreground: 'var(--color-syntax-base)' },
     },
     {
       scope: ['markup.underline.link'],
-      settings: { foreground: '#90cce0' },
+      settings: { foreground: 'var(--color-syntax-function)' },
     },
 
     // ── invalid ───────────────────────────────────────────────────────────────
     {
       scope: ['invalid', 'invalid.illegal'],
-      settings: { foreground: '#d88080', fontStyle: 'underline' },
+      settings: { foreground: 'var(--color-syntax-generic)', fontStyle: 'underline' },
     },
   ],
 }

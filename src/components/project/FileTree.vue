@@ -234,12 +234,12 @@ const FileTreeNode = defineComponent({
 }
 
 :deep(.node-row--selected) {
-  background: var(--color-ember-glow);
-  color: var(--color-ember-text);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-text);
 }
 
 :deep(.node-row--selected:hover) {
-  background: var(--color-ember-glow);
+  background: var(--color-accent-muted);
 }
 
 /* chevron */
@@ -262,7 +262,7 @@ const FileTreeNode = defineComponent({
 /* icons */
 :deep(.node-folder-icon) {
   flex-shrink: 0;
-  color: var(--color-gold);
+  color: var(--color-warning);
 }
 
 :deep(.node-file-icon) {

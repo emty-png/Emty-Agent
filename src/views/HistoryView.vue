@@ -130,25 +130,29 @@ function relativeTime(ts: number): string {
   <div class="history-root" @click="closeMenu">
     <!-- ── header ──────────────────────────────────────────────────────── -->
     <div class="history-header">
-      <h1 class="history-title">
-        History
-      </h1>
-      <button class="new-btn" @click="$emit('newChat')">
-        <Plus :size="13" :stroke-width="2" />
-        New chat
-      </button>
+      <div class="header-content">
+        <h1 class="history-title">
+          History
+        </h1>
+        <button class="new-btn" @click="$emit('newChat')">
+          <Plus :size="13" :stroke-width="2" />
+          New chat
+        </button>
+      </div>
     </div>
 
     <!-- ── search ──────────────────────────────────────────────────────── -->
     <div class="search-wrap">
-      <Search :size="13" :stroke-width="1.8" class="search-icon" />
-      <input
-        class="search-input"
-        type="text"
-        placeholder="Search conversations…"
-        :value="searchQuery"
-        @input="onSearch"
-      >
+      <div class="search-inner">
+        <Search :size="13" :stroke-width="1.8" class="search-icon" />
+        <input
+          class="search-input"
+          type="text"
+          placeholder="Search your chats..."
+          :value="searchQuery"
+          @input="onSearch"
+        >
+      </div>
     </div>
 
     <!-- ── list ────────────────────────────────────────────────────────── -->
@@ -184,7 +188,7 @@ function relativeTime(ts: number): string {
           <template v-else>
             <div class="conv-info">
               <span class="conv-title">{{ conv.title }}</span>
-              <span class="conv-meta">{{ relativeTime(conv.updated_at) }}</span>
+              <span class="conv-meta">Last message {{ relativeTime(conv.updated_at) }}</span>
             </div>
 
             <!-- actions (visible on hover / menu open) -->
@@ -276,9 +280,17 @@ function relativeTime(ts: number): string {
 .history-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 28px 28px 16px;
+  justify-content: center; /* Center the internal block */
+  padding: 60px 28px 24px;
   flex-shrink: 0;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 800px;
 }
 
 .history-title {
@@ -293,32 +305,35 @@ function relativeTime(ts: number): string {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding-inline: 12px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-card);
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
+  height: 32px;
+  padding-inline: 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-text-primary);
+  color: var(--color-bg-base);
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition:
-    background 120ms ease,
-    color 120ms ease,
-    border-color 120ms ease;
+  transition: opacity 120ms ease;
 }
 
 .new-btn:hover {
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
-  border-color: var(--color-border-bright);
+  opacity: 0.9;
 }
 
 /* ── search ──────────────────────────────────────────────────────────────────── */
 .search-wrap {
-  position: relative;
-  margin: 0 28px 16px;
+  display: flex;
+  justify-content: center;
+  padding-inline: 28px;
+  margin-bottom: 32px;
   flex-shrink: 0;
+}
+
+.search-inner {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
 }
 
 .search-icon {
@@ -332,14 +347,14 @@ function relativeTime(ts: number): string {
 
 .search-input {
   width: 100%;
-  height: 34px;
-  padding-left: 32px;
+  height: 42px;
+  padding-left: 36px;
   padding-right: 12px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
-  font-size: 13px;
+  font-size: 14px;
   transition: border-color 120ms ease;
   box-sizing: border-box;
 }
@@ -356,7 +371,18 @@ function relativeTime(ts: number): string {
 .conv-list {
   flex: 1;
   overflow-y: auto;
-  padding: 0 12px 16px;
+  padding: 0 28px 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* items and empty state inside the list */
+.conv-item,
+.list-empty,
+.list-loading {
+  width: 100%;
+  max-width: 680px; /* Sweeter, slimmer width than the 800px search bar */
 }
 
 .list-empty {
@@ -380,17 +406,23 @@ function relativeTime(ts: number): string {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-top: 1px solid var(--color-border-subtle);
+  margin-top: -1px; /* collapse borders */
   cursor: pointer;
   transition: background 120ms ease;
   position: relative;
-  min-height: 52px;
+  min-height: 60px;
+}
+
+.conv-item:last-child {
+  border-bottom: none;
 }
 
 .conv-item:hover,
 .conv-item--menu-open {
-  background: var(--color-bg-card);
+  background: transparent;
 }
 
 /* show actions only on hover or when menu is open */
@@ -456,7 +488,7 @@ function relativeTime(ts: number): string {
   height: 28px;
   padding-inline: 8px;
   background: var(--color-bg-elevated);
-  border: 1px solid var(--color-ember-dim);
+  border: 1px solid var(--color-accent-dim);
   border-radius: var(--radius-sm);
   color: var(--color-text-primary);
   font-size: 13px;
@@ -537,10 +569,10 @@ function relativeTime(ts: number): string {
 }
 
 .ctx-item--danger {
-  color: var(--color-rose-text);
+  color: var(--color-danger-text);
 }
 .ctx-item--danger:hover {
-  background: var(--color-rose);
+  background: var(--color-danger);
   color: var(--color-text-primary);
 }
 
@@ -636,11 +668,11 @@ function relativeTime(ts: number): string {
 }
 
 .dialog-btn--delete {
-  background: var(--color-rose);
+  background: var(--color-danger);
   color: var(--color-text-primary);
 }
 
 .dialog-btn--delete:hover {
-  background: var(--color-rose-hover);
+  background: var(--color-danger-hover);
 }
 </style>

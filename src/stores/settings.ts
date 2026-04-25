@@ -3,12 +3,22 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   CORE_MDEV_IDS,
+  getContextLimit,
+  getCost,
+  getKnowledgeCutoff,
+  getModalities,
+  getModelFamily,
   getModelsDevData,
   isChatModel,
   modelDisplayName,
   PRESET_MDEV_IDS,
+  supportsAttachments,
   supportsReasoning,
+  supportsStructuredOutput,
+  supportsTemperature,
+  supportsToolCalls,
 } from '@/utils/modelsdev'
+import { platformFetch } from '@/utils/platformFetch'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -33,6 +43,11 @@ export interface GoogleConfig {
   status: ConnectionStatus
   statusMessage: string
 }
+export interface TavilyConfig {
+  apiKey: string
+  status: ConnectionStatus
+  statusMessage: string
+}
 export interface CompatibleProvider {
   id: string
   name: string
@@ -51,9 +66,23 @@ export interface DiscoveredModel {
   providerName: string
   mdevProviderId?: string
   enabled: boolean
-  supportsThinking: boolean // detected via models.dev or heuristic
-  thinkingForced: boolean // user override — show thinking controls even when not detected
+
+  // ── capabilities ──────────────────────────────────────────────────
+  supportsThinking: boolean
   thinkingEffort: ThinkingEffort
+  supportsToolCalls: boolean
+  supportsAttachments: boolean
+  supportsStructuredOutput: boolean
+  supportsTemperature: boolean
+
+  // ── metadata ──────────────────────────────────────────────────────
+  family: string | null
+  inputModalities: string[]
+  outputModalities: string[]
+  contextLimit: number | null
+  costInput: number | null
+  costOutput: number | null
+  knowledgeCutoff: string | null
 }
 
 // ── default presets ───────────────────────────────────────────────────────────
@@ -176,9 +205,18 @@ function mergeProviderModels(
         mdevProviderId: mdevId,
         enabled: prev?.enabled ?? true,
         supportsThinking: supportsReasoning(mdevData, mdevId, raw.id),
-        // preserve user override across refreshes
-        thinkingForced: prev?.thinkingForced ?? false,
         thinkingEffort: prev?.thinkingEffort ?? 'medium',
+        supportsToolCalls: supportsToolCalls(mdevData, mdevId, raw.id),
+        supportsAttachments: supportsAttachments(mdevData, mdevId, raw.id),
+        supportsStructuredOutput: supportsStructuredOutput(mdevData, mdevId, raw.id),
+        supportsTemperature: supportsTemperature(mdevData, mdevId, raw.id),
+        family: getModelFamily(mdevData, mdevId, raw.id),
+        inputModalities: getModalities(mdevData, mdevId, raw.id).input,
+        outputModalities: getModalities(mdevData, mdevId, raw.id).output,
+        contextLimit: getContextLimit(mdevData, mdevId, raw.id),
+        costInput: getCost(mdevData, mdevId, raw.id).input,
+        costOutput: getCost(mdevData, mdevId, raw.id).output,
+        knowledgeCutoff: getKnowledgeCutoff(mdevData, mdevId, raw.id),
       }
     })
   return [...existing.filter(m => m.providerId !== providerId), ...updated]
@@ -197,7 +235,7 @@ interface TestResult {
 async function fetchOpenAI(baseURL: string, apiKey: string): Promise<TestResult> {
   const url = `${baseURL.replace(/\/$/, '')}/models`
   try {
-    const res = await fetch(url, {
+    const res = await platformFetch(url, {
       method: 'GET',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(8000),
@@ -230,7 +268,7 @@ async function fetchOpenAI(baseURL: string, apiKey: string): Promise<TestResult>
 async function fetchAnthropic(baseURL: string, apiKey: string): Promise<TestResult> {
   const url = `${baseURL.replace(/\/$/, '')}/models`
   try {
-    const res = await fetch(url, {
+    const res = await platformFetch(url, {
       method: 'GET',
       headers: {
         'x-api-key': apiKey,
@@ -262,7 +300,7 @@ async function fetchAnthropic(baseURL: string, apiKey: string): Promise<TestResu
 async function fetchGoogle(apiKey: string): Promise<TestResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}&pageSize=100`
   try {
-    const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(8000) })
+    const res = await platformFetch(url, { method: 'GET', signal: AbortSignal.timeout(8000) })
     if (res.ok) {
       const data = (await res.json()) as {
         models?: {
@@ -315,6 +353,7 @@ export const useSettingsStore = defineStore(
       statusMessage: '',
     })
     const google = ref<GoogleConfig>({ apiKey: '', status: 'idle', statusMessage: '' })
+    const tavily = ref<TavilyConfig>({ apiKey: '', status: 'idle', statusMessage: '' })
     const compatibleProviders = ref<CompatibleProvider[]>([])
 
     // ── discovered models + active selection ──────────────────────────────────
@@ -347,17 +386,7 @@ export const useSettingsStore = defineStore(
         m.thinkingEffort = effort
     }
 
-    /**
-     * Manually force-enable or disable thinking for a model that wasn't
-     * auto-detected as a reasoning model (e.g. a local Ollama model where
-     * the name doesn't match our heuristics, or a new model we don't know).
-     * The override is persisted across refreshes via thinkingForced.
-     */
-    function forceModelThinking(uid: string, forced: boolean): void {
-      const m = discoveredModels.value.find(x => x.uid === uid)
-      if (m)
-        m.thinkingForced = forced
-    }
+    // `forceModelThinking` removed: feature deprecated. Auto-detected thinking remains.
 
     function setActiveModel(uid: string): void {
       activeModelUid.value = uid
@@ -471,6 +500,58 @@ export const useSettingsStore = defineStore(
       google.value.statusMessage = ''
     }
 
+    // ── test: Tavily ──────────────────────────────────────────────────────────
+    /**
+     * Validate the Tavily API key by issuing a minimal search request.
+     * Tavily doesn't have a dedicated /ping or /validate endpoint, so we
+     * send a real search with max_results: 1 and treat any 2xx as success.
+     * A 429 (rate-limited) is also treated as "key is valid" since the key
+     * itself was accepted — the user just needs to wait.
+     */
+    async function testTavily(): Promise<void> {
+      if (!tavily.value.apiKey.trim()) {
+        tavily.value.status = 'error'
+        tavily.value.statusMessage = 'API key is required'
+        return
+      }
+      tavily.value.status = 'testing'
+      tavily.value.statusMessage = ''
+      try {
+        const res = await platformFetch('https://api.tavily.com/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tavily.value.apiKey.trim()}`,
+          },
+          body: JSON.stringify({ query: 'test', max_results: 1, search_depth: 'basic' }),
+          signal: AbortSignal.timeout(8000),
+        })
+        if (res.ok || res.status === 429) {
+          tavily.value.status = 'ok'
+          tavily.value.statusMessage = 'Connected — web search ready'
+        }
+        else if (res.status === 401) {
+          tavily.value.status = 'error'
+          tavily.value.statusMessage = 'Invalid API key'
+        }
+        else {
+          tavily.value.status = 'error'
+          tavily.value.statusMessage = `HTTP ${res.status}: ${res.statusText}`
+        }
+      }
+      catch (e: unknown) {
+        tavily.value.status = 'error'
+        tavily.value.statusMessage
+          = e instanceof Error && e.name === 'TimeoutError'
+            ? 'Request timed out (8s)'
+            : 'Could not reach Tavily'
+      }
+    }
+    function resetTavilyStatus(): void {
+      tavily.value.status = 'idle'
+      tavily.value.statusMessage = ''
+    }
+
     // ── compatible providers ──────────────────────────────────────────────────
     function addProvider(partial: Pick<CompatibleProvider, 'name' | 'baseURL' | 'apiKey' | 'mdevId'>): void {
       compatibleProviders.value.push({
@@ -538,6 +619,9 @@ export const useSettingsStore = defineStore(
       google,
       testGoogle,
       resetGoogleStatus,
+      tavily,
+      testTavily,
+      resetTavilyStatus,
       compatibleProviders,
       addProvider,
       updateProvider,
@@ -550,7 +634,6 @@ export const useSettingsStore = defineStore(
       enabledModels,
       toggleModel,
       setModelThinking,
-      forceModelThinking,
       setActiveModel,
       removeProviderModels,
     }
@@ -564,6 +647,7 @@ export const useSettingsStore = defineStore(
         'anthropic.apiKey',
         'anthropic.baseURL',
         'google.apiKey',
+        'tavily.apiKey',
         'compatibleProviders',
         'discoveredModels',
         'activeModelUid',

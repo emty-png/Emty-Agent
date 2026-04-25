@@ -247,8 +247,8 @@ async function pickProject() {
 }
 
 .ctrl-btn--project:hover {
-  color: var(--color-ember-text);
-  background: var(--color-ember-glow);
+  color: var(--color-accent-text);
+  background: var(--color-accent-muted);
 }
 
 /* spinner state while dialog is open */
@@ -259,12 +259,12 @@ async function pickProject() {
 
 /* close */
 .ctrl-btn--close:hover {
-  background: var(--color-rose);
+  background: var(--color-danger);
   color: var(--color-text-primary);
 }
 
 .ctrl-btn--close:active {
-  background: var(--color-rose-text);
+  background: var(--color-danger-text);
   color: var(--color-text-primary);
 }
 </style>

@@ -185,7 +185,7 @@ function breadcrumb(path: string): string[] {
   justify-content: center;
   padding: 24px;
   font-size: 12.5px;
-  color: var(--color-rose-text);
+  color: var(--color-danger-text);
   text-align: center;
 }
 
@@ -231,7 +231,7 @@ function breadcrumb(path: string): string[] {
   padding-right: 20px;
   padding-left: 8px;
   text-align: right;
-  color: #2e2618;
+  color: var(--color-border-mid);
   font-size: 12px;
   user-select: none;
   white-space: nowrap;
@@ -242,11 +242,12 @@ function breadcrumb(path: string): string[] {
 }
 
 :deep(.shiki .line:hover::before) {
-  color: #504438;
+  color: var(--color-text-dim);
+  background: var(--color-bg-hover);
 }
 
 :deep(.shiki .line:hover) {
-  background: #111009;
+  background: var(--color-bg-hover);
 }
 
 /* spinner */

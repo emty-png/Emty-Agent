@@ -98,12 +98,36 @@ export const useHistoryStore = defineStore('history', () => {
     chat.openConversation({
       conversationId: conv.id,
       title: conv.title,
-      messages: rows.map(r => ({
-        id: r.id,
-        role: r.role,
-        content: r.content,
-        timestamp: new Date(r.created_at),
-      })),
+      messages: rows.map(r => {
+        let toolEvents
+        if (r.tool_events) {
+          try {
+            toolEvents = JSON.parse(r.tool_events)
+          }
+          catch {
+            // silent catch
+          }
+        }
+        let parts
+        if (r.parts) {
+          try {
+            parts = JSON.parse(r.parts)
+          }
+          catch { }
+        }
+        else if (r.content && r.role === 'assistant') {
+          // Fallback legacy migration
+          parts = [{ type: 'text', text: r.content }]
+        }
+        return {
+          id: r.id,
+          role: r.role,
+          content: r.content,
+          timestamp: new Date(r.created_at),
+          ...(toolEvents ? { toolEvents } : {}),
+          ...(parts ? { parts } : {}),
+        }
+      }),
     })
   }
 

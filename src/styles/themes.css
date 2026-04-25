@@ -1,0 +1,684 @@
+/* ── Theme Definitions ──────────────────────────────────────────────────
+   Apply by setting data-theme="<id>" on <html>.
+   All semantic CSS variables from styles.css are overridden per theme.
+   Provider brand colors (openai, anthropic, google) are intentionally
+   kept stable across themes — they represent fixed brand identities.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. Ember (default) ─────────────────────────────────────────────── */
+[data-theme='ember'] {
+  --color-bg-base: #0c0a08;
+  --color-bg-surface: #111009;
+  --color-bg-card: #181410;
+  --color-bg-hover: #201a13;
+  --color-bg-elevated: #27211a;
+
+  --color-accent-dim: #7a3d12;
+  --color-accent: #c8651f;
+  --color-accent-bright: #e07830;
+  --color-accent-text: #f0a060;
+  --color-accent-muted: #e078301f;
+  --color-accent-muted-plus: #e0783030;
+
+  --color-info: #5898b8;
+  /* muted steel blue — won't compete with warm accent */
+  --color-info-text: #82b8d0;
+  --color-info-muted: #5898b810;
+  --color-info-muted-plus: #5898b820;
+
+  --color-success: #5e9468;
+  --color-success-text: #88be94;
+  --color-success-muted: #5e946818;
+
+  --color-warning: #a8843a;
+  --color-warning-text: #d4aa68;
+
+  --color-danger: #a85050;
+  --color-danger-hover: #c06060;
+  --color-danger-text: #d88080;
+  --color-danger-muted: #a8505018;
+
+  --color-text-primary: #ede5d8;
+  --color-text-secondary: #a59688;
+  --color-text-tertiary: #756558;
+  /* slightly darker than original for cleaner step */
+  --color-text-dim: #504438;
+  --color-code: #88c0d8;
+
+  --color-border-subtle: #1e1812;
+  --color-border-mid: #2e2618;
+  --color-border-bright: #443a28;
+}
+
+/* ── 2. Void ─────────────────────────────────────────────────────────── */
+[data-theme='void'] {
+  --color-bg-base: #08060c;
+  --color-bg-surface: #0d0b12;
+  --color-bg-card: #120f1a;
+  --color-bg-hover: #191522;
+  --color-bg-elevated: #21192c;
+
+  --color-accent-dim: #3b1d6e;
+  --color-accent: #7c3aed;
+  --color-accent-bright: #9333ea;
+  --color-accent-text: #c084fc;
+  --color-accent-muted: #7c3aed1f;
+  --color-accent-muted-plus: #7c3aed30;
+
+  --color-info: #3b82c4;
+  /* calm blue — distinct from purple accent */
+  --color-info-text: #6aaee0;
+  --color-info-muted: #3b82c410;
+  --color-info-muted-plus: #3b82c420;
+
+  --color-success: #3a8a52;
+  /* FIX: was #22c55e — vivid green looked gaudy in a muted purple theme */
+  --color-success-text: #68b880;
+  --color-success-muted: #3a8a5218;
+
+  --color-warning: #a87028;
+  /* FIX: was #d97706 — too saturated/orange for this dark cool palette */
+  --color-warning-text: #d4a060;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #ef4444;
+  --color-danger-text: #f87171;
+  --color-danger-muted: #dc262618;
+
+  --color-text-primary: #f3efff;
+  --color-text-secondary: #a89ec0;
+  --color-text-tertiary: #7d7090;
+  --color-text-dim: #3d3350;
+  --color-code: #c084fc;
+
+  --color-border-subtle: #18141e;
+  --color-border-mid: #241f30;
+  --color-border-bright: #342a42;
+}
+
+/* ── 3. Arctic Frost ─────────────────────────────────────────────────── */
+[data-theme='arctic'] {
+  --color-bg-base: #050c18;
+  --color-bg-surface: #080f22;
+  --color-bg-card: #0d1530;
+  --color-bg-hover: #121d3c;
+  --color-bg-elevated: #172548;
+
+  --color-accent-dim: #0e4a5e;
+  --color-accent: #0891b2;
+  --color-accent-bright: #06b6d4;
+  --color-accent-text: #67e8f9;
+  --color-accent-muted: #0891b21f;
+  --color-accent-muted-plus: #0891b230;
+
+  --color-info: #6366f1;
+  --color-info-text: #a5b4fc;
+  --color-info-muted: #6366f110;
+  --color-info-muted-plus: #6366f120;
+
+  --color-success: #059669;
+  --color-success-text: #34d399;
+  --color-success-muted: #05996918;
+
+  --color-warning: #9a6e1a;
+  /* FIX: was #d97706 — too saturated against the cold blue bg */
+  --color-warning-text: #c8a050;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #ef4444;
+  --color-danger-text: #fca5a5;
+  --color-danger-muted: #dc262618;
+
+  --color-text-primary: #e0f7ff;
+  --color-text-secondary: #7eb8d4;
+  --color-text-tertiary: #4a7a94;
+  --color-text-dim: #1a3a50;
+  --color-code: #67e8f9;
+
+  --color-border-subtle: #0d1c2e;
+  --color-border-mid: #14283e;
+  --color-border-bright: #1e3a58;
+}
+
+/* ── 4. Sakura Night ─────────────────────────────────────────────────── */
+[data-theme='sakura'] {
+  --color-bg-base: #0d0a10;
+  --color-bg-surface: #130f18;
+  --color-bg-card: #1a1422;
+  --color-bg-hover: #221930;
+  --color-bg-elevated: #2a1f3c;
+
+  --color-accent-dim: #6d1741;
+  --color-accent: #db2777;
+  --color-accent-bright: #ec4899;
+  --color-accent-text: #f9a8d4;
+  --color-accent-muted: #db27771f;
+  --color-accent-muted-plus: #db277730;
+
+  --color-info: #7c3aed;
+  --color-info-text: #c084fc;
+  --color-info-muted: #7c3aed10;
+  --color-info-muted-plus: #7c3aed20;
+
+  --color-success: #059669;
+  --color-success-text: #6ee7b7;
+  --color-success-muted: #05996918;
+
+  --color-warning: #b45309;
+  --color-warning-text: #e8b860;
+
+  --color-danger: #b03040;
+  /* FIX: was #be185d — old danger-hover WAS the accent (#db2777). */
+  --color-danger-hover: #c84858;
+  /* Now a true crimson-red, clearly distinct from pink accent */
+  --color-danger-text: #f0a8b8;
+  --color-danger-muted: #b0304018;
+
+  --color-text-primary: #fdf2f8;
+  --color-text-secondary: #c4a0c8;
+  --color-text-tertiary: #8a6090;
+  --color-text-dim: #4a2a50;
+  --color-code: #f9a8d4;
+
+  --color-border-subtle: #1e1228;
+  --color-border-mid: #2c1a38;
+  --color-border-bright: #3e2450;
+}
+
+/* ── 5. Emerald Terminal ─────────────────────────────────────────────── */
+[data-theme='emerald'] {
+  --color-bg-base: #020a06;
+  --color-bg-surface: #050e0a;
+  --color-bg-card: #091410;
+  --color-bg-hover: #0e1c16;
+  --color-bg-elevated: #13241e;
+
+  --color-accent-dim: #065f3c;
+  --color-accent: #059669;
+  --color-accent-bright: #10b981;
+  --color-accent-text: #34d399;
+  --color-accent-muted: #0596691f;
+  --color-accent-muted-plus: #05966930;
+
+  --color-info: #3b8ab0;
+  /* calm teal-blue — distinct from the green accent */
+  --color-info-text: #60aace;
+  --color-info-muted: #3b8ab010;
+  --color-info-muted-plus: #3b8ab020;
+
+  --color-success: #72a818;
+  /* yellow-lime — distinct enough hue from emerald accent */
+  --color-success-text: #96d438;
+  --color-success-muted: #72a81818;
+
+  --color-warning: #c07818;
+  --color-warning-text: #e0a840;
+
+  --color-danger: #c03838;
+  --color-danger-hover: #d84848;
+  --color-danger-text: #e88888;
+  --color-danger-muted: #c0383818;
+
+  --color-text-primary: #d1fae5;
+  --color-text-secondary: #7aac90;
+  /* FIX: was #6ee7b7 — bright mint looked like a link/accent, not body text */
+  --color-text-tertiary: #4a7a60;
+  /* FIX: was #34d399 — vivid emerald with high luminance, looked brighter than secondary */
+  --color-text-dim: #1a4a32;
+  --color-code: #a7f3d0;
+
+  --color-border-subtle: #0a1a12;
+  --color-border-mid: #10261a;
+  --color-border-bright: #183826;
+}
+
+/* ── 6. Golden Dusk ──────────────────────────────────────────────────── */
+[data-theme='gold'] {
+  --color-bg-base: #0e0c06;
+  --color-bg-surface: #14100a;
+  --color-bg-card: #1c160c;
+  --color-bg-hover: #241e12;
+  --color-bg-elevated: #2e2618;
+
+  --color-accent-dim: #78350f;
+  --color-accent: #d97706;
+  --color-accent-bright: #f59e0b;
+  --color-accent-text: #fcd34d;
+  --color-accent-muted: #d977061f;
+  --color-accent-muted-plus: #d9770630;
+
+  --color-info: #2878b0;
+  --color-info-text: #56a0d0;
+  --color-info-muted: #2878b010;
+  --color-info-muted-plus: #2878b020;
+
+  --color-success: #3d7a44;
+  /* FIX: was #65a30d — lime-yellow (#a3e635 text) was jarring in a warm amber theme */
+  --color-success-text: #6aaa74;
+  --color-success-muted: #3d7a4418;
+
+  --color-warning: #b45309;
+  --color-warning-text: #fde68a;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #ef4444;
+  --color-danger-text: #fca5a5;
+  --color-danger-muted: #dc262618;
+
+  --color-text-primary: #fefce8;
+  --color-text-secondary: #c8a850;
+  --color-text-tertiary: #967438;
+  --color-text-dim: #4a3a10;
+  --color-code: #fde68a;
+
+  --color-border-subtle: #1e1808;
+  --color-border-mid: #2e2410;
+  --color-border-bright: #443618;
+}
+
+/* ── 7. Deep Ocean ───────────────────────────────────────────────────── */
+[data-theme='ocean'] {
+  --color-bg-base: #040d14;
+  --color-bg-surface: #07121e;
+  --color-bg-card: #0b1928;
+  --color-bg-hover: #102030;
+  --color-bg-elevated: #152838;
+
+  --color-accent-dim: #14526a;
+  --color-accent: #0891b2;
+  --color-accent-bright: #06b6d4;
+  --color-accent-text: #22d3ee;
+  --color-accent-muted: #0891b21f;
+  --color-accent-muted-plus: #0891b230;
+
+  --color-info: #5060c8;
+  /* FIX: was #6366f1 — kept indigo but toned for the very dark bg */
+  --color-info-text: #8090e0;
+  --color-info-muted: #5060c810;
+  --color-info-muted-plus: #5060c820;
+
+  --color-success: #059669;
+  --color-success-text: #34d399;
+  --color-success-muted: #05996918;
+
+  --color-warning: #a06818;
+  --color-warning-text: #d4a050;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #ef4444;
+  --color-danger-text: #f87171;
+  --color-danger-muted: #dc262618;
+
+  --color-text-primary: #e0f7fa;
+  --color-text-secondary: #7ab0b8;
+  /* FIX: was #4db6ac — saturated teal felt like an accent color, not secondary text */
+  --color-text-tertiary: #4a7880;
+  /* FIX: was #26808a — same issue, reads as a UI color not a text tier */
+  --color-text-dim: #0d3840;
+  --color-code: #22d3ee;
+
+  --color-border-subtle: #0a1e28;
+  --color-border-mid: #102e3e;
+  --color-border-bright: #164054;
+}
+
+/* ── 8. Crimson Noir ─────────────────────────────────────────────────── */
+[data-theme='crimson'] {
+  --color-bg-base: #0c0808;
+  --color-bg-surface: #141010;
+  --color-bg-card: #1c1414;
+  --color-bg-hover: #241a1a;
+  --color-bg-elevated: #2e2020;
+
+  --color-accent-dim: #7f1d1d;
+  --color-accent: #dc2626;
+  --color-accent-bright: #ef4444;
+  --color-accent-text: #f87171;
+  --color-accent-muted: #dc26261f;
+  --color-accent-muted-plus: #dc262630;
+
+  --color-info: #0ea5e9;
+  --color-info-text: #38bdf8;
+  --color-info-muted: #0ea5e910;
+  --color-info-muted-plus: #0ea5e920;
+
+  --color-success: #16a34a;
+  --color-success-text: #4ade80;
+  --color-success-muted: #16a34a18;
+
+  --color-warning: #c07828;
+  --color-warning-text: #e0a850;
+
+  --color-danger: #6e1530;
+  /* FIX: was #9f1239 — accent IS red, so danger must go very dark maroon to stay distinct */
+  --color-danger-hover: #8c2040;
+  /* this ensures interactive danger states don't visually merge with accent elements */
+  --color-danger-text: #d08898;
+  --color-danger-muted: #6e153018;
+
+  --color-text-primary: #fff1f2;
+  --color-text-secondary: #d8a8a8;
+  /* slightly less saturated than original for cleaner step */
+  --color-text-tertiary: #a07070;
+  --color-text-dim: #5c2020;
+  --color-code: #fda4af;
+
+  --color-border-subtle: #201414;
+  --color-border-mid: #301c1c;
+  --color-border-bright: #442828;
+}
+
+/* ── 9. Slate Storm ──────────────────────────────────────────────────── */
+[data-theme='slate'] {
+  --color-bg-base: #080c14;
+  --color-bg-surface: #0d1220;
+  --color-bg-card: #121a2c;
+  --color-bg-hover: #182338;
+  --color-bg-elevated: #1e2c44;
+
+  --color-accent-dim: #1e3a8a;
+  --color-accent: #2563eb;
+  --color-accent-bright: #3b82f6;
+  --color-accent-text: #93c5fd;
+  --color-accent-muted: #2563eb1f;
+  --color-accent-muted-plus: #2563eb30;
+
+  --color-info: #0891b2;
+  --color-info-text: #22d3ee;
+  --color-info-muted: #0891b210;
+  --color-info-muted-plus: #0891b220;
+
+  --color-success: #059669;
+  --color-success-text: #34d399;
+  --color-success-muted: #05996918;
+
+  --color-warning: #a07020;
+  --color-warning-text: #d0a850;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #ef4444;
+  --color-danger-text: #fca5a5;
+  --color-danger-muted: #dc262618;
+
+  --color-text-primary: #eff6ff;
+  --color-text-secondary: #93a8c0;
+  --color-text-tertiary: #5a7090;
+  --color-text-dim: #1e3050;
+  --color-code: #93c5fd;
+
+  --color-border-subtle: #101a2c;
+  --color-border-mid: #182438;
+  --color-border-bright: #223050;
+}
+
+/* ── 10. Amethyst Haze ───────────────────────────────────────────────── */
+[data-theme='amethyst'] {
+  --color-bg-base: #0b0910;
+  --color-bg-surface: #100d18;
+  --color-bg-card: #161220;
+  --color-bg-hover: #1e182c;
+  --color-bg-elevated: #261f38;
+
+  --color-accent-dim: #4c1d95;
+  --color-accent: #7c3aed;
+  --color-accent-bright: #8b5cf6;
+  --color-accent-text: #c4b5fd;
+  --color-accent-muted: #7c3aed1f;
+  --color-accent-muted-plus: #7c3aed30;
+
+  --color-info: #0891b2;
+  --color-info-text: #22d3ee;
+  --color-info-muted: #0891b210;
+  --color-info-muted-plus: #0891b220;
+
+  --color-success: #059669;
+  --color-success-text: #34d399;
+  --color-success-muted: #05996918;
+
+  --color-warning: #9c6c20;
+  --color-warning-text: #c89848;
+
+  --color-danger: #c03040;
+  --color-danger-hover: #d84858;
+  --color-danger-text: #e898a8;
+  --color-danger-muted: #c0304018;
+
+  --color-text-primary: #faf5ff;
+  --color-text-secondary: #9890b8;
+  /* FIX: was #c4b5fd — same purple as accent-text. Neutralised to gray-purple */
+  --color-text-tertiary: #686888;
+  /* FIX: was #a78bfa — vivid violet barely different from secondary */
+  --color-text-dim: #3b2a58;
+  --color-code: #c4b5fd;
+
+  --color-border-subtle: #190f28;
+  --color-border-mid: #261a38;
+  --color-border-bright: #38244e;
+}
+
+/* ── 11. OLED Abyss (Deep Dark) ──────────────────────────────────────── */
+/* Pure black backgrounds optimized for OLED displays with vibrant cyan accents */
+[data-theme='abyss'] {
+  --color-bg-base: #000000;
+  --color-bg-surface: #050505;
+  --color-bg-card: #0a0a0a;
+  --color-bg-hover: #111111;
+  --color-bg-elevated: #161616;
+
+  --color-accent-dim: #004d40;
+  --color-accent: #00c8e0;
+  /* FIX: slightly toned from #00e5ff — still vivid for OLED, not eye-searing */
+  --color-accent-bright: #00ddf5;
+  --color-accent-text: #70e8f8;
+  --color-accent-muted: #00c8e01f;
+  --color-accent-muted-plus: #00c8e030;
+
+  --color-info: #2e6fd4;
+  /* FIX: was #2979ff — calmer blue that doesn't compete with cyan accent */
+  --color-info-text: #6898e8;
+  --color-info-muted: #2e6fd410;
+  --color-info-muted-plus: #2e6fd420;
+
+  --color-success: #18a058;
+  /* FIX: was #00e676 — M2 neon green looked cheap. Deep forest green, elegant */
+  --color-success-text: #50c880;
+  --color-success-muted: #18a05818;
+
+  --color-warning: #c08010;
+  /* FIX: was #ffea00 — BLINDING neon yellow on pure black. Deep amber instead */
+  --color-warning-text: #e0a840;
+
+  --color-danger: #d42040;
+  /* FIX: was #ff1744 — M2 neon red. This is still vivid but not harsh */
+  --color-danger-hover: #e83858;
+  --color-danger-text: #e88090;
+  --color-danger-muted: #d4204018;
+
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a0a0a0;
+  --color-text-tertiary: #666666;
+  --color-text-dim: #2b2b2b;
+  --color-code: #70e8f8;
+
+  --color-border-subtle: #141414;
+  --color-border-mid: #222222;
+  --color-border-bright: #333333;
+}
+
+/* ── 12. Parchment (Claude/Anthropic Inspired) ───────────────────────── */
+/* Warm, literary, editorial design with perfect dark-olive text contrast */
+[data-theme='parchment'] {
+  --color-bg-base: #f5f4ed;
+  --color-bg-surface: #faf9f5;
+  --color-bg-card: #faf9f5;
+  --color-bg-hover: #e8e6dc;
+  --color-bg-elevated: #ffffff;
+
+  --color-accent-dim: #e6a793;
+  --color-accent: #c96442;
+  --color-accent-bright: #d97757;
+  --color-accent-text: #964228;
+  --color-accent-muted: #c964421a;
+  --color-accent-muted-plus: #c964422a;
+
+  --color-info: #3898ec;
+  --color-info-text: #1b6ab3;
+  --color-info-muted: #3898ec1a;
+  --color-info-muted-plus: #3898ec2a;
+
+  --color-success: #328751;
+  --color-success-text: #1d5934;
+  --color-success-muted: #3287511a;
+
+  --color-warning: #d99011;
+  --color-warning-text: #8c5b08;
+
+  --color-danger: #b53333;
+  --color-danger-hover: #c94040;
+  --color-danger-text: #8b2222;
+  --color-danger-muted: #b533331a;
+
+  --color-text-primary: #141413;
+  --color-text-secondary: #4d4c48;
+  --color-text-tertiary: #5e5d59;
+  --color-text-dim: #87867f;
+  --color-code: #964228;
+
+  --color-border-subtle: #f0eee6;
+  --color-border-mid: #e8e6dc;
+  --color-border-bright: #d1cfc5;
+}
+
+/* ── 13. Latte (Catppuccin Inspired) ─────────────────────────────────── */
+/* Beautiful, soft, pastel light theme with deep indigo text for readability */
+[data-theme='latte'] {
+  --color-bg-base: #eff1f5;
+  --color-bg-surface: #e6e9ef;
+  --color-bg-card: #ffffff;
+  --color-bg-hover: #dce0e8;
+  --color-bg-elevated: #ffffff;
+
+  --color-accent-dim: #bba0ec;
+  --color-accent: #8839ef;
+  --color-accent-bright: #9d52f7;
+  /* FIX: was #ea76cb — hot pink ≠ accent-bright. Must be lighter purple, same hue */
+  --color-accent-text: #7227d4;
+  --color-accent-muted: #8839ef15;
+  --color-accent-muted-plus: #8839ef25;
+
+  --color-info: #1e66f5;
+  --color-info-text: #1241a1;
+  --color-info-muted: #1e66f515;
+  --color-info-muted-plus: #1e66f525;
+
+  --color-success: #40a02b;
+  --color-success-text: #2b6e1b;
+  --color-success-muted: #40a02b15;
+
+  --color-warning: #df8e1d;
+  --color-warning-text: #965e10;
+
+  --color-danger: #d20f39;
+  --color-danger-hover: #e61f4b;
+  --color-danger-text: #9e0929;
+  --color-danger-muted: #d20f3915;
+
+  --color-text-primary: #4c4f69;
+  --color-text-secondary: #5c5f77;
+  --color-text-tertiary: #6c6f85;
+  --color-text-dim: #8c8fa1;
+  --color-code: #8839ef;
+
+  --color-border-subtle: #dce0e8;
+  --color-border-mid: #ccd0da;
+  --color-border-bright: #bcc0cc;
+}
+
+/* ── 14. Paper (Pure Minimal Light) ──────────────────────────────────── */
+/* Ultra high-contrast, stark white theme inspired by Vercel/Notion */
+[data-theme='paper'] {
+  --color-bg-base: #ffffff;
+  --color-bg-surface: #f7f7f7;
+  --color-bg-card: #ffffff;
+  --color-bg-hover: #f0f0f0;
+  --color-bg-elevated: #ffffff;
+
+  --color-accent-dim: #cccccc;
+  --color-accent: #000000;
+  --color-accent-bright: #333333;
+  --color-accent-text: #000000;
+  --color-accent-muted: #0000000c;
+  --color-accent-muted-plus: #0000001a;
+
+  --color-info: #0066ff;
+  --color-info-text: #0044aa;
+  --color-info-muted: #0066ff15;
+  --color-info-muted-plus: #0066ff25;
+
+  --color-success: #00a350;
+  --color-success-text: #006e36;
+  --color-success-muted: #00a35015;
+
+  --color-warning: #f5a623;
+  --color-warning-text: #a86b00;
+
+  --color-danger: #e00000;
+  --color-danger-hover: #ff1a1a;
+  --color-danger-text: #a30000;
+  --color-danger-muted: #e0000015;
+
+  --color-text-primary: #000000;
+  --color-text-secondary: #444444;
+  --color-text-tertiary: #666666;
+  --color-text-dim: #888888;
+  --color-code: #000000;
+
+  --color-border-subtle: #eaeaea;
+  --color-border-mid: #dddddd;
+  --color-border-bright: #cccccc;
+}
+
+/* ── 15. Velvet Midnight (Deep Purple Dark) ──────────────────────────── */
+/* Luxurious, incredibly deep plum/navy with soft lavender highlights */
+[data-theme='velvet'] {
+  --color-bg-base: #06040a;
+  --color-bg-surface: #0a0712;
+  --color-bg-card: #0f0b1a;
+  --color-bg-hover: #161026;
+  --color-bg-elevated: #1d1533;
+
+  --color-accent-dim: #3b1466;
+  --color-accent: #a855f7;
+  --color-accent-bright: #c084fc;
+  --color-accent-text: #d8b4fe;
+  --color-accent-muted: #a855f71f;
+  --color-accent-muted-plus: #a855f730;
+
+  --color-info: #0ea5e9;
+  --color-info-text: #7dd3fc;
+  --color-info-muted: #0ea5e910;
+  --color-info-muted-plus: #0ea5e920;
+
+  --color-success: #10b981;
+  --color-success-text: #6ee7b7;
+  --color-success-muted: #10b98118;
+
+  --color-warning: #c08010;
+  /* FIX: was #f59e0b — too orange-bright for a deep luxurious purple atmosphere */
+  --color-warning-text: #e0b040;
+
+  --color-danger: #e11d48;
+  --color-danger-hover: #f43f5e;
+  --color-danger-text: #fda4af;
+  --color-danger-muted: #e11d4818;
+
+  --color-text-primary: #f3f0f8;
+  --color-text-secondary: #a39bb8;
+  --color-text-tertiary: #756a91;
+  --color-text-dim: #3e3359;
+  --color-code: #d8b4fe;
+
+  --color-border-subtle: #1a132b;
+  --color-border-mid: #271d40;
+  --color-border-bright: #3b2b5e;
+}

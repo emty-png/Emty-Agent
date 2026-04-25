@@ -182,13 +182,13 @@ const { toggle } = sidebar
 }
 
 .sidebar-btn--active {
-  background: var(--color-ember-glow);
-  color: var(--color-ember-text);
+  background: var(--color-accent-muted);
+  color: var(--color-accent-text);
 }
 
 .sidebar-btn--active:hover {
   background: var(--color-bg-hover);
-  color: var(--color-ember-bright);
+  color: var(--color-accent-bright);
 }
 
 .icon-swap {
