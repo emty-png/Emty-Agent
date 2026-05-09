@@ -61,8 +61,10 @@ export async function buildMentionContext(messageText: string, projectPath: stri
   if (paths.length === 0)
     return ''
 
-  const { readDir, readTextFile } = await import('@tauri-apps/plugin-fs')
-  const { join, normalize } = await import('@tauri-apps/api/path')
+  const [{ readDir, readTextFile }, { join, normalize }] = await Promise.all([
+    import('@tauri-apps/plugin-fs'),
+    import('@tauri-apps/api/path'),
+  ])
 
   const normProject = await normalize(projectPath)
   const sep = normProject.includes('\\') ? '\\' : '/'
