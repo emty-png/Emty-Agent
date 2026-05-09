@@ -16,6 +16,10 @@ import {
 import { buildMentionContext } from './chat/mentions'
 import { runSubAgentStream } from './chat/subagent'
 import { makeId, newTab, toApiMessages } from './chat/utils'
+import { useCheckpointStore } from './checkpoints'
+import { useHistoryStore } from './history'
+import { useProjectStore } from './project'
+import { useSettingsStore } from './settings'
 
 export type { ChatMode, ChatTab, Message, MessagePart, SubAgentInfo, SubAgentPersonality, ToolEvent } from './chat/types'
 export type { TodoItem } from '@/utils/tools/todos'
@@ -42,9 +46,7 @@ export const useChatStore = defineStore('chat', () => {
     abortControllers.delete(id)
 
     // Clean up checkpoints for this tab
-    import('./checkpoints').then(({ useCheckpointStore }) => {
-      useCheckpointStore().clearTab(id)
-    }).catch(() => { })
+    useCheckpointStore().clearTab(id)
 
     const idx = tabs.value.findIndex(t => t.id === id)
     if (tabs.value.length === 1) {
@@ -88,12 +90,10 @@ export const useChatStore = defineStore('chat', () => {
     activeId.value = tabs.value.at(-1)!.id
 
     // Load checkpoints for this conversation
-    import('./checkpoints').then(({ useCheckpointStore }) => {
-      useCheckpointStore().loadForConversation(
-        tabs.value.at(-1)!.id,
-        payload.conversationId,
-      )
-    }).catch(() => { })
+    useCheckpointStore().loadForConversation(
+      tabs.value.at(-1)!.id,
+      payload.conversationId,
+    )
   }
 
   function stopGeneration(tabId?: string): void {
@@ -117,11 +117,9 @@ export const useChatStore = defineStore('chat', () => {
 
     const [
       { buildLanguageModel, buildProviderOptions, buildSystemPrompt, streamChat },
-      { useSettingsStore },
-      { useProjectStore },
+      { createQuestionsTool, questionsToolDisplayLabel },
       { createFilesystemTools, toolDisplayLabel },
       { createShellTools, shellToolDisplayLabel },
-      { createQuestionsTool, questionsToolDisplayLabel },
       { createWebTools, webToolDisplayLabel },
       { createCreateArtifactTool, artifactToolDisplayLabel },
       { createWriteTodoTool, todosToolDisplayLabel },
@@ -129,11 +127,9 @@ export const useChatStore = defineStore('chat', () => {
       { getOsInfo },
     ] = await Promise.all([
       import('@/utils/ai'),
-      import('./settings'),
-      import('./project'),
+      import('@/utils/tools/questions'),
       import('@/utils/tools/filesystem'),
       import('@/utils/tools/shell'),
-      import('@/utils/tools/questions'),
       import('@/utils/tools/web'),
       import('@/utils/tools/artifact'),
       import('@/utils/tools/todos'),
@@ -185,7 +181,6 @@ export const useChatStore = defineStore('chat', () => {
 
     tab.todos = []
 
-    const { useCheckpointStore } = await import('./checkpoints')
     const checkpointStore = useCheckpointStore()
     checkpointStore.createCheckpoint(
       tab.id,
@@ -200,7 +195,6 @@ export const useChatStore = defineStore('chat', () => {
       await dbInsertConversation({ id: convId, title, created_at: now, updated_at: now })
       tab.conversationId = convId
       tab.title = title
-      const { useHistoryStore } = await import('./history')
       useHistoryStore().prepend({ id: convId, title, created_at: now, updated_at: now, msg_count: 0 })
     }
 
