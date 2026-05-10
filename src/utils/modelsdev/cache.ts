@@ -1,6 +1,5 @@
 import type { MDevData, MDevModel, MDevProvider } from './types'
-// eslint-disable-next-line antfu/no-import-dist
-import { ModelsDevClient } from '../../../Emty models/dist/index.js'
+import { ModelsDevClient } from './client'
 
 let _cache: MDevData | null = null
 let _promise: Promise<MDevData> | null = null
@@ -57,14 +56,16 @@ export async function getModelsDevData(): Promise<MDevData> {
   if (_promise)
     return _promise
 
-  _promise = _client.fetch()
+  _promise = _client
+    .fetch()
     .then(data => {
-      _cache = data as MDevData
+      _cache = data
       return _cache
     })
-    .catch(() => {
+    .catch(error => {
+      console.warn('Failed to load models.dev metadata', error)
       _promise = null
-      return {} as MDevData
+      return {}
     })
 
   return _promise
@@ -84,7 +85,9 @@ export function getProviderModels(data: MDevData, mdevId: string): MDevModel[] {
   if (!provider)
     return []
 
-  return Object.entries(provider.models).map(([rawModelId, model]) => normalizeModel(rawModelId, model))
+  return Object.entries(provider.models).map(([rawModelId, model]) =>
+    normalizeModel(rawModelId, model),
+  )
 }
 
 export function resolveModelMetadata(
@@ -106,10 +109,6 @@ export function resolveModelMetadata(
   return null
 }
 
-export function lookupModel(
-  data: MDevData,
-  mdevId: string,
-  rawModelId: string,
-): MDevModel | null {
+export function lookupModel(data: MDevData, mdevId: string, rawModelId: string): MDevModel | null {
   return resolveModelMetadata(data, mdevId, rawModelId)?.model ?? null
 }

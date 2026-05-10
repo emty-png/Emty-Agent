@@ -1,34 +1,67 @@
-// eslint-disable-next-line antfu/no-import-dist
-import type {
-  Cost as EmtyModelsCost,
-  ModelsDevData as EmtyModelsData,
-  Limit as EmtyModelsLimit,
-  Modalities as EmtyModelsModalities,
-  Model as EmtyModelsModel,
-  Provider as EmtyModelsProvider,
-} from '../../../Emty models/dist/index.js'
-
 export interface MDevInterleaved {
   field: 'reasoning_content' | 'reasoning_details' | string
 }
 
-export interface MDevModel extends Omit<EmtyModelsModel, 'interleaved'> {
+export interface MDevModalities {
+  input: string[]
+  output: string[]
+}
+
+export interface MDevCost {
+  input?: number
+  output?: number
+  cache_read?: number
+  cache_write?: number
+  reasoning?: number
+}
+
+export interface MDevLimit {
+  context?: number
+  output?: number
+  input?: number
+}
+
+export interface MDevModel {
+  id: string
+  name: string
+  family?: string
+  release_date?: string
+  last_updated?: string
+  tool_call?: boolean
+  structured_output?: boolean
+  attachment?: boolean
   temperature?: boolean
   knowledge?: string
   open_weights?: boolean
+  modalities?: MDevModalities
+  cost?: MDevCost
+  limit?: MDevLimit
+  reasoning?: boolean
   interleaved?: boolean | MDevInterleaved
   status?: 'alpha' | 'beta' | 'deprecated'
 }
 
-export interface MDevProvider extends Omit<EmtyModelsProvider, 'models'> {
+export interface MDevProvider {
+  id: string
+  name: string
+  api: string
+  env: string[]
+  npm?: string
+  doc?: string
   models: Record<string, MDevModel>
 }
 
-export type MDevData = EmtyModelsData & Record<string, MDevProvider>
+export type MDevData = Record<string, MDevProvider>
 
-export type MDevCost = EmtyModelsCost
-export type MDevLimit = EmtyModelsLimit
-export type MDevModalities = EmtyModelsModalities
+export interface FilterCriteria {
+  toolCall?: boolean
+  vision?: boolean
+  structuredOutput?: boolean
+  reasoning?: boolean
+  minContext?: number
+  maxInputCost?: number
+  family?: string
+}
 
 export interface ModelCost {
   input: number | null

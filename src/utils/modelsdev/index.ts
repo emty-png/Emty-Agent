@@ -1,5 +1,6 @@
 export * from './cache'
 export * from './capabilities'
+export * from './client'
 export * from './constants'
 export * from './filter'
 export * from './metadata'

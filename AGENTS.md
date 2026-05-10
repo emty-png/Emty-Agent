@@ -38,11 +38,11 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 
 ---
 
-## Monorepo/workspace
+## Workspace
 
 - Uses `pnpm` with `pnpm-workspace.yaml`.
 - Root workspace: main Tauri + Vue app.
-- `Emty models/`: standalone TypeScript library for `models.dev` database (not part of the app).
+- The `models.dev` client is part of the app source under `src/utils/modelsdev/` and should be maintained there with the rest of the frontend code.
 
 ---
 
