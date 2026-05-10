@@ -2,13 +2,17 @@
 /**
  * MarkdownMessage.vue
  *
- * Renders markdown from an AI response with:
- *  - Shiki syntax-highlighted code blocks (ember-dark theme, matches the app)
- *  - Copy button per code block (event delegation, no Vue click handlers in vhtml)
- *  - Inline formatting: bold, italic, strikethrough, inline-code, links
- *  - Block elements: headings, lists, blockquotes, tables, HR
- *  - Streaming-safe: open code fences render as plain pre until closed
- *  - Debounced re-render (60ms) to avoid thrashing Shiki during fast streaming
+ * Production-grade markdown renderer for AI responses:
+ *  - Shiki syntax-highlighted code blocks (ember-dark theme)
+ *  - SVG icon copy button with two-state (idle/copied) feedback
+ *  - Per-block word-wrap toggle button
+ *  - Inline: bold/italic (* and _ syntax), strikethrough, code, links
+ *  - Block: headings, lists (with GFM task-list checkboxes), blockquotes,
+ *    tables, HR
+ *  - Streaming-safe: open fences render as plain <pre> with blinking cursor
+ *  - Race-condition-safe pipeline: version counter prevents stale commits
+ *  - Per-instance state: safe to mount any number of instances simultaneously
+ *  - Zero memory leaks: codeStore cleared before every render pass
  */
 
 import { onUnmounted, ref, watch } from 'vue'
@@ -16,18 +20,44 @@ import { getHighlighter } from '@/utils/highlighter'
 
 const props = defineProps<{
   content: string
-  /** True while the parent tab is actively streaming this message */
+  /** True while the parent is actively streaming this message. */
   streaming?: boolean
 }>()
 
-// ── rendered html ─────────────────────────────────────────────────────────────
+// ── inline SVG icons (v-html context — no Vue components) ─────────────────────
+
+const ICON_CLIPBOARD = /* html */'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>'
+const ICON_CHECK = /* html */'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>'
+const ICON_WRAP = /* html */'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><path d="M3 12h15a3 3 0 0 1 0 6h-4"/><polyline points="16 16 14 18 16 20"/><line x1="3" y1="18" x2="10" y2="18"/></svg>'
+
+// ── rendered output ───────────────────────────────────────────────────────────
+
 const html = ref('')
 
-// Map of code-block-id → raw code string (for copy buttons)
+// ── per-instance state ────────────────────────────────────────────────────────
+
+/**
+ * Maps code-block IDs → raw source string for the copy handler.
+ * Cleared at the top of every render so it never grows unboundedly
+ * across streaming updates and old IDs cannot linger.
+ */
 const codeStore = new Map<string, string>()
+
+/**
+ * Monotonic ID counter, reset to 0 before each render pass so IDs
+ * are stable (cb-1, cb-2 …) across re-renders of the same content.
+ */
 let blockSeq = 0
 
-// ── inline rendering ──────────────────────────────────────────────────────────
+/**
+ * Render generation counter. Incremented on every scheduled render.
+ * An async render only commits its HTML if the version it captured at
+ * launch still matches — preventing a slow Shiki call from overwriting
+ * a newer, faster one.
+ */
+let renderVersion = 0
+
+// ── HTML escaping ─────────────────────────────────────────────────────────────
 
 function escHtml(s: string): string {
   return s
@@ -37,21 +67,29 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
+// ── inline renderer ───────────────────────────────────────────────────────────
+
 function renderInline(raw: string): string {
-  // Split on inline-code spans first so we never format inside them
+  // Split on inline-code spans first so we never apply formatting inside them.
   const parts = raw.split(/(`[^`\n]+`)/)
+
   return parts.map((part, i) => {
+    // Odd-indexed parts are inline code spans.
     if (i % 2 === 1) {
-      // odd index = inline code
       return `<code class="md-ic">${escHtml(part.slice(1, -1))}</code>`
     }
+
     let t = escHtml(part)
-    // bold + italic
+
+    // bold + italic (must be tested before bold or italic individually)
     t = t.replace(/\*\*\*(.+?)\*\*\*/gs, '<strong><em>$1</em></strong>')
+    t = t.replace(/___(.+?)___/gs, '<strong><em>$1</em></strong>')
     // bold
     t = t.replace(/\*\*(.+?)\*\*/gs, '<strong>$1</strong>')
-    // italic (avoid matching empty or just whitespace)
+    t = t.replace(/__(.+?)__/gs, '<strong>$1</strong>')
+    // italic  (* and _)
     t = t.replace(/\*([^\s*][^*]*)\*/g, '<em>$1</em>')
+    t = t.replace(/_([^\s_][^_]*)_/g, '<em>$1</em>')
     // strikethrough
     t = t.replace(/~~(.+?)~~/g, '<del>$1</del>')
     // links
@@ -59,22 +97,28 @@ function renderInline(raw: string): string {
       /\[([^\]]+)\]\(([^)]+)\)/g,
       '<a href="$2" class="md-a" target="_blank" rel="noopener noreferrer">$1</a>',
     )
+
     return t
   }).join('')
 }
 
-// ── block tokeniser ───────────────────────────────────────────────────────────
+// ── block types ───────────────────────────────────────────────────────────────
 
 interface CodeBlock { type: 'code'; lang: string; code: string; closed: boolean; id: string }
 interface HeadingBlock { type: 'heading'; level: number; text: string }
 interface ParagraphBlock { type: 'paragraph'; lines: string[] }
 interface UlBlock { type: 'ul'; items: string[] }
 interface OlBlock { type: 'ol'; items: string[] }
-interface BlockquoteBlock { type: 'blockquote'; text: string }
+interface BlockquoteBlock { type: 'blockquote'; lines: string[] }
 interface TableBlock { type: 'table'; header: string[]; rows: string[][] }
 interface HrBlock { type: 'hr' }
 
-type Block = CodeBlock | HeadingBlock | ParagraphBlock | UlBlock | OlBlock | BlockquoteBlock | TableBlock | HrBlock
+type Block
+  = | CodeBlock | HeadingBlock | ParagraphBlock
+    | UlBlock | OlBlock | BlockquoteBlock
+    | TableBlock | HrBlock
+
+// ── tokeniser ─────────────────────────────────────────────────────────────────
 
 function tokenise(content: string): Block[] {
   const blocks: Block[] = []
@@ -84,7 +128,7 @@ function tokenise(content: string): Block[] {
   while (i < lines.length) {
     const line = lines[i]!
 
-    // ── fenced code block ──
+    // ── fenced code block ──────────────────────────────────────────────────────
     const fenceMatch = line.match(/^```(\w*)/)
     if (fenceMatch) {
       const lang = fenceMatch[1] || 'plaintext'
@@ -92,7 +136,7 @@ function tokenise(content: string): Block[] {
       let closed = false
       i++
       while (i < lines.length) {
-        if (lines[i]!.startsWith('```')) {
+        if (lines[i]!.trimStart().startsWith('```')) {
           closed = true
           i++
           break
@@ -100,72 +144,65 @@ function tokenise(content: string): Block[] {
         codeLines.push(lines[i]!)
         i++
       }
-      const id = `cb-${++blockSeq}`
-      blocks.push({ type: 'code', lang, code: codeLines.join('\n'), closed, id })
+      blocks.push({ type: 'code', lang, code: codeLines.join('\n'), closed, id: `cb-${++blockSeq}` })
       continue
     }
 
-    // ── ATX heading ──
+    // ── ATX heading ───────────────────────────────────────────────────────────
     const hm = line.match(/^(#{1,6})\s+(.+)/)
     if (hm) {
       blocks.push({ type: 'heading', level: hm[1]!.length, text: hm[2]! })
-      i++
-      continue
+      i++; continue
     }
 
-    // ── horizontal rule ──
-    if (/^[-*_]{3,}\s*$/.test(line.trim())) {
+    // ── horizontal rule ───────────────────────────────────────────────────────
+    if (/^(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
       blocks.push({ type: 'hr' })
       i++
       continue
     }
 
-    // ── blockquote ──
-    if (line.startsWith('> ')) {
+    // ── blockquote ────────────────────────────────────────────────────────────
+    if (line.startsWith('> ') || line === '>') {
       const qLines: string[] = []
-      while (i < lines.length && lines[i]!.startsWith('> ')) {
-        qLines.push(lines[i]!.slice(2))
+      while (i < lines.length && (lines[i]!.startsWith('> ') || lines[i] === '>')) {
+        qLines.push(lines[i]!.replace(/^>\s?/, ''))
         i++
       }
-      blocks.push({ type: 'blockquote', text: qLines.join('\n') })
+      blocks.push({ type: 'blockquote', lines: qLines })
       continue
     }
 
-    // ── unordered list ──
+    // ── unordered list (supports GFM task items) ──────────────────────────────
     if (/^[-*+]\s/.test(line)) {
       const items: string[] = []
       while (i < lines.length && /^[-*+]\s/.test(lines[i]!)) {
-        // handle multi-line list items (indented continuation)
         let item = lines[i]!.replace(/^[-*+]\s+/, '')
         i++
         while (i < lines.length && /^(?:\s{2,}|\t)/.test(lines[i]!)) {
-          item += ` ${lines[i]!.trim()}`
-          i++
+          item += ` ${lines[i]!.trim()}`; i++
         }
         items.push(item)
       }
-      blocks.push({ type: 'ul', items })
-      continue
+      blocks.push({ type: 'ul', items }); continue
     }
 
-    // ── ordered list ──
+    // ── ordered list ──────────────────────────────────────────────────────────
     if (/^\d+\.\s/.test(line)) {
       const items: string[] = []
       while (i < lines.length && /^\d+\.\s/.test(lines[i]!)) {
         let item = lines[i]!.replace(/^\d+\.\s+/, '')
         i++
         while (i < lines.length && /^(?:\s{2,}|\t)/.test(lines[i]!)) {
-          item += ` ${lines[i]!.trim()}`
-          i++
+          item += ` ${lines[i]!.trim()}`; i++
         }
         items.push(item)
       }
-      blocks.push({ type: 'ol', items })
-      continue
+      blocks.push({ type: 'ol', items }); continue
     }
 
-    // ── pipe table ──
-    if (line.includes('|') && i + 1 < lines.length && /^[\s|:-]+$/.test(lines[i + 1] ?? '')) {
+    // ── pipe table ────────────────────────────────────────────────────────────
+    if (line.includes('|') && /^[\s|:-]+$/.test(lines[i + 1] ?? '')) {
       const tLines: string[] = []
       while (i < lines.length && lines[i]!.includes('|')) {
         tLines.push(lines[i]!)
@@ -174,37 +211,30 @@ function tokenise(content: string): Block[] {
       if (tLines.length >= 2) {
         const parseRow = (l: string) =>
           l.replace(/^\||\|$/g, '').split('|').map(c => c.trim())
-        const header = parseRow(tLines[0]!)
-        const rows = tLines.slice(2).map(parseRow) // skip separator row
-        blocks.push({ type: 'table', header, rows })
+        blocks.push({ type: 'table', header: parseRow(tLines[0]!), rows: tLines.slice(2).map(parseRow) })
         continue
       }
     }
 
-    // ── blank line (consumed silently) ──
+    // ── blank line ────────────────────────────────────────────────────────────
     if (line.trim() === '') {
       i++
       continue
     }
 
-    // ── paragraph (greedy: consume until a block-level element or blank line) ──
+    // ── paragraph ─────────────────────────────────────────────────────────────
     const paraLines: string[] = []
     while (i < lines.length) {
       const l = lines[i]!
       if (
-        l.trim() === ''
-        || l.startsWith('#')
-        || l.startsWith('```')
-        || /^[-*+]\s/.test(l)
-        || /^\d+\.\s/.test(l)
-        || l.startsWith('> ')
-        || /^[-*_]{3,}\s*$/.test(l.trim())
-        || (l.includes('|') && i + 1 < lines.length && /^[\s|:-]+$/.test(lines[i + 1] ?? ''))
+        l.trim() === '' || l.startsWith('#') || l.startsWith('```')
+        || /^[-*+]\s/.test(l) || /^\d+\.\s/.test(l) || l.startsWith('> ') || l === '>'
+        || /^(?:-{3,}|\*{3,}|_{3,})\s*$/.test(l)
+        || (l.includes('|') && /^[\s|:-]+$/.test(lines[i + 1] ?? ''))
       ) {
         break
       }
-      paraLines.push(l)
-      i++
+      paraLines.push(l); i++
     }
     if (paraLines.length > 0)
       blocks.push({ type: 'paragraph', lines: paraLines })
@@ -213,71 +243,100 @@ function tokenise(content: string): Block[] {
   return blocks
 }
 
-// ── block → html ──────────────────────────────────────────────────────────────
+// ── block → HTML ──────────────────────────────────────────────────────────────
 
 async function blockToHtml(block: Block): Promise<string> {
   switch (block.type) {
+    // ── heading ───────────────────────────────────────────────────────────────
     case 'heading': {
       const tag = `h${block.level}`
-      const cls = `md-h md-h${block.level}`
-      return `<${tag} class="${cls}">${renderInline(block.text)}</${tag}>`
+      return `<${tag} class="md-h md-h${block.level}">${renderInline(block.text)}</${tag}>`
     }
 
+    // ── paragraph ─────────────────────────────────────────────────────────────
     case 'paragraph': {
-      // Join with <br> to preserve intentional line breaks inside a paragraph
-      const inner = block.lines.map(l => renderInline(l)).join('<br>')
-      return `<p class="md-p">${inner}</p>`
+      return `<p class="md-p">${block.lines.map(l => renderInline(l)).join('<br>')}</p>`
     }
 
+    // ── fenced code ───────────────────────────────────────────────────────────
     case 'code': {
       const { id, lang, code, closed } = block
       codeStore.set(id, code)
 
-      let highlighted: string
+      let body: string
       if (!closed) {
-        // Streaming: fence not yet closed — show plain pre with cursor
-        highlighted = `<span class="md-code-plain">${escHtml(code)}</span><span class="md-cursor"> ▊</span>`
+        // Streaming: fence not yet closed — plain pre + blinking cursor.
+        body = `<div class="md-code-body">\
+<span class="md-code-plain">${escHtml(code)}</span>\
+<span class="md-cursor"> ▊</span></div>`
       }
       else {
         try {
           const h = await getHighlighter()
-          // Validate the lang is one Shiki knows; fall back to plaintext
-          const knownLangs = h.getLoadedLanguages()
-          const useLang = knownLangs.includes(lang as never) ? lang : 'plaintext'
-          highlighted = h.codeToHtml(code, { lang: useLang, theme: 'ember-dark' })
+          const useLang = h.getLoadedLanguages().includes(lang as never) ? lang : 'plaintext'
+          body = `<div class="md-code-body">${h.codeToHtml(code, { lang: useLang, theme: 'ember-dark' })}</div>`
         }
         catch {
-          highlighted = `<pre class="md-code-fallback"><code>${escHtml(code)}</code></pre>`
+          body = `<div class="md-code-body"><pre class="md-code-fallback"><code>${escHtml(code)}</code></pre></div>`
         }
       }
 
-      const langLabel = lang && lang !== 'plaintext' ? `<span class="md-code-lang">${escHtml(lang)}</span>` : ''
-      const copyBtn = `<button class="md-copy-btn" data-code-id="${id}" title="Copy code">Copy</button>`
-      const header = `<div class="md-code-header">${langLabel}${copyBtn}</div>`
+      const langLabel = lang && lang !== 'plaintext'
+        ? `<span class="md-code-lang">${escHtml(lang)}</span>`
+        : '<span></span>'
 
-      return `<div class="md-code-wrap">${header}<div class="md-code-body">${highlighted}</div></div>`
+      const actions = `<div class="md-code-actions">\
+<button class="md-btn md-wrap-btn" data-wrap-id="${id}" title="Toggle word wrap" aria-label="Toggle word wrap">${ICON_WRAP}</button>\
+<button class="md-btn md-copy-btn" data-code-id="${id}" aria-label="Copy code">\
+<span class="md-copy-idle">${ICON_CLIPBOARD}<span>Copy</span></span>\
+<span class="md-copy-done">${ICON_CHECK}<span>Copied!</span></span>\
+</button></div>`
+
+      return `<div class="md-code-wrap" data-lang="${escHtml(lang)}">\
+<div class="md-code-header">${langLabel}${actions}</div>${body}</div>`
     }
 
+    // ── unordered list (with GFM task items) ──────────────────────────────────
     case 'ul': {
-      const items = block.items.map(it => `<li class="md-li">${renderInline(it)}</li>`).join('')
-      return `<ul class="md-ul">${items}</ul>`
+      const isTaskList = block.items.some(it => /^\[[ x]\]/i.test(it))
+      const items = block.items.map(it => {
+        const task = it.match(/^\[([ x])\]\s+(\S.*)$/i)
+        if (task) {
+          const checked = task[1]!.toLowerCase() === 'x'
+          return `<li class="md-li md-task-item">\
+<label class="md-task-label">\
+<input type="checkbox" class="md-checkbox" ${checked ? 'checked' : ''} disabled>\
+<span>${renderInline(task[2]!)}</span>\
+</label></li>`
+        }
+        return `<li class="md-li">${renderInline(it)}</li>`
+      }).join('')
+      return `<ul class="${isTaskList ? 'md-ul md-task-list' : 'md-ul'}">${items}</ul>`
     }
 
+    // ── ordered list ──────────────────────────────────────────────────────────
     case 'ol': {
       const items = block.items.map(it => `<li class="md-li">${renderInline(it)}</li>`).join('')
       return `<ol class="md-ol">${items}</ol>`
     }
 
+    // ── blockquote ────────────────────────────────────────────────────────────
     case 'blockquote': {
-      return `<blockquote class="md-bq">${renderInline(block.text)}</blockquote>`
+      // Render inner lines as a paragraph so inline formatting works
+      const inner = block.lines.map(l => renderInline(l)).join('<br>')
+      return `<blockquote class="md-bq"><p class="md-bq-inner">${inner}</p></blockquote>`
     }
 
+    // ── table ─────────────────────────────────────────────────────────────────
     case 'table': {
       const thead = `<thead><tr>${block.header.map(h => `<th class="md-th">${renderInline(h)}</th>`).join('')}</tr></thead>`
-      const tbody = `<tbody>${block.rows.map(row => `<tr>${row.map(c => `<td class="md-td">${renderInline(c)}</td>`).join('')}</tr>`).join('')}</tbody>`
+      const tbody = `<tbody>${block.rows.map(row =>
+        `<tr>${row.map(c => `<td class="md-td">${renderInline(c)}</td>`).join('')}</tr>`,
+      ).join('')}</tbody>`
       return `<div class="md-table-wrap"><table class="md-table">${thead}${tbody}</table></div>`
     }
 
+    // ── horizontal rule ───────────────────────────────────────────────────────
     case 'hr':
       return '<hr class="md-hr">'
 
@@ -288,38 +347,50 @@ async function blockToHtml(block: Block): Promise<string> {
 
 // ── render pipeline ───────────────────────────────────────────────────────────
 
-async function renderContent(content: string): Promise<string> {
-  if (!content)
-    return ''
+async function renderContent(content: string, version: number): Promise<void> {
+  if (!content) {
+    if (renderVersion === version)
+      html.value = ''
+    return
+  }
+
+  // Reset per-render state to prevent unbounded growth across streaming ticks.
+  codeStore.clear()
+  blockSeq = 0
+
   const blocks = tokenise(content)
   const parts = await Promise.all(blocks.map(blockToHtml))
-  return parts.join('\n')
+
+  // Only commit if no newer render has superseded this one.
+  if (renderVersion === version) {
+    html.value = parts.join('\n')
+  }
 }
 
-// ── debounced watcher ─────────────────────────────────────────────────────────
+// ── watchers ──────────────────────────────────────────────────────────────────
 
 let timer: ReturnType<typeof setTimeout> | null = null
 
-async function scheduleRender() {
+function scheduleRender(): void {
   if (timer)
     clearTimeout(timer)
-
-  // During streaming, debounce at 60ms to avoid thrashing Shiki
-  const delay = props.streaming ? 60 : 0
-  timer = setTimeout(async () => {
-    html.value = await renderContent(props.content)
+  const version = ++renderVersion
+  // Debounce during streaming to avoid thrashing Shiki; immediate otherwise.
+  timer = setTimeout(() => {
+    renderContent(props.content, version)
     timer = null
-  }, delay)
+  }, props.streaming ? 60 : 0)
 }
 
 watch(() => props.content, scheduleRender, { immediate: true })
 
-// Force a clean final render when streaming ends
-watch(() => props.streaming, async streaming => {
+// Force a clean final render when streaming finishes.
+watch(() => props.streaming, streaming => {
   if (!streaming) {
     if (timer)
       clearTimeout(timer)
-    html.value = await renderContent(props.content)
+    const version = ++renderVersion
+    renderContent(props.content, version)
   }
 })
 
@@ -328,30 +399,43 @@ onUnmounted(() => {
     clearTimeout(timer)
 })
 
-// ── copy button handler ───────────────────────────────────────────────────────
+// ── event delegation (copy + word-wrap) ──────────────────────────────────────
 
-function handleClick(e: MouseEvent) {
-  const btn = (e.target as Element).closest<HTMLElement>('[data-code-id]')
-  if (!btn)
-    return
-  const id = btn.dataset.codeId
-  if (!id)
-    return
-  const code = codeStore.get(id)
-  if (code == null)
-    return
+function handleClick(e: MouseEvent): void {
+  const target = e.target as Element
 
-  navigator.clipboard.writeText(code).then(() => {
-    const prev = btn.textContent
-    btn.textContent = 'Copied!'
-    setTimeout(() => { btn.textContent = prev }, 1500)
-  }).catch(() => {})
+  // ── copy button ──
+  const copyBtn = target.closest<HTMLElement>('[data-code-id]')
+  if (copyBtn) {
+    const code = codeStore.get(copyBtn.dataset.codeId!)
+    if (code == null)
+      return
+    navigator.clipboard.writeText(code).then(() => {
+      copyBtn.dataset.copied = '1'
+      setTimeout(() => { delete copyBtn.dataset.copied }, 2000)
+    }).catch(() => {})
+    return
+  }
+
+  // ── word-wrap toggle ──
+  const wrapBtn = target.closest<HTMLElement>('[data-wrap-id]')
+  if (wrapBtn) {
+    const wrap = wrapBtn.closest<HTMLElement>('.md-code-wrap')
+    if (wrap) {
+      wrap.classList.toggle('is-wrapped')
+      wrapBtn.classList.toggle('is-active')
+    }
+  }
 }
 </script>
 
 <template>
-  <!-- v-html is safe here: content comes from AI model, not user HTML input.
-       All user-visible text from block parsing is passed through escHtml(). -->
+  <!--
+    v-html is intentional and safe here:
+    • Content is produced by the AI model, not by arbitrary user HTML input.
+    • All text that originates from block parsing is passed through escHtml().
+    • Links have target="_blank" rel="noopener noreferrer".
+  -->
   <div class="md-root" @click.capture="handleClick" v-html="html" />
 </template>
 
@@ -364,7 +448,7 @@ function handleClick(e: MouseEvent) {
   word-break: break-word;
 }
 
-/* All block-level elements get a consistent bottom margin */
+/* Consistent bottom margin for all block-level elements */
 .md-root :deep(p),
 .md-root :deep(ul),
 .md-root :deep(ol),
@@ -384,6 +468,10 @@ function handleClick(e: MouseEvent) {
   color: var(--color-text-primary);
   margin-top: 20px;
   margin-bottom: 8px;
+}
+/* Suppress top margin when a heading is the very first element */
+.md-root :deep(.md-h:first-child) {
+  margin-top: 0;
 }
 .md-root :deep(.md-h1) {
   font-size: 1.35em;
@@ -424,12 +512,13 @@ function handleClick(e: MouseEvent) {
   color: var(--color-info-text);
   text-decoration: underline;
   text-underline-offset: 2px;
+  transition: color 120ms ease;
 }
 .md-root :deep(.md-a:hover) {
   color: var(--color-text-primary);
 }
 
-/* ── strong / em ──────────────────────────────────────────────────────────── */
+/* ── strong / em / del ────────────────────────────────────────────────────── */
 .md-root :deep(strong) {
   font-weight: 700;
   color: var(--color-text-primary);
@@ -460,13 +549,43 @@ function handleClick(e: MouseEvent) {
   list-style-type: decimal;
 }
 
+/* ── task list ────────────────────────────────────────────────────────────── */
+.md-root :deep(.md-task-list) {
+  list-style: none;
+  padding-left: 4px;
+}
+.md-root :deep(.md-task-item) {
+  margin-bottom: 5px;
+}
+.md-root :deep(.md-task-label) {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: default;
+  user-select: none;
+}
+.md-root :deep(.md-checkbox) {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--color-accent-bright);
+  cursor: default;
+  translate: 0 1px;
+}
+
 /* ── blockquote ───────────────────────────────────────────────────────────── */
 .md-root :deep(.md-bq) {
   border-left: 3px solid var(--color-accent-dim);
   margin: 0 0 14px;
-  padding: 4px 14px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--color-accent-muted) 40%, transparent);
+  border-radius: 0 6px 6px 0;
   color: var(--color-text-secondary);
   font-style: italic;
+}
+.md-root :deep(.md-bq-inner) {
+  margin: 0;
 }
 
 /* ── horizontal rule ──────────────────────────────────────────────────────── */
@@ -481,7 +600,7 @@ function handleClick(e: MouseEvent) {
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-mid);
   overflow: hidden;
-  background: var(--color-bg-base); /* matches emberDark editor.background */
+  background: var(--color-bg-base);
   margin-bottom: 14px;
 }
 
@@ -490,10 +609,11 @@ function handleClick(e: MouseEvent) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
+  padding: 6px 8px 6px 12px;
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border-mid);
-  min-height: 32px;
+  min-height: 34px;
+  gap: 8px;
 }
 .md-root :deep(.md-code-lang) {
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
@@ -503,11 +623,22 @@ function handleClick(e: MouseEvent) {
   letter-spacing: 0.06em;
   color: var(--color-text-tertiary);
 }
-.md-root :deep(.md-copy-btn) {
+
+/* ── code block action buttons ────────────────────────────────────────────── */
+.md-root :deep(.md-code-actions) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.md-root :deep(.md-btn) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 500;
   padding: 2px 8px;
-  height: 20px;
+  height: 22px;
   border: 1px solid var(--color-border-mid);
   border-radius: 4px;
   background: transparent;
@@ -515,19 +646,50 @@ function handleClick(e: MouseEvent) {
   cursor: pointer;
   transition:
     background 110ms ease,
-    color 110ms ease;
-  margin-left: auto;
+    color 110ms ease,
+    border-color 110ms ease;
+  white-space: nowrap;
+  line-height: 1;
 }
-.md-root :deep(.md-copy-btn:hover) {
+.md-root :deep(.md-btn:hover) {
   background: var(--color-bg-hover);
   color: var(--color-text-secondary);
+}
+
+/* Word-wrap toggle — icon-only, slightly narrower */
+.md-root :deep(.md-wrap-btn) {
+  padding: 2px 6px;
+}
+.md-root :deep(.md-wrap-btn.is-active) {
+  background: var(--color-bg-hover);
+  color: var(--color-accent-text);
+  border-color: var(--color-accent-dim);
+}
+
+/* Copy button — two-state via data-copied attribute */
+.md-root :deep(.md-copy-btn .md-copy-done) {
+  display: none;
+}
+.md-root :deep(.md-copy-btn[data-copied] .md-copy-idle) {
+  display: none;
+}
+.md-root :deep(.md-copy-btn[data-copied] .md-copy-done) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-success-text, #4ade80);
+}
+.md-root :deep(.md-copy-idle) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* ── code block body ──────────────────────────────────────────────────────── */
 .md-root :deep(.md-code-body) {
   overflow-x: auto;
 }
-/* Shiki wraps output in <pre><code>. Override its background to match wrapper. */
+/* Shiki wraps in <pre><code>. Override background to match wrapper. */
 .md-root :deep(.md-code-body pre) {
   margin: 0;
   padding: 14px 16px;
@@ -536,12 +698,20 @@ function handleClick(e: MouseEvent) {
   font-size: 12.5px;
   line-height: 1.6;
   overflow-x: auto;
+  /* No wrap by default — toggled by .is-wrapped */
+  white-space: pre;
 }
 .md-root :deep(.md-code-body code) {
   font-family: inherit;
   background: transparent;
 }
-/* Plain fallback (streaming / error) */
+/* Word-wrap enabled state */
+.md-root :deep(.md-code-wrap.is-wrapped .md-code-body pre) {
+  white-space: pre-wrap;
+  overflow-x: hidden;
+}
+
+/* Plain pre (streaming / error fallback) */
 .md-root :deep(.md-code-fallback) {
   margin: 0;
   padding: 14px 16px;
@@ -560,10 +730,10 @@ function handleClick(e: MouseEvent) {
 }
 /* Blinking cursor during streaming */
 .md-root :deep(.md-cursor) {
-  animation: blink 0.9s step-end infinite;
+  animation: md-blink 0.9s step-end infinite;
   color: var(--color-accent-bright);
 }
-@keyframes blink {
+@keyframes md-blink {
   0%,
   100% {
     opacity: 1;
@@ -595,6 +765,7 @@ function handleClick(e: MouseEvent) {
   color: var(--color-text-tertiary);
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border-mid);
+  white-space: nowrap;
 }
 .md-root :deep(.md-td) {
   padding: 7px 12px;
@@ -604,5 +775,28 @@ function handleClick(e: MouseEvent) {
 }
 .md-root :deep(tr:last-child .md-td) {
   border-bottom: none;
+}
+/* Subtle hover on table rows */
+.md-root :deep(tbody tr:hover td) {
+  background: color-mix(in srgb, var(--color-bg-hover) 60%, transparent);
+}
+
+/* ── SVG ──────────────────────────────────────────────────────────────────── */
+.md-root :deep(svg:not(.md-btn svg)) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 480px;
+}
+
+/* ── reduced-motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .md-root :deep(.md-cursor) {
+    animation: none;
+    opacity: 1;
+  }
+  .md-root :deep(.md-btn) {
+    transition: none;
+  }
 }
 </style>

@@ -24,7 +24,6 @@
  */
 
 import { tool } from 'ai'
-import { ref } from 'vue'
 import { z } from 'zod'
 
 // ── types ─────────────────────────────────────────────────────────────────────
@@ -45,68 +44,14 @@ export interface QuestionAnswer {
   answer: string
 }
 
-// ── module-level reactive state ───────────────────────────────────────────────
-
-/**
- * The question batch currently awaiting user input.
- * QuestionOverlay.vue imports and observes this ref directly.
- * Null when no questions are pending.
- */
-export const pendingBatch = ref<PendingBatch | null>(null)
-
-/** The resolver for the current execute() Promise. Null when idle. */
-let _resolve: ((result: { answers: QuestionAnswer[] }) => void) | null = null
-
-function clearPending(): void {
-  _resolve = null
-  pendingBatch.value = null
-}
-
-// ── public surface for the overlay ───────────────────────────────────────────
-
-/**
- * Called by QuestionOverlay when the user has stepped through all questions.
- * @param answers - Per-question answers in order; null means the user skipped.
- */
-export function submitAnswers(answers: Array<string | null>): void {
-  if (!_resolve || !pendingBatch.value)
-    return
-
-  const result = {
-    answers: pendingBatch.value.questions.map((q, i) => ({
-      question: q.question,
-      answer: answers[i] ?? 'skipped',
-    })),
-  }
-
-  const resolve = _resolve
-  clearPending()
-  resolve(result)
-}
-
-/**
- * Called by the overlay's dismiss (×) button.
- * Resolves all questions as "skipped" so the agent loop can continue.
- */
-export function dismissAll(): void {
-  if (!_resolve || !pendingBatch.value)
-    return
-
-  const result = {
-    answers: pendingBatch.value.questions.map(q => ({
-      question: q.question,
-      answer: 'skipped',
-    })),
-  }
-
-  const resolve = _resolve
-  clearPending()
-  resolve(result)
-}
-
 // ── tool factory ──────────────────────────────────────────────────────────────
 
-export function createQuestionsTool() {
+export type QuestionsCallback = (
+  questions: QuestionSpec[],
+  resolve: (answers: QuestionAnswer[]) => void,
+) => void
+
+export function createQuestionsTool(onQuestions: QuestionsCallback) {
   return tool({
     description: `\
 Ask the user one or more clarifying questions before proceeding with a task.
@@ -152,9 +97,6 @@ The user may skip any question; treat a "skipped" answer as "no strong preferenc
         .describe('Questions to ask in this batch. Group all related questions into one call.'),
     }),
     execute: async ({ questions }, { abortSignal }) => {
-      // Defensively clear any stale pending state from a previous incomplete call.
-      clearPending()
-
       return new Promise<{ answers: QuestionAnswer[] }>(resolve => {
         // Already aborted before we even start — skip all questions immediately.
         if (abortSignal?.aborted) {
@@ -164,23 +106,26 @@ The user may skip any question; treat a "skipped" answer as "no strong preferenc
           return
         }
 
-        _resolve = resolve
-        pendingBatch.value = { questions: questions as QuestionSpec[] }
+        let isResolved = false
+
+        const safeResolve = (answers: QuestionAnswer[]) => {
+          if (!isResolved) {
+            isResolved = true
+            resolve({ answers })
+          }
+        }
 
         // When stopGeneration() fires, resolve gracefully rather than hanging.
-        abortSignal?.addEventListener(
-          'abort',
-          () => {
-            if (_resolve) {
-              const qs = pendingBatch.value?.questions ?? (questions as QuestionSpec[])
-              clearPending()
-              resolve({
-                answers: qs.map(q => ({ question: q.question, answer: 'skipped' })),
-              })
-            }
-          },
-          { once: true },
-        )
+        const onAbort = () => {
+          safeResolve(questions.map(q => ({ question: q.question, answer: 'skipped' })))
+        }
+
+        abortSignal?.addEventListener('abort', onAbort, { once: true })
+
+        onQuestions(questions as QuestionSpec[], (answers: QuestionAnswer[]) => {
+          abortSignal?.removeEventListener('abort', onAbort)
+          safeResolve(answers)
+        })
       })
     },
   })

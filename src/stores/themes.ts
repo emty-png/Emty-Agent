@@ -17,6 +17,11 @@ export type ThemeId
     | 'parchment'
     | 'latte'
     | 'paper'
+    | 'neon'
+    | 'mocha'
+    | 'mint'
+    | 'coral'
+    | 'berry'
 
 export interface ThemeMeta {
   id: ThemeId
@@ -47,6 +52,13 @@ export const THEMES: ThemeMeta[] = [
   { id: 'parchment', name: 'Parchment', tagline: 'Warm paper · Terracotta', accent: '#c96442', bg: '#f5f4ed' },
   { id: 'latte', name: 'Latte', tagline: 'Soft pastel · Electric mauve', accent: '#8839ef', bg: '#eff1f5' },
   { id: 'paper', name: 'Paper', tagline: 'High contrast · Pure minimal', accent: '#000000', bg: '#ffffff' },
+
+  // New Unique Themes
+  { id: 'neon', name: 'Neon Prism', tagline: 'Cyberpunk · Electric magenta', accent: '#ff00ff', bg: '#000000' },
+  { id: 'mocha', name: 'Mocha', tagline: 'Dark roast · Caramel cream', accent: '#8b5a2b', bg: '#1a1410' },
+  { id: 'mint', name: 'Mint Frost', tagline: 'Deep forest · Fresh mint', accent: '#4ade80', bg: '#0d1a12' },
+  { id: 'coral', name: 'Sunset Coral', tagline: 'Warm tropical · Living coral', accent: '#ff6b6b', bg: '#1a1210' },
+  { id: 'berry', name: 'Midnight Berry', tagline: 'Blackberry · Electric violet', accent: '#7c3aed', bg: '#0a0610' },
 ]
 
 export const useThemeStore = defineStore(
@@ -76,6 +88,11 @@ export const useThemeStore = defineStore(
         parchment: '#f5f4ed',
         latte: '#eff1f5',
         paper: '#ffffff',
+        neon: '#000000',
+        mocha: '#1a1410',
+        mint: '#0d1a12',
+        coral: '#1a1210',
+        berry: '#0a0610',
       }
 
       const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')

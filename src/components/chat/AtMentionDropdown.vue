@@ -138,7 +138,7 @@ watchEffect(() => {
 .at-overlay {
   width: 100%;
   background: var(--color-bg-card);
-  border: 1px solid var(--color-border-mid);
+  border: 1px solid var(--color-border-bright);
   border-bottom: none; /* fuse with input-shell top border */
   border-radius: 12px 12px 0 0; /* round only the top corners */
   margin-bottom: -1px; /* overlap input-shell's top border by 1px */
@@ -156,7 +156,7 @@ watchEffect(() => {
   align-items: center;
   gap: 8px;
   padding: 10px 12px 10px 14px;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border-mid);
   flex-shrink: 0;
 }
 
@@ -250,7 +250,7 @@ watchEffect(() => {
 .at-entry:hover,
 .at-entry--sel {
   background: var(--color-bg-elevated);
-  border-color: var(--color-border-subtle);
+  border-color: var(--color-border-mid);
 }
 
 /* icons */

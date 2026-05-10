@@ -1,204 +1,110 @@
-# AGENTS.md
+# AGENTS.md — Emty Agent
 
-## Overview
+A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat interface with a local SQLite database, skill system, and theme engine.
 
-This is a Tauri + Vue 3 + TypeScript application using the `ai` SDK for LLM capabilities, Pinia for state management, and Vitest for testing.
+---
 
-## Build Commands
+## Tech stack
 
-```bash
-# Run dev server
-pnpm dev
+| Layer       | Technology                                                                               |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| Frontend    | Vue 3 (script setup), TypeScript, Vite, Pinia (persisted), Tailwind CSS v4, Lucide icons |
+| Backend     | Tauri 2 (Rust), SQLite via `tauri-plugin-sql`                                            |
+| AI SDK      | `ai` + provider SDKs (OpenAI, Anthropic, Google, OpenAI-compatible)                      |
+| Packages    | `zod`, `shiki`, `mermaid`, `devicon`, `gpt-tokenizer`                                    |
+| Testing     | Vitest, `vue-test-utils`, `happy-dom`                                                    |
+| Lint/Format | ESLint (`@antfu/eslint-config` + `eslint-plugin-format`), Prettier                       |
+| Hooks       | Husky pre-commit -> `lint-staged`                                                        |
 
-# Full production build
-pnpm build
+---
 
-# Type check only
-pnpm typecheck
+## Developer commands
 
-# Preview production build
-pnpm preview
+| Command              | Purpose                                                          |
+| -------------------- | ---------------------------------------------------------------- |
+| `pnpm install`       | Install dependencies                                             |
+| `pnpm dev`           | Vite dev server (port **1420**, `strictPort: true`)              |
+| `pnpm build`         | `vue-tsc --noEmit && vite build`                                 |
+| `pnpm tauri dev`     | Tauri dev build (needs `pnpm dev` running first or concurrently) |
+| `pnpm typecheck`     | `vue-tsc --noEmit`                                               |
+| `pnpm lint`          | `eslint .` (also runs in CI)                                     |
+| `pnpm lint:fix`      | ESLint autofix (runs via pre-commit)                             |
+| `pnpm test`          | `vitest` (watch mode)                                            |
+| `pnpm test:run`      | `vitest run` (CI mode)                                           |
+| `pnpm test:coverage` | `vitest run --coverage` (provider `v8`)                          |
 
-# Tauri commands
-pnpm tauri dev
-pnpm tauri build
-```
+> **CI order**: `lint:fix` → `lint` → `typecheck` → `test:run` → `build` (see `.github/workflows/ci.yml`).
+> Pre-commit hooks run `lint:fix` via `lint-staged` on staged `src/**/*.{ts,vue}`.
 
-## Lint & Format Commands
+---
 
-```bash
-# Lint all files
-pnpm lint
+## Monorepo/workspace
 
-# Lint and auto-fix
-pnpm lint:fix
-```
+- Uses `pnpm` with `pnpm-workspace.yaml`.
+- Root workspace: main Tauri + Vue app.
+- `Emty models/`: standalone TypeScript library for `models.dev` database (not part of the app).
 
-## Test Commands
+---
 
-```bash
-# Run tests in watch mode (default)
-pnpm test
+## Tauri dev setup
 
-# Run tests once
-pnpm test:run
+- Requires Rust toolchain + `tauri` CLI (`pnpm tauri`).
+- Vite `server.port` is forced to **1420**. If busy, the dev server will fail (not auto-skip).
+- `TAURI_DEV_HOST` enables HMR on port **1421** (via `host` and `hmr` config).
+- Vite **ignores `src-tauri/`** to prevent rebuild loops.
+- `clearScreen: false` so Rust error output is not cleared.
+- Tauri config: `decorations: false` (frameless), window starts `visible: false`.
 
-# Run tests with coverage
-pnpm test:coverage
+---
 
-# Run a single test file
-pnpm test <filename>
-pnpm test:run <filename>
+## Entrypoints & architecture
 
-# Example:
-pnpm test src/utils/__tests__/highlighter.test.ts
-```
+- **`src/main.ts`** — Vue bootstrap: `createApp`, Pinia with `pinia-plugin-persistedstate`, theme init, global error/rejection handlers.
+- **`src/App.vue`** — Root layout: `TitleBar`, `Sidebar`, three views (`chat` | `history` | `projects`), `SettingsModal`.
+- **`src/stores/themes.ts`** — Theme store with **20 themes**; persists active theme to localStorage. Applies `data-theme` to `<html>` and updates `theme-color` meta.
+- **`src/db/database.ts`** — SQLite singleton + **versioned migrations** + typed query helpers. See “Gotchas / Database” below.
+- **`src/skills/builtin/<skill>/SKILL.md`** — Skill definitions (YAML frontmatter + workflow instructions).
+- **`src-tauri/src/lib.rs`** — Tauri command setup; registers plugins (`http`, `dialog`, `fs`, `window-state`, `opener`, `sql`, `shell`, `os`).
 
-## Code Style Guidelines
+---
 
-### General
+## Gotchas
 
-- No semicolons (enforced by ESLint)
-- Single quotes for strings (avoid escape when needed)
-- Object shorthand always (`{ foo }` not `{ foo: foo }`)
-- Prefer `const` over `let`, never `var`
-- Arrow functions use parens only when needed: `x => x + 1` not `(x) => x + 1`
-- Max 2 statements per line
-- No trailing commas
-- `@/` path alias for src directory: `import { foo } from '@/utils/bar'`
+### Database (SQLite)
 
-### Imports
+- Migrations are versioned via `schema_version` table.
+- **Add new `MIGRATIONS` entries only to the end** — never alter existing ones.
+- The migration runner also performs defensive `ALTER TABLE` checks for backward compatibility (columns: `created_at`, `tool_events`, `parts`, `attachments`, `cache_stats`, `mention_context`).
 
-- Import order is automatically handled by `@antfu/eslint-config` (perfectionist)
-- Remove unused imports immediately (enforced)
-- Unused variables/args must be prefixed with `_`
-- Avoid `import type` unless necessary
+### Context & skills
 
-### TypeScript
+- The app auto-detects **`AGENTS.md`** and **`DESIGN.md`** in the user’s project directory and injects them into the system prompt.
+- `MAX_CONTEXT_CHARS` truncates injected context at ~18k characters; keep `AGENTS.md` concise.
+- Built-in skills live in `src/skills/builtin/<skill-name>/SKILL.md` with YAML frontmatter.
 
-- Strict mode fully enabled
-- Avoid `any` (warned)
-- All interfaces/types should be explicit
-- Enable all strict checks:
-  - strictNullChecks
-  - exactOptionalPropertyTypes
-  - noUncheckedIndexedAccess
-  - noFallthroughCasesInSwitch
-  - noUnusedLocals
-  - noUnusedParameters
+### Style / lint
 
-### Vue Components
+| Rule            | Value                                                                |
+| --------------- | -------------------------------------------------------------------- |
+| Semicolons      | Never (`semi: false`)                                                |
+| Quotes          | Single                                                               |
+| Indent          | 2 spaces                                                             |
+| Arrow parens    | Avoid (`as-needed`)                                                  |
+| Trailing commas | `all`                                                                |
+| Line endings    | LF (`endOfLine: "lf"`)                                               |
+| Console         | `warn` (not error)                                                   |
+| Strict TS       | `exactOptionalPropertyTypes`, `noUnusedLocals`, `noUnusedParameters` |
 
-- File extension: `.vue`
-- Block order **MUST** be: `<script>` → `<template>` → `<style>`
-- PascalCase for component names in templates: `<MyComponent />` not `<my-component />`
-- Define macros order: `defineOptions` → `defineProps` → `defineEmits` → `defineSlots`
-- Empty line required between blocks
-- Use `<script setup>` syntax
-- Component files are PascalCase: `ChatMessage.vue`
-
-### Naming Conventions
-
-- Files: kebab-case for utilities, PascalCase for components
-- Variables/functions: camelCase
-- Constants: UPPER_SNAKE_CASE
-- Interfaces/Types: PascalCase
-- Stores: use `useXyzStore` naming pattern
-- Composables: prefix with `use`
-
-### Error Handling
-
-- Always handle promises with `.catch()` or try/catch
-- Prefer error objects over throwing strings
-- Log warnings with `console.warn` (allowed), avoid `console.log` in production
-- Never swallow errors silently
-
-### State Management (Pinia)
-
-- Use `defineStore` with Pinia
-- All stores are in `src/stores/`
-- Use persisted state plugin where appropriate
-- Prefer composition API syntax for stores
+- Pre-commit (`lint-staged`) runs `eslint` on `src/**/*.{ts,vue}` and `prettier --write` on `src/**/*.{css,json,md}`.
+- ESLint ignores: `dist`, `src-tauri`, `coverage`, `node_modules`, `*.d.ts`, `vite.config.*`.
 
 ### Testing
 
-- Tests located in `__tests__` directories next to source files
-- Use Vitest for testing
-- Use `@vue/test-utils` for component tests
-- Test filenames: `<module>.test.ts`
-- Mock external dependencies
+- Test environment is `happy-dom`.
+- Test glob: `src/**/*.{test,spec}.{ts,tsx}`.
+- Tauri APIs are stubbed via `vitest.config.ts` aliases to `src/__mocks__/*`.
 
-### Tauri
+### Build artifacts
 
-- Rust backend in `src-tauri/`
-- Use official Tauri plugins for system operations
-- Never use `window.__TAURI__` directly - use `@tauri-apps/api`
-- Enable strict CSP
-
-## ESLint Rules Enforced
-
-```text
-// Core rules
-'no-console': 'warn',
-'style/semi': ['error', 'never'],
-'style/quotes': ['error', 'single'],
-'prefer-const': 'error',
-'no-var': 'error',
-'object-shorthand': ['error', 'always'],
-
-// Vue rules
-'vue/block-order': ['error', { order: ['script', 'template', 'style'] }],
-'vue/component-name-in-template-casing': ['error', 'PascalCase'],
-'vue/define-macros-order': ['error', { order: ['defineOptions', 'defineProps', 'defineEmits', 'defineSlots'] }],
-'vue/padding-line-between-blocks': ['error', 'always'],
-```
-
-## Dependencies to Use
-
-- UI: Vue 3 + Tailwind CSS v4
-- State: Pinia + pinia-plugin-persistedstate
-- Icons: lucide-vue-next
-- AI: ai SDK (Vercel) with Anthropic, Google, OpenAI providers
-- Database: Tauri SQL plugin (sqlite)
-- Syntax highlighting: shiki
-- Build: Vite
-- Testing: Vitest + happy-dom
-- Lint: @antfu/eslint-config
-
-## Git & Hooks
-
-- Husky pre-commit hooks run lint-staged
-- Always run `pnpm lint:fix` before committing
-- Commit messages should be descriptive
-
-## Project Structure
-
-```
-src/
-  components/     # Vue components (organized by feature)
-  stores/         # Pinia stores
-  utils/          # Utility functions
-  views/          # Page components
-  db/             # Database operations
-  assets/         # Static assets
-  styles/         # Global styles
-```
-
-## Important Notes
-
-- This is an ESM module project (`"type": "module"` in package.json)
-- Use `.ts` extensions in imports when needed
-- Target ES2022
-- Do not modify `src-tauri` without understanding Tauri security
-- All external API calls should go through the AI SDK providers
-- Avoid direct DOM manipulation - use Vue reactivity
-
-## Editor Configuration
-
-The project uses ESLint with auto-fix. Enable "format on save" in your editor using ESLint. Do not use Prettier directly - formatting is handled by ESLint's format plugin.
-
-## Commit Guidelines
-
-- Make small, focused commits
-- Each commit should compile and pass tests
-- Describe what changed and why
+- Vite builds to `dist/` (Tauri frontend bundle).
+- Rust builds in `src-tauri/target/`.

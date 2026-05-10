@@ -48,6 +48,8 @@
   --color-border-subtle: #1e1812;
   --color-border-mid: #2e2618;
   --color-border-bright: #443a28;
+
+  --color-selection-bg: #c8651f55;
 }
 
 /* ── 2. Void ─────────────────────────────────────────────────────────── */
@@ -94,6 +96,8 @@
   --color-border-subtle: #18141e;
   --color-border-mid: #241f30;
   --color-border-bright: #342a42;
+
+  --color-selection-bg: #7c3aed55;
 }
 
 /* ── 3. Arctic Frost ─────────────────────────────────────────────────── */
@@ -138,6 +142,8 @@
   --color-border-subtle: #0d1c2e;
   --color-border-mid: #14283e;
   --color-border-bright: #1e3a58;
+
+  --color-selection-bg: #0891b255;
 }
 
 /* ── 4. Sakura Night ─────────────────────────────────────────────────── */
@@ -183,6 +189,8 @@
   --color-border-subtle: #1e1228;
   --color-border-mid: #2c1a38;
   --color-border-bright: #3e2450;
+
+  --color-selection-bg: #db277755;
 }
 
 /* ── 5. Emerald Terminal ─────────────────────────────────────────────── */
@@ -222,14 +230,17 @@
   --color-text-primary: #d1fae5;
   --color-text-secondary: #7aac90;
   /* FIX: was #6ee7b7 — bright mint looked like a link/accent, not body text */
-  --color-text-tertiary: #4a7a60;
-  /* FIX: was #34d399 — vivid emerald with high luminance, looked brighter than secondary */
-  --color-text-dim: #1a4a32;
+  --color-text-tertiary: #6a9a80;
+  /* FIX: was #4a7a60 — too dark, poor contrast on dark green bg */
+  --color-text-dim: #3a6a52;
+  /* FIX: was #1a4a32 — nearly invisible on dark bg */
   --color-code: #a7f3d0;
 
   --color-border-subtle: #0a1a12;
   --color-border-mid: #10261a;
   --color-border-bright: #183826;
+
+  --color-selection-bg: #05966955;
 }
 
 /* ── 6. Golden Dusk ──────────────────────────────────────────────────── */
@@ -274,6 +285,8 @@
   --color-border-subtle: #1e1808;
   --color-border-mid: #2e2410;
   --color-border-bright: #443618;
+
+  --color-selection-bg: #d9770655;
 }
 
 /* ── 7. Deep Ocean ───────────────────────────────────────────────────── */
@@ -320,6 +333,8 @@
   --color-border-subtle: #0a1e28;
   --color-border-mid: #102e3e;
   --color-border-bright: #164054;
+
+  --color-selection-bg: #0891b255;
 }
 
 /* ── 8. Crimson Noir ─────────────────────────────────────────────────── */
@@ -366,6 +381,8 @@
   --color-border-subtle: #201414;
   --color-border-mid: #301c1c;
   --color-border-bright: #442828;
+
+  --color-selection-bg: #dc262655;
 }
 
 /* ── 9. Slate Storm ──────────────────────────────────────────────────── */
@@ -409,6 +426,8 @@
   --color-border-subtle: #101a2c;
   --color-border-mid: #182438;
   --color-border-bright: #223050;
+
+  --color-selection-bg: #2563eb55;
 }
 
 /* ── 10. Amethyst Haze ───────────────────────────────────────────────── */
@@ -446,14 +465,17 @@
   --color-text-primary: #faf5ff;
   --color-text-secondary: #9890b8;
   /* FIX: was #c4b5fd — same purple as accent-text. Neutralised to gray-purple */
-  --color-text-tertiary: #686888;
-  /* FIX: was #a78bfa — vivid violet barely different from secondary */
-  --color-text-dim: #3b2a58;
+  --color-text-tertiary: #8888a8;
+  /* FIX: was #686888 — too dark, poor contrast */
+  --color-text-dim: #5a4a78;
+  /* FIX: was #3b2a58 — too dark to be useful */
   --color-code: #c4b5fd;
 
   --color-border-subtle: #190f28;
   --color-border-mid: #261a38;
   --color-border-bright: #38244e;
+
+  --color-selection-bg: #7c3aed55;
 }
 
 /* ── 11. OLED Abyss (Deep Dark) ──────────────────────────────────────── */
@@ -503,6 +525,8 @@
   --color-border-subtle: #141414;
   --color-border-mid: #222222;
   --color-border-bright: #333333;
+
+  --color-selection-bg: #00c8e055;
 }
 
 /* ── 12. Parchment (Claude/Anthropic Inspired) ───────────────────────── */
@@ -547,6 +571,8 @@
   --color-border-subtle: #f0eee6;
   --color-border-mid: #e8e6dc;
   --color-border-bright: #d1cfc5;
+
+  --color-selection-bg: #c9644240;
 }
 
 /* ── 13. Latte (Catppuccin Inspired) ─────────────────────────────────── */
@@ -592,6 +618,8 @@
   --color-border-subtle: #dce0e8;
   --color-border-mid: #ccd0da;
   --color-border-bright: #bcc0cc;
+
+  --color-selection-bg: #8839ef40;
 }
 
 /* ── 14. Paper (Pure Minimal Light) ──────────────────────────────────── */
@@ -636,6 +664,8 @@
   --color-border-subtle: #eaeaea;
   --color-border-mid: #dddddd;
   --color-border-bright: #cccccc;
+
+  --color-selection-bg: #00000022;
 }
 
 /* ── 15. Velvet Midnight (Deep Purple Dark) ──────────────────────────── */
@@ -681,4 +711,215 @@
   --color-border-subtle: #1a132b;
   --color-border-mid: #271d40;
   --color-border-bright: #3b2b5e;
+
+  --color-selection-bg: #a855f755;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME 16: Neon Prism - Cyberpunk aesthetic with electric magenta and cyan
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme='neon'] {
+  --color-bg-base: #000000;
+  --color-bg-surface: #050505;
+  --color-bg-card: #0a0a0a;
+  --color-bg-hover: #101010;
+  --color-bg-elevated: #151515;
+  --color-accent-dim: #4a004a;
+  --color-accent: #ff00ff;
+  --color-accent-bright: #ff40ff;
+  --color-accent-text: #ff80ff;
+  --color-accent-muted: #ff00ff1f;
+  --color-accent-muted-plus: #ff00ff30;
+  --color-info: #00aaaa;
+  --color-info-text: #00ffff;
+  --color-info-muted: #00ffff10;
+  --color-info-muted-plus: #00ffff20;
+  --color-success: #00ff80;
+  --color-success-text: #00ff80;
+  --color-success-muted: #00ff8018;
+  --color-warning: #c8c820;
+  --color-warning-text: #e8e860;
+  /* FIX: was #ffff00 — pure yellow too harsh on OLED displays */
+  --color-danger: #ff0055;
+  --color-danger-hover: #ff3377;
+  --color-danger-text: #ff6699;
+  --color-danger-muted: #ff005518;
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #c0c0c0;
+  --color-text-tertiary: #808080;
+  --color-text-dim: #404040;
+  --color-code: #ff80ff;
+  --color-border-subtle: #1a1a1a;
+  --color-border-mid: #2a2a2a;
+  --color-border-bright: #3a3a3a;
+
+  --color-selection-bg: #ff00ff50;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME 17: Mocha - Rich coffee shop aesthetic with deep chocolate browns
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme='mocha'] {
+  --color-bg-base: #1a1410;
+  --color-bg-surface: #221a14;
+  --color-bg-card: #2a2018;
+  --color-bg-hover: #32261c;
+  --color-bg-elevated: #3a2c20;
+  --color-accent-dim: #5a3a20;
+  --color-accent: #8b5a2b;
+  --color-accent-bright: #a06b3a;
+  --color-accent-text: #d4a574;
+  --color-accent-muted: #8b5a2b1f;
+  --color-accent-muted-plus: #8b5a2b30;
+  --color-info: #6b8e9e;
+  --color-info-text: #8ab0c0;
+  --color-info-muted: #6b8e9e10;
+  --color-info-muted-plus: #6b8e9e20;
+  --color-success: #7a9a5a;
+  --color-success-text: #9aba7a;
+  --color-success-muted: #7a9a5a18;
+  --color-warning: #c9a030;
+  --color-warning-text: #e8c050;
+  --color-danger: #b05050;
+  --color-danger-hover: #c06060;
+  --color-danger-text: #d08080;
+  --color-danger-muted: #b0505018;
+  --color-text-primary: #f5ebe0;
+  --color-text-secondary: #c8b8a8;
+  --color-text-tertiary: #b8a898;
+  /* FIX: was #988878 — too low contrast on dark bg */
+  --color-text-dim: #887868;
+  /* FIX: was #685848 — too dark */
+  --color-code: #d4a574;
+  --color-border-subtle: #2e2418;
+  --color-border-mid: #3a3020;
+  --color-border-bright: #4a3a28;
+
+  --color-selection-bg: #8b5a2b55;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME 18: Mint Frost - Fresh, airy sage green with cream undertones
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme='mint'] {
+  --color-bg-base: #0d1a12;
+  --color-bg-surface: #122218;
+  --color-bg-card: #182a1e;
+  --color-bg-hover: #1e3224;
+  --color-bg-elevated: #243a2c;
+  --color-accent-dim: #1a5a3a;
+  --color-accent: #4ade80;
+  --color-accent-bright: #6ee7a0;
+  --color-accent-text: #86efac;
+  --color-accent-muted: #4ade801f;
+  --color-accent-muted-plus: #4ade8030;
+  --color-info: #38bdf8;
+  --color-info-text: #7dd3fc;
+  --color-info-muted: #38bdf810;
+  --color-info-muted-plus: #38bdf820;
+  --color-success: #22c55e;
+  --color-success-text: #4ade80;
+  --color-success-muted: #22c55e18;
+  --color-warning: #facc15;
+  --color-warning-text: #fde047;
+  --color-danger: #f87171;
+  --color-danger-hover: #fca5a5;
+  --color-danger-text: #fecaca;
+  --color-danger-muted: #f8717118;
+  --color-text-primary: #dcfce7;
+  --color-text-secondary: #86efac;
+  --color-text-tertiary: #6a8a7a;
+  /* FIX: was #4ade80 — green competed with accent, poor contrast */
+  --color-text-dim: #4a6a5a;
+  /* FIX: was #22c55e — too bright, looked like interactive element */
+  --color-code: #86efac;
+  --color-border-subtle: #1e3a2a;
+  --color-border-mid: #2a4a36;
+  --color-border-bright: #365a42;
+
+  --color-selection-bg: #4ade8050;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME 19: Sunset Coral - Warm tropical with living coral and peach tones
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme='coral'] {
+  --color-bg-base: #1a1210;
+  --color-bg-surface: #221816;
+  --color-bg-card: #2a1e1a;
+  --color-bg-hover: #322620;
+  --color-bg-elevated: #3a2e26;
+  --color-accent-dim: #8a3a3a;
+  --color-accent: #ff6b6b;
+  --color-accent-bright: #ff8585;
+  --color-accent-text: #ffb3b3;
+  --color-accent-muted: #ff6b6b1f;
+  --color-accent-muted-plus: #ff6b6b30;
+  --color-info: #ffd93d;
+  --color-info-text: #ffe066;
+  --color-info-muted: #ffd93d10;
+  --color-info-muted-plus: #ffd93d20;
+  --color-success: #6bc77a;
+  --color-success-text: #90d99a;
+  --color-success-muted: #6bc77a18;
+  --color-warning: #ff9f43;
+  --color-warning-text: #ffbe76;
+  --color-danger: #ff4757;
+  --color-danger-hover: #ff6b7a;
+  --color-danger-text: #ff8a98;
+  --color-danger-muted: #ff475718;
+  --color-text-primary: #fff5f0;
+  --color-text-secondary: #ffc8b8;
+  --color-text-tertiary: #c8a898;
+  /* FIX: was #ff9f80 — coral competed with accent, poor contrast */
+  --color-text-dim: #987868;
+  /* FIX: was #cc7a60 — too close to accent color */
+  --color-code: #ff6b6b;
+  --color-border-subtle: #2e2018;
+  --color-border-mid: #3a2820;
+  --color-border-bright: #4a3228;
+
+  --color-selection-bg: #ff6b6b55;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME 20: Midnight Berry - Deep blackberry with electric violet highlights
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme='berry'] {
+  --color-bg-base: #0a0610;
+  --color-bg-surface: #100818;
+  --color-bg-card: #160c20;
+  --color-bg-hover: #1e1228;
+  --color-bg-elevated: #261830;
+  --color-accent-dim: #4a1a6a;
+  --color-accent: #7c3aed;
+  --color-accent-bright: #8b5cf6;
+  --color-accent-text: #c4b5fd;
+  --color-accent-muted: #7c3aed1f;
+  --color-accent-muted-plus: #7c3aed30;
+  --color-info: #c026d3;
+  --color-info-text: #e879f9;
+  --color-info-muted: #c026d310;
+  --color-info-muted-plus: #c026d320;
+  --color-success: #10b981;
+  --color-success-text: #34d399;
+  --color-success-muted: #10b98118;
+  --color-warning: #f59e0b;
+  --color-warning-text: #fbbf24;
+  --color-danger: #f43f5e;
+  --color-danger-hover: #fb7185;
+  --color-danger-text: #fda4af;
+  --color-danger-muted: #f43f5e18;
+  --color-text-primary: #faf5ff;
+  --color-text-secondary: #d8b4fe;
+  --color-text-tertiary: #9a8ab8;
+  /* FIX: was #a78bfa — purple competed with accent, poor contrast */
+  --color-text-dim: #6a5a88;
+  /* FIX: was #7c3aed — too close to accent color */
+  --color-code: #e879f9;
+  --color-border-subtle: #1e1028;
+  --color-border-mid: #2a1838;
+  --color-border-bright: #3a2048;
+
+  --color-selection-bg: #7c3aed55;
 }

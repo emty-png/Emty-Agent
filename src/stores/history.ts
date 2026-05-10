@@ -115,7 +115,21 @@ export const useHistoryStore = defineStore('history', () => {
           }
           catch { }
         }
-        else if (r.content && r.role === 'assistant') {
+        let cacheStats
+        if (r.cache_stats) {
+          try {
+            cacheStats = JSON.parse(r.cache_stats)
+          }
+          catch { }
+        }
+        let attachments
+        if (r.attachments) {
+          try {
+            attachments = JSON.parse(r.attachments)
+          }
+          catch { }
+        }
+        if (!r.parts && r.content && r.role === 'assistant') {
           // Fallback legacy migration
           parts = [{ type: 'text', text: r.content }]
         }
@@ -124,8 +138,11 @@ export const useHistoryStore = defineStore('history', () => {
           role: r.role,
           content: r.content,
           timestamp: new Date(r.created_at),
+          ...(r.mention_context ? { mentionContext: r.mention_context } : {}),
           ...(toolEvents ? { toolEvents } : {}),
           ...(parts ? { parts } : {}),
+          ...(attachments ? { attachments } : {}),
+          ...(cacheStats ? { cacheStats } : {}),
         }
       }),
     })

@@ -327,14 +327,35 @@ export type WebTools = ReturnType<typeof createWebTools>
 
 // ── display labels ────────────────────────────────────────────────────────────
 
-function truncate(s: string, max = 48): string {
+/**
+ * Truncate a string to at most `max` visible characters, appending an ellipsis
+ * if trimmed. The max is intentionally short so badge text never wraps.
+ */
+function truncate(s: string, max = 42): string {
   const t = s.trim()
   return t.length > max ? `${t.slice(0, max)}\u2026` : t
 }
 
-/** Strip scheme for cleaner badge display: "https://example.com/path" → "example.com/path" */
+/**
+ * Strip scheme + trailing slash for compact badge display.
+ * "https://example.com/some/path" → "example.com/some/path"
+ */
 function stripScheme(url: string): string {
-  return url.replace(/^https?:\/\//, '')
+  return url.replace(/^https?:\/\//, '').replace(/\/$/, '')
+}
+
+/**
+ * Extract just the hostname from a URL for ultra-compact display when there
+ * are multiple URLs and listing all paths would overflow.
+ * "https://docs.example.com/some/long/path" → "docs.example.com"
+ */
+function hostname(url: string): string {
+  try {
+    return new URL(url).hostname
+  }
+  catch {
+    return stripScheme(url).split('/')[0] ?? url
+  }
 }
 
 export function webToolDisplayLabel(
@@ -346,24 +367,29 @@ export function webToolDisplayLabel(
       const queries = args.queries as string[] | undefined
       if (!queries?.length)
         return 'Searched web'
+
+      // Always show just the first query truncated + optional overflow count.
+      // Listing all queries inline grows unboundedly and breaks the badge layout.
+      const first = truncate(queries[0]!, 42)
       if (queries.length === 1)
-        return `Searched web for ${truncate(queries[0]!)}`
-      const first = truncate(queries[0]!, 32)
-      const rest = queries.slice(1).map(q => truncate(q, 28))
-      return `Searched web for ${first}, ${rest.join(', ')}`
+        return `Searched: ${first}`
+      return `Searched: ${first} +${queries.length - 1} more`
     }
 
     case 'web_fetch': {
       const urls = args.urls as string[] | undefined
       if (!urls?.length)
-        return 'Web fetched page'
+        return 'Fetched page'
+
+      // Single URL: show full path without scheme, truncated.
       if (urls.length === 1)
-        return `Web fetched ${stripScheme(urls[0]!)}`
-      const displayed = urls.slice(0, 3).map(u => stripScheme(u))
-      const label = displayed.join(', ')
-      return urls.length > 3
-        ? `Web fetched ${truncate(label, 60)} +${urls.length - 3} more`
-        : `Web fetched ${label}`
+        return `Fetched ${truncate(stripScheme(urls[0]!), 48)}`
+
+      // Multiple URLs: show hostnames only (paths make it too long) + overflow.
+      const first = hostname(urls[0]!)
+      if (urls.length === 2)
+        return `Fetched ${first}, ${hostname(urls[1]!)}`
+      return `Fetched ${first} +${urls.length - 1} more`
     }
 
     default:

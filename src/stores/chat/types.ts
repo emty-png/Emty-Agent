@@ -1,6 +1,10 @@
+import type { Attachment } from './attachment-types'
 import type { ChatMode } from '@/utils/ai'
+import type { ChatPromptEstimate } from '@/utils/chatEstimate'
+import type { PendingBatch } from '@/utils/tools/questions'
 import type { SubAgentInfo, SubAgentPersonality } from '@/utils/tools/subagent'
 import type { TodoItem } from '@/utils/tools/todos'
+import { UsageStats } from '@/utils/contextCaching'
 
 export interface ToolEvent {
   id: string
@@ -11,6 +15,17 @@ export interface ToolEvent {
   startedAt: number
   finishedAt?: number
   /**
+   * Parsed input arguments the model sent to the tool.
+   * Persisted so subsequent turns can reconstruct the full
+   * tool-call → tool-result message sequence for the AI SDK.
+   */
+  args?: Record<string, unknown>
+  /**
+   * The value returned by the tool's execute() function.
+   * Persisted so subsequent turns include the tool output in context.
+   */
+  result?: unknown
+  /**
    * Arbitrary key-value metadata for tool-specific badge data.
    * spawn_subagent stores { subAgentTabId: string } here so the badge can
    * navigate to the sub-agent tab on click.
@@ -20,6 +35,7 @@ export interface ToolEvent {
 
 export type MessagePart
   = | { type: 'text'; text: string }
+    | { type: 'reasoning'; text: string }
     | { type: 'tool'; toolCallId: string }
 
 export interface Message {
@@ -27,9 +43,25 @@ export interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  mentionContext?: string
   toolEvents?: ToolEvent[]
   parts?: MessagePart[]
+  cacheStats?: UsageStats
   error?: string
+  /** User-attached files/images (only present on user messages). */
+  attachments?: Attachment[]
+}
+
+export interface ChatDraftState {
+  text: string
+  mode: ChatMode
+  attachments: Attachment[]
+}
+
+export interface ChatEstimatorState {
+  estimate: ChatPromptEstimate | null
+  error: string
+  estimating: boolean
 }
 
 export interface ChatTab {
@@ -39,6 +71,10 @@ export interface ChatTab {
   conversationId: string | null
   isStreaming: boolean
   todos: TodoItem[]
+  modelUid?: string | null
+  draft: ChatDraftState
+  estimator: ChatEstimatorState
+  pendingQuestions?: PendingBatch | null
   /**
    * Present only on sub-agent tabs. Contains personality, mission, parent tab ID,
    * and live status. Sub-agent tabs never persist to the database — they are
@@ -47,4 +83,4 @@ export interface ChatTab {
   subAgent?: SubAgentInfo
 }
 
-export type { ChatMode, SubAgentInfo, SubAgentPersonality, TodoItem }
+export type { Attachment, ChatMode, SubAgentInfo, SubAgentPersonality, TodoItem }

@@ -1,41 +1,19 @@
 <script setup lang="ts">
-import type { Message, ToolEvent } from '@/stores/chat'
+import type { Attachment } from '@/stores/chat/attachment-types'
 import type { ChatMode } from '@/utils/ai'
-import { ArrowDown, Plus, Square, X } from 'lucide-vue-next'
+import { ArrowDown, Square } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, ref, watch } from 'vue'
-import ArtifactRenderer from '@/components/chat/ArtifactRenderer.vue'
+import AttachmentPreview from '@/components/chat/AttachmentPreview.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
-import MarkdownMessage from '@/components/chat/MarkdownMessage.vue'
-import RestorePoint from '@/components/chat/RestorePoint.vue'
-import ToolCallBadge from '@/components/chat/ToolCallBadge.vue'
+import WeatherBackground from '@/components/chat/Illu_1.vue'
+import MessageThread from '@/components/chat/MessageThread.vue'
+import SubAgentBanner from '@/components/chat/SubAgentBanner.vue'
+import TabBar from '@/components/chat/TabBar.vue'
 import { useChatStore } from '@/stores/chat'
-import { useCheckpointStore } from '@/stores/checkpoints'
 
 const chat = useChatStore()
-const checkpointStore = useCheckpointStore()
-const { tabs, activeId, activeTab } = storeToRefs(chat)
-
-// ── typing phrases ───────────────────────────────────────────────────────────
-const phrases = ['Thinking...', 'Changing reality...', 'Reticulating splines...', 'Pondering...', 'Analyzing...', 'Consulting the oracle...', 'Processing thoughts...', 'Generating brilliance...', 'Synthesizing wisdom...', 'Crafting response...', 'Loading neurons...', 'Meditating...', 'Channeling wisdom...', 'Orchestrating magic...']
-const currentPhraseIndex = ref(0)
-
-watch(
-  () => activeTab.value.isStreaming,
-  (isStreaming, _, onCleanup) => {
-    if (!isStreaming) {
-      currentPhraseIndex.value = 0
-      return
-    }
-
-    const interval = setInterval(() => {
-      currentPhraseIndex.value = (currentPhraseIndex.value + 1) % phrases.length
-    }, 2000)
-
-    onCleanup(() => clearInterval(interval))
-  },
-  { immediate: true },
-)
+const { activeId, activeTab } = storeToRefs(chat)
 
 // ── auto-scroll & scroll button ───────────────────────────────────────────────
 const threadRef = ref<HTMLElement | null>(null)
@@ -84,74 +62,16 @@ watch(
 )
 
 // ── send / stop ───────────────────────────────────────────────────────────────
-function send(text: string, mode: ChatMode) {
-  chat.sendMessage(text, mode)
+function send(text: string, mode: ChatMode, attachments: Attachment[]) {
+  chat.sendMessage(text, mode, attachments.length > 0 ? attachments : undefined)
 }
 
 function stop() {
   chat.stopGeneration()
 }
 
-function formatTime(date: Date) {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-function getGroupedParts(msg: Message) {
-  if (!msg.parts || msg.parts.length === 0)
-    return null
-  const groups: Array<{ type: 'text'; text: string; key: string } | { type: 'tools'; events: ToolEvent[]; key: string }> = []
-  for (let i = 0; i < msg.parts.length; i++) {
-    const part = msg.parts[i]!
-    if (part.type === 'text') {
-      groups.push({ type: 'text', text: part.text, key: `text-${i}` })
-    }
-    else if (part.type === 'tool') {
-      const event = msg.toolEvents?.find(e => e.id === part.toolCallId)
-      if (event) {
-        const last = groups[groups.length - 1]
-        if (last?.type === 'tools') {
-          last.events.push(event)
-        }
-        else {
-          groups.push({ type: 'tools', events: [event], key: `tools-${i}` })
-        }
-      }
-    }
-  }
-  return groups
-}
-
-// ── @mention highlighting in user bubbles ─────────────────────────────────────
-
-interface MsgPart { type: 'text' | 'mention'; value: string }
-
-/**
- * Split a user message string into plain text and @mention parts.
- * @src/index.ts and @src/ are rendered as highlighted chips.
- */
-function splitMentions(text: string): MsgPart[] {
-  const parts: MsgPart[] = []
-  const regex = /@[\w./\-]+/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null = regex.exec(text)
-  while (match !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ type: 'text', value: text.slice(lastIndex, match.index) })
-    }
-    parts.push({ type: 'mention', value: match[0] })
-    lastIndex = match.index + match[0].length
-    match = regex.exec(text)
-  }
-  if (lastIndex < text.length) {
-    parts.push({ type: 'text', value: text.slice(lastIndex) })
-  }
-  return parts
-}
-
-/** True if the content contains any @mention tokens. */
-function hasMentions(text: string): boolean {
-  return /@[\w.\-]+/.test(text)
-}
+// ── attachment preview ────────────────────────────────────────────────────────
+const previewAttachment = ref<Attachment | null>(null)
 
 // ── sub-agent tab helpers ─────────────────────────────────────────────────────
 
@@ -171,75 +91,17 @@ const parentTabExists = computed(() => {
   const parentId = activeTab.value.subAgent?.parentTabId
   return !!parentId && chat.tabs.some(t => t.id === parentId)
 })
-
-/** Filter out the "user" mission message from sub-agent tabs — the banner shows it. */
-function getSubAgentMessages(messages: Message[]) {
-  return messages.filter(m => m.role !== 'user')
-}
-
-// ── checkpoint / restore-point helpers ────────────────────────────────────────
-
-/** Reactive list of checkpoints for the active tab. */
-const activeCheckpoints = computed(
-  () => checkpointStore.getCheckpoints(activeTab.value.id),
-)
-
-/**
- * Find a checkpoint that sits at a given message index.
- * Used in the template to render restore points between message pairs.
- */
-function checkpointAtIndex(msgIndex: number) {
-  return activeCheckpoints.value.find(c => c.messageIndex === msgIndex)
-}
-
-/** Handle the restore event from a RestorePoint component. */
-async function handleRestore(checkpointId: string) {
-  await chat.restoreToCheckpoint(activeTab.value.id, checkpointId)
-}
 </script>
 
 <template>
   <div class="chat-root">
-    <div class="tab-bar">
-      <div class="tab-list">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          class="tab"
-          :class="{
-            'tab--active': tab.id === activeId,
-            'tab--subagent': !!tab.subAgent,
-          }"
-          @click="activeId = tab.id"
-        >
-          <span v-if="tab.isStreaming" class="tab-streaming-dot" />
-          <span class="tab-title">{{ tab.title }}</span>
-          <span
-            class="tab-close"
-            role="button"
-            aria-label="Close tab"
-            @click.stop="chat.closeTab(tab.id)"
-          >
-            <X :size="11" :stroke-width="2" />
-          </span>
-        </button>
-      </div>
-
-      <button
-        class="tab-new"
-        :class="{ 'tab-new--hidden': tabs.length >= 9 }"
-        aria-label="New chat"
-        :disabled="tabs.length >= 9"
-        @click="chat.addTab"
-      >
-        <Plus :size="14" :stroke-width="1.8" />
-      </button>
-    </div>
+    <TabBar />
 
     <div class="chat-body">
       <Transition name="fade" mode="out-in">
         <!-- Landing (empty normal tab) -->
         <div v-if="activeTab.messages.length === 0 && !isSubAgentTab" key="landing" class="landing">
+          <WeatherBackground />
           <div class="center-col">
             <ChatInput
               :is-streaming="activeTab.isStreaming"
@@ -251,85 +113,19 @@ async function handleRestore(checkpointId: string) {
 
         <!-- Sub-agent conversation -->
         <div v-else-if="isSubAgentTab" key="subagent" class="conversation">
-          <!-- Mission banner -->
-          <div class="sa-banner">
-            <div class="sa-banner-inner">
-              <div class="sa-banner-body">
-                <div class="sa-banner-header">
-                  <span class="sa-banner-name">
-                    {{ activeTab.subAgent!.personality.charAt(0).toUpperCase() + activeTab.subAgent!.personality.slice(1) }} Agent
-                  </span>
-                </div>
-                <p class="sa-banner-mission">
-                  {{ activeTab.subAgent!.mission }}
-                </p>
-              </div>
-            </div>
-          </div>
+          <SubAgentBanner :sub-agent="activeTab.subAgent!" />
 
           <div class="thread-container">
             <div class="scroll-blur-top" />
 
             <div ref="threadRef" class="thread" @scroll="onScroll">
               <div class="thread-inner">
-                <TransitionGroup name="msg">
-                  <template v-for="msg in getSubAgentMessages(activeTab.messages)" :key="msg.id">
-                    <div class="assistant-row">
-                      <div v-if="msg.error" class="assistant-error">
-                        ⚠ {{ msg.error }}
-                      </div>
-
-                      <template v-for="(group, gIdx) in getGroupedParts(msg)" :key="group.key">
-                        <div v-if="group.type === 'tools'" class="tool-events">
-                          <template v-for="event in group.events" :key="event.id">
-                            <ToolCallBadge :event="event" />
-                            <ArtifactRenderer :event="event" />
-                          </template>
-                        </div>
-
-                        <MarkdownMessage
-                          v-else-if="group.type === 'text' && group.text"
-                          :content="group.text"
-                          :streaming="activeTab.isStreaming && msg.id === activeTab.messages.at(-1)?.id && gIdx === getGroupedParts(msg)!.length - 1"
-                        />
-                      </template>
-
-                      <template v-if="!getGroupedParts(msg)">
-                        <div
-                          v-if="msg.toolEvents && msg.toolEvents.length > 0"
-                          class="tool-events"
-                        >
-                          <template v-for="event in msg.toolEvents" :key="event.id">
-                            <ToolCallBadge :event="event" />
-                            <ArtifactRenderer :event="event" />
-                          </template>
-                        </div>
-
-                        <MarkdownMessage
-                          v-if="msg.content"
-                          :content="msg.content"
-                          :streaming="activeTab.isStreaming && msg.id === activeTab.messages.at(-1)?.id"
-                        />
-                      </template>
-
-                      <div
-                        v-if="activeTab.isStreaming && msg.id === activeTab.messages.at(-1)?.id && (!msg.parts || msg.parts.length === 0 || (msg.parts.length === 1 && msg.parts[0]!.type === 'text' && !msg.parts[0]!.text))"
-                        class="typing"
-                      >
-                        <div class="hexagon-hive">
-                          <div class="hex h1" />
-                          <div class="hex h2" />
-                          <div class="hex h3" />
-                          <div class="hex h4" />
-                          <div class="hex h5" />
-                          <div class="hex h6" />
-                          <div class="hex h7" />
-                        </div>
-                        <span class="typing-text">{{ phrases[currentPhraseIndex] }}</span>
-                      </div>
-                    </div>
-                  </template>
-                </TransitionGroup>
+                <MessageThread
+                  :messages="activeTab.messages"
+                  :is-streaming="activeTab.isStreaming"
+                  :is-sub-agent="true"
+                  @preview-attachment="previewAttachment = $event"
+                />
               </div>
             </div>
 
@@ -386,111 +182,19 @@ async function handleRestore(checkpointId: string) {
         <!-- Normal conversation -->
         <div v-else key="conversation" class="conversation">
           <div class="thread-container">
-            <!-- Smooth fade blur at the top -->
             <div class="scroll-blur-top" />
 
             <div ref="threadRef" class="thread" @scroll="onScroll">
               <div class="thread-inner">
-                <TransitionGroup name="msg">
-                  <template v-for="(msg, msgIdx) in activeTab.messages" :key="msg.id">
-                    <!-- Restore point divider: shown before each user message -->
-                    <RestorePoint
-                      v-if="msg.role === 'user' && checkpointAtIndex(msgIdx)"
-                      :key="`rp-${msg.id}`"
-                      :checkpoint="checkpointAtIndex(msgIdx)!"
-                      :disabled="activeTab.isStreaming"
-                      @restore="handleRestore"
-                    />
-
-                    <div v-if="msg.role === 'user'" class="user-row">
-                      <div class="user-pill">
-                        <!--
-                          If the message contains @mentions, split and render them
-                          as highlighted chips. Otherwise render plain text.
-                          white-space: pre-wrap is preserved in both branches.
-                        -->
-                        <template v-if="hasMentions(msg.content)">
-                          <template
-                            v-for="(part, i) in splitMentions(msg.content)"
-                            :key="i"
-                          >
-                            <span
-                              v-if="part.type === 'mention'"
-                              class="mention-chip"
-                            >{{ part.value }}</span>
-                            <template v-else>
-                              {{ part.value }}
-                            </template>
-                          </template>
-                        </template>
-                        <template v-else>
-                          {{ msg.content }}
-                        </template>
-                      </div>
-                      <span class="user-time">{{ formatTime(msg.timestamp) }}</span>
-                    </div>
-
-                    <div v-else class="assistant-row">
-                      <div v-if="msg.error" class="assistant-error">
-                        ⚠ {{ msg.error }}
-                      </div>
-
-                      <template v-for="(group, gIdx) in getGroupedParts(msg)" :key="group.key">
-                        <div v-if="group.type === 'tools'" class="tool-events">
-                          <template v-for="event in group.events" :key="event.id">
-                            <ToolCallBadge :event="event" />
-                            <ArtifactRenderer :event="event" />
-                          </template>
-                        </div>
-
-                        <MarkdownMessage
-                          v-else-if="group.type === 'text' && group.text"
-                          :content="group.text"
-                          :streaming="activeTab.isStreaming && msg.id === activeTab.messages.at(-1)?.id && gIdx === getGroupedParts(msg)!.length - 1"
-                        />
-                      </template>
-
-                      <!-- Fallback for legacy messages that didn't have 'parts' -->
-                      <template v-if="!getGroupedParts(msg)">
-                        <div
-                          v-if="msg.toolEvents && msg.toolEvents.length > 0"
-                          class="tool-events"
-                        >
-                          <template v-for="event in msg.toolEvents" :key="event.id">
-                            <ToolCallBadge :event="event" />
-                            <ArtifactRenderer :event="event" />
-                          </template>
-                        </div>
-
-                        <MarkdownMessage
-                          v-if="msg.content"
-                          :content="msg.content"
-                          :streaming="activeTab.isStreaming && msg.id === activeTab.messages.at(-1)?.id"
-                        />
-                      </template>
-
-                      <div
-                        v-if="activeTab.isStreaming && msg.id === activeTab.messages.at(-1)?.id && (!msg.parts || msg.parts.length === 0 || (msg.parts.length === 1 && msg.parts[0]!.type === 'text' && !msg.parts[0]!.text))"
-                        class="typing"
-                      >
-                        <div class="hexagon-hive">
-                          <div class="hex h1" />
-                          <div class="hex h2" />
-                          <div class="hex h3" />
-                          <div class="hex h4" />
-                          <div class="hex h5" />
-                          <div class="hex h6" />
-                          <div class="hex h7" />
-                        </div>
-                        <span class="typing-text">{{ phrases[currentPhraseIndex] }}</span>
-                      </div>
-                    </div>
-                  </template>
-                </TransitionGroup>
+                <MessageThread
+                  :messages="activeTab.messages"
+                  :is-streaming="activeTab.isStreaming"
+                  :is-sub-agent="false"
+                  @preview-attachment="previewAttachment = $event"
+                />
               </div>
             </div>
 
-            <!-- Smooth fade blur at the bottom -->
             <div class="scroll-blur-bottom" />
           </div>
 
@@ -514,6 +218,12 @@ async function handleRestore(checkpointId: string) {
               />
             </div>
           </div>
+          <!-- Attachment preview modal (thread-level) -->
+          <AttachmentPreview
+            v-if="previewAttachment"
+            :attachment="previewAttachment"
+            @close="previewAttachment = null"
+          />
         </div>
       </Transition>
     </div>
@@ -686,11 +396,21 @@ async function handleRestore(checkpointId: string) {
   align-items: center;
   justify-content: center;
   padding: 24px 0;
+  overflow: hidden;
 }
+
+.landing .weather-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
 .landing .center-col {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  position: relative;
+  z-index: 1;
 }
 
 /* ── conversation ─────────────────────────────────────────────────────────── */
@@ -755,162 +475,6 @@ async function handleRestore(checkpointId: string) {
   mask-image: linear-gradient(to top, black 0%, transparent 100%);
 }
 
-/* ── user message — square style ────────────────────────────────────────────── */
-.user-row {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-}
-.user-pill {
-  display: inline-block;
-  max-width: 72%;
-  padding: 8px 16px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-sm);
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--color-text-primary);
-  word-break: break-word;
-  white-space: pre-wrap;
-}
-.user-time {
-  font-size: 10.5px;
-  color: var(--color-text-tertiary);
-  padding-right: 4px;
-}
-
-/* @mention chip inside user bubble */
-.mention-chip {
-  display: inline;
-  background: var(--color-accent-muted-plus);
-  color: var(--color-accent-text);
-  border: 1px solid var(--color-accent-dim);
-  border-radius: 4px;
-  padding: 0 5px;
-  font-size: 12.5px;
-  font-weight: 600;
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  white-space: nowrap;
-  /* Sits inline with the surrounding text */
-  vertical-align: baseline;
-  line-height: 1.5;
-}
-
-/* ── assistant message ────────────────────────────────────────────────────── */
-.assistant-row {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.tool-events {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
-}
-
-.assistant-error {
-  font-size: 13px;
-  color: var(--color-danger-text);
-  padding: 8px 12px;
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
-}
-
-/* ── typing indicator (hexagon hive) ──────────────────────────────────────── */
-.typing {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 0;
-}
-
-.typing-text {
-  font-size: 13.5px;
-  color: var(--color-text-tertiary);
-  font-style: italic;
-  min-width: 110px;
-  transition: opacity 200ms ease;
-}
-
-.hexagon-hive {
-  position: relative;
-  width: 24px;
-  height: 24px;
-}
-
-.hex {
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  background: var(--color-accent-dim);
-  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-
-  /* 1. Hardware acceleration for silky smooth sub-pixel rendering */
-  transform: translate3d(-50%, -50%, 0);
-  will-change: transform, opacity;
-
-  /* 2. Faster, more fluid easing curve */
-  animation: pulse-hex 1.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Central hexagon */
-.h1 {
-  top: 50%;
-  left: 50%;
-  animation-delay: 0s;
-}
-
-/* 3. Surrounding hexagons positioned in a ring with a tighter wave delay */
-.h2 {
-  top: 20%;
-  left: 50%;
-  animation-delay: 0.1s;
-}
-.h3 {
-  top: 35%;
-  left: 75%;
-  animation-delay: 0.2s;
-}
-.h4 {
-  top: 65%;
-  left: 75%;
-  animation-delay: 0.3s;
-}
-.h5 {
-  top: 80%;
-  left: 50%;
-  animation-delay: 0.4s;
-}
-.h6 {
-  top: 65%;
-  left: 25%;
-  animation-delay: 0.5s;
-}
-.h7 {
-  top: 35%;
-  left: 25%;
-  animation-delay: 0.6s;
-}
-
-@keyframes pulse-hex {
-  0%,
-  100% {
-    opacity: 1;
-    transform: translate3d(-50%, -50%, 0) scale(1);
-  }
-  50% {
-    /* 4. Softer scale and opacity jump */
-    opacity: 0.4;
-    transform: translate3d(-50%, -50%, 0) scale(0.6);
-  }
-}
-
 /* ── input bar & scroll button ────────────────────────────────────────────── */
 .convo-input-wrap {
   position: relative;
@@ -956,83 +520,6 @@ async function handleRestore(checkpointId: string) {
 .sa-scroll-down-btn {
   bottom: 10px;
   top: auto;
-}
-
-/* ── sub-agent mission banner ────────────────────────────────────────────── */
-.sa-banner {
-  display: flex;
-  justify-content: center;
-  background: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-subtle);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-}
-
-.sa-banner-inner {
-  width: 100%;
-  max-width: 670px;
-  padding: 24px 20px;
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.sa-banner-icon {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.sa-banner-icon--info {
-  background: var(--color-info-muted);
-  color: var(--color-info-text);
-}
-.sa-banner-icon--success {
-  background: var(--color-success-muted);
-  color: var(--color-success-text);
-}
-.sa-banner-icon--warning {
-  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
-  color: var(--color-warning-text);
-}
-.sa-banner-icon--accent {
-  background: var(--color-accent-muted);
-  color: var(--color-accent-text);
-}
-
-.sa-banner-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.sa-banner-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sa-banner-name {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--color-text-primary);
-}
-
-.sa-banner-mission {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
-  font-weight: 450;
-  word-break: break-word;
 }
 
 /* ── sub-agent footer ────────────────────────────────────────────────────── */

@@ -1,36 +1,123 @@
 /**
  * src/stores/chat.ts
+ *
+ * Pinia store for the chat UI.
+ *
+ * Responsibilities:
+ * - Owns the tab list and the active tab reference.
+ * - Delegates message streaming to createSendMessage().
+ * - Manages per-tab conversation state cache so switching tabs is instant.
+ * - All async operations that mutate tab state are guarded — a failure never
+ *   leaves a tab permanently stuck in isStreaming=true.
  */
 
-import type { LanguageModel } from 'ai'
-import type { ChatMode, ChatTab, Message, SubAgentPersonality, TodoItem, ToolEvent } from './chat/types'
-import type { StreamChatOptions, ToolCallEvent, ToolResultEvent } from '@/utils/ai'
+import type { ChatDraftState, ChatEstimatorState, ChatTab, Message } from './chat/types'
+import type { QuestionAnswer } from '@/utils/tools/questions'
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
-import {
-  dbInsertConversation,
-  dbInsertMessage,
-  dbTouchConversation,
-  dbUpdateConversationTitle,
-} from '@/db/database'
-import { buildMentionContext } from './chat/mentions'
-import { runSubAgentStream } from './chat/subagent'
-import { makeId, newTab, toApiMessages } from './chat/utils'
+import { computed, ref, watch } from 'vue'
+import { dbUpdateConversationTitle } from '@/db/database'
+import { createSendMessage } from './chat/sendMessage'
+import { createEmptyDraft, createEmptyEstimatorState, makeId, newTab } from './chat/utils'
 
-export type { ChatMode, ChatTab, Message, MessagePart, SubAgentInfo, SubAgentPersonality, ToolEvent } from './chat/types'
+export type {
+  Attachment,
+  ChatMode,
+  ChatTab,
+  Message,
+  MessagePart,
+  SubAgentInfo,
+  SubAgentPersonality,
+  ToolEvent,
+} from './chat/types'
 export type { TodoItem } from '@/utils/tools/todos'
+
+// ── constants ─────────────────────────────────────────────────────────────────
+
+const MAX_TABS = 9
+
+// ── store ─────────────────────────────────────────────────────────────────────
 
 export const useChatStore = defineStore('chat', () => {
   const tabs = ref<ChatTab[]>([newTab()])
-  const activeId = ref(tabs.value[0]!.id)
+  const activeId = ref<string>(tabs.value[0]!.id)
   const abortControllers = new Map<string, AbortController>()
+  const questionResolvers = new Map<string, (answers: QuestionAnswer[]) => void>()
 
-  const activeTab = computed(
+  /**
+   * Per-conversation state cache so switching back to a conversation
+   * restores the draft text, model choice, and token estimate.
+   */
+  const conversationStateCache = ref<Record<string, {
+    modelUid: string | null
+    draft: ChatDraftState
+    estimator: ChatEstimatorState
+  }>>({})
+
+  // ── derived ──────────────────────────────────────────────────────────────────
+
+  const activeTab = computed<ChatTab>(
     () => tabs.value.find(t => t.id === activeId.value) ?? tabs.value[0]!,
   )
 
+  // ── conversation state cache ──────────────────────────────────────────────────
+
+  function snapshotConversationState(tab: ChatTab): void {
+    if (!tab.conversationId)
+      return
+    conversationStateCache.value[tab.conversationId] = {
+      modelUid: tab.modelUid ?? null,
+      draft: {
+        text: tab.draft.text,
+        mode: tab.draft.mode,
+        attachments: [],
+      },
+      estimator: {
+        estimate: tab.estimator.estimate,
+        error: tab.estimator.error,
+        estimating: tab.estimator.estimating,
+      },
+    }
+  }
+
+  function restoreConversationState(conversationId: string): {
+    modelUid: string | null
+    draft: ChatDraftState
+    estimator: ChatEstimatorState
+  } {
+    const cached = conversationStateCache.value[conversationId]
+    if (!cached) {
+      return {
+        modelUid: null,
+        draft: createEmptyDraft(),
+        estimator: createEmptyEstimatorState(),
+      }
+    }
+    return {
+      modelUid: cached.modelUid,
+      draft: { text: cached.draft.text, mode: cached.draft.mode, attachments: [] },
+      estimator: { ...cached.estimator, estimating: false },
+    }
+  }
+
+  // Keep cache in sync as tabs mutate
+  watch(tabs, nextTabs => nextTabs.forEach(snapshotConversationState), { deep: true })
+
+  // ── tab helpers ───────────────────────────────────────────────────────────────
+
+  function isReusableBlankTab(tab: ChatTab): boolean {
+    return (
+      tab.messages.length === 0
+      && !tab.conversationId
+      && !tab.isStreaming
+      && tab.draft.text.trim().length === 0
+      && tab.draft.attachments.length === 0
+    )
+  }
+
+  // ── tab actions ───────────────────────────────────────────────────────────────
+
   function addTab(): void {
-    if (tabs.value.length >= 9)
+    if (tabs.value.length >= MAX_TABS)
       return
     const tab = newTab()
     tabs.value.push(tab)
@@ -38,20 +125,40 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function closeTab(id: string): void {
+    const tab = tabs.value.find(t => t.id === id)
+    if (tab)
+      snapshotConversationState(tab)
+
+    // Cancel any in-flight request
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
 
+    // Dismiss any pending questions
+    const resolve = questionResolvers.get(id)
+    if (resolve) {
+      const pendingTab = tabs.value.find(t => t.id === id)
+      const skipped = (pendingTab?.pendingQuestions?.questions ?? []).map(q => ({
+        question: q.question,
+        answer: 'skipped',
+      }))
+      resolve(skipped)
+      questionResolvers.delete(id)
+    }
+
     // Clean up checkpoints for this tab
-    import('./checkpoints').then(({ useCheckpointStore }) => {
-      useCheckpointStore().clearTab(id)
-    }).catch(() => { })
+    import('./checkpoints')
+      .then(({ useCheckpointStore }) => useCheckpointStore().clearTab(id))
+      .catch(() => { })
 
     const idx = tabs.value.findIndex(t => t.id === id)
+
     if (tabs.value.length === 1) {
+      // Always keep at least one tab
       tabs.value = [newTab()]
       activeId.value = tabs.value[0]!.id
       return
     }
+
     tabs.value.splice(idx, 1)
     if (activeId.value === id)
       activeId.value = tabs.value[Math.max(0, idx - 1)]!.id
@@ -62,38 +169,55 @@ export const useChatStore = defineStore('chat', () => {
     title: string
     messages: Message[]
   }): void {
-    if (tabs.value.length >= 9) {
-      const blankIdx = tabs.value.findIndex(t => t.messages.length === 0)
-      if (blankIdx !== -1) {
-        tabs.value[blankIdx] = {
-          id: tabs.value[blankIdx]!.id,
-          title: payload.title,
-          messages: payload.messages,
-          conversationId: payload.conversationId,
-          isStreaming: false,
-          todos: [],
-        }
-        activeId.value = tabs.value[blankIdx]!.id
-        return
-      }
+    // Don't open the same conversation twice
+    const existing = tabs.value.find(t => t.conversationId === payload.conversationId)
+    if (existing) {
+      activeId.value = existing.id
+      return
     }
-    tabs.value.push({
-      id: makeId(),
+
+    const restoredState = restoreConversationState(payload.conversationId)
+
+    const buildTab = (id: string): ChatTab => ({
+      id,
       title: payload.title,
       messages: payload.messages,
       conversationId: payload.conversationId,
       isStreaming: false,
       todos: [],
+      modelUid: restoredState.modelUid,
+      draft: restoredState.draft,
+      estimator: restoredState.estimator,
+      pendingQuestions: null,
     })
-    activeId.value = tabs.value.at(-1)!.id
 
-    // Load checkpoints for this conversation
-    import('./checkpoints').then(({ useCheckpointStore }) => {
-      useCheckpointStore().loadForConversation(
-        tabs.value.at(-1)!.id,
-        payload.conversationId,
-      )
-    }).catch(() => { })
+    const loadCheckpoints = (tabId: string) => {
+      import('./checkpoints')
+        .then(({ useCheckpointStore }) =>
+          useCheckpointStore().loadForConversation(tabId, payload.conversationId),
+        )
+        .catch(() => { })
+    }
+
+    // Reuse an existing blank tab if we're at the tab limit
+    if (tabs.value.length >= MAX_TABS) {
+      const blankIdx = tabs.value.findIndex(isReusableBlankTab)
+      if (blankIdx !== -1) {
+        const existingId = tabs.value[blankIdx]!.id
+        tabs.value[blankIdx] = buildTab(existingId)
+        activeId.value = existingId
+        loadCheckpoints(existingId)
+        return
+      }
+      // All tabs are in use — switch to most recently used (don't open a new one)
+      console.warn('[chat] Tab limit reached; cannot open conversation in a new tab')
+      return
+    }
+
+    const tab = buildTab(makeId())
+    tabs.value.push(tab)
+    activeId.value = tab.id
+    loadCheckpoints(tab.id)
   }
 
   function stopGeneration(tabId?: string): void {
@@ -108,402 +232,145 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // ── send message ──────────────────────────────────────────────────────────────
-
-  async function sendMessage(content: string, mode: ChatMode = 'build'): Promise<void> {
-    const tab = activeTab.value
-    if (!content.trim() || tab.isStreaming)
-      return
-
-    const [
-      { buildLanguageModel, buildProviderOptions, buildSystemPrompt, streamChat },
-      { useSettingsStore },
-      { useProjectStore },
-      { createFilesystemTools, toolDisplayLabel },
-      { createShellTools, shellToolDisplayLabel },
-      { createQuestionsTool, questionsToolDisplayLabel },
-      { createWebTools, webToolDisplayLabel },
-      { createCreateArtifactTool, artifactToolDisplayLabel },
-      { createWriteTodoTool, todosToolDisplayLabel },
-      { createSpawnSubAgentTool, subAgentDisplayLabel, buildSubAgentSystemPrompt },
-      { getOsInfo },
-    ] = await Promise.all([
-      import('@/utils/ai'),
-      import('./settings'),
-      import('./project'),
-      import('@/utils/tools/filesystem'),
-      import('@/utils/tools/shell'),
-      import('@/utils/tools/questions'),
-      import('@/utils/tools/web'),
-      import('@/utils/tools/artifact'),
-      import('@/utils/tools/todos'),
-      import('@/utils/tools/subagent'),
-      import('@/utils/os'),
-    ])
-
-    const settings = useSettingsStore()
-    const project = useProjectStore()
-    const activeModel = settings.activeModel
-
-    if (!activeModel) {
-      tab.messages.push({
-        id: makeId(),
-        role: 'assistant',
-        content: '',
-        timestamp: new Date(),
-        error: 'No model selected. Open Settings → Providers to connect a model.',
-      })
-      return
-    }
-
-    const osInfo = await getOsInfo().catch(() => undefined)
-
-    function allToolDisplayLabel(name: string, args: Record<string, unknown>): string {
-      const fsLabel = toolDisplayLabel(name, args)
-      if (fsLabel !== `Called ${name}`)
-        return fsLabel
-      const shellLabel = shellToolDisplayLabel(name, args)
-      if (shellLabel !== `Called ${name}`)
-        return shellLabel
-      const qLabel = questionsToolDisplayLabel(name, args)
-      if (qLabel !== `Called ${name}`)
-        return qLabel
-      const webLabel = webToolDisplayLabel(name, args)
-      if (webLabel !== `Called ${name}`)
-        return webLabel
-      const artifactLabel = artifactToolDisplayLabel(name, args)
-      if (artifactLabel !== `Called ${name}`)
-        return artifactLabel
-      const todoLabel = todosToolDisplayLabel(name, args)
-      if (todoLabel !== `Called ${name}`)
-        return todoLabel
-      return subAgentDisplayLabel(name, args)
-    }
-
-    const now = Date.now()
-    const text = content.trim()
-
-    tab.todos = []
-
-    const { useCheckpointStore } = await import('./checkpoints')
-    const checkpointStore = useCheckpointStore()
-    checkpointStore.createCheckpoint(
-      tab.id,
-      tab.conversationId,
-      tab.messages.length,
-      text,
-    )
-
-    if (!tab.conversationId) {
-      const title = text.slice(0, 60) + (text.length > 60 ? '\u2026' : '')
-      const convId = makeId()
-      await dbInsertConversation({ id: convId, title, created_at: now, updated_at: now })
-      tab.conversationId = convId
-      tab.title = title
-      const { useHistoryStore } = await import('./history')
-      useHistoryStore().prepend({ id: convId, title, created_at: now, updated_at: now, msg_count: 0 })
-    }
-
-    const userMsg: Message = {
-      id: makeId(),
-      role: 'user',
-      content: text,
-      timestamp: new Date(now),
-    }
-    await dbInsertMessage({
-      id: userMsg.id,
-      conversation_id: tab.conversationId!,
-      role: 'user',
-      content: text,
-      created_at: now,
-    })
-    await dbTouchConversation(tab.conversationId!)
-    tab.messages.push(userMsg)
-
-    const assistantId = makeId()
-    const assistantMsg: Message = {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
-      toolEvents: [],
-      parts: [],
-    }
-    tab.messages.push(assistantMsg)
-    tab.isStreaming = true
-
-    let languageModel: LanguageModel | undefined
-    try {
-      const pid = activeModel.providerId
-      if (pid === 'openai') {
-        languageModel = buildLanguageModel(
-          { type: 'openai', apiKey: settings.openai.apiKey, ...(settings.openai.baseURL ? { baseURL: settings.openai.baseURL } : {}), ...(settings.openai.organizationId ? { organizationId: settings.openai.organizationId } : {}) },
-          activeModel.id,
-        )
-      }
-      else if (pid === 'anthropic') {
-        languageModel = buildLanguageModel(
-          { type: 'anthropic', apiKey: settings.anthropic.apiKey, ...(settings.anthropic.baseURL ? { baseURL: settings.anthropic.baseURL } : {}) },
-          activeModel.id,
-        )
-      }
-      else if (pid === 'google') {
-        languageModel = buildLanguageModel({ type: 'google', apiKey: settings.google.apiKey }, activeModel.id)
-      }
-      else {
-        const compat = settings.compatibleProviders.find((p: { id: string }) => p.id === pid)
-        if (!compat)
-          throw new Error(`Provider "${pid}" not found`)
-        languageModel = buildLanguageModel(
-          { type: 'compatible', apiKey: compat.apiKey, baseURL: compat.baseURL, name: compat.name },
-          activeModel.id,
-        )
-      }
-    }
-    catch (e) {
-      assistantMsg.error = `Failed to initialise model: ${e instanceof Error ? e.message : String(e)}`
-      tab.isStreaming = false
-      return
-    }
-
-    const maxOutputTokens = activeModel.supportsThinking
-      ? activeModel.thinkingEffort === 'high'
-        ? 16000
-        : activeModel.thinkingEffort === 'low'
-          ? 2048
-          : 8000
-      : 4096
-
-    const systemPrompt = buildSystemPrompt(project.projectPath, mode, osInfo)
-    const ac = new AbortController()
-    abortControllers.set(tab.id, ac)
-
-    const liveMsg = tab.messages.find(m => m.id === assistantId)!
-
-    const handleToolCall = (event: ToolCallEvent) => {
-      const metadata = event.name === 'create_artifact'
-        ? { artifact: event.args.artifact }
-        : undefined
-      liveMsg.toolEvents ??= []
-      liveMsg.toolEvents.push({
-        id: event.id,
-        name: event.name,
-        label: allToolDisplayLabel(event.name, event.args),
-        status: 'running',
-        toolName: event.name,
-        startedAt: Date.now(),
-        ...(metadata ? { metadata } : {}),
-      })
-      liveMsg.parts ??= []
-      liveMsg.parts.push({ type: 'tool', toolCallId: event.id })
-    }
-
-    const handleToolResult = (event: ToolResultEvent) => {
-      const te = liveMsg.toolEvents?.find(e => e.id === event.id)
-      if (te) {
-        te.status = event.ok ? 'done' : 'error'
-        te.finishedAt = Date.now()
-      }
-    }
-
-    const mentionContext = await buildMentionContext(text, project.projectPath).catch(() => '')
-    const baseApiMessages = toApiMessages(tab.messages.slice(0, -1))
-    const apiMessages = mentionContext && baseApiMessages.length > 0
-      ? [
-          ...baseApiMessages.slice(0, -1),
-          { role: 'user' as const, content: `${mentionContext}\n\n${baseApiMessages.at(-1)!.content}` },
-        ]
-      : baseApiMessages
-
-    const todoCallback = (items: TodoItem[]) => { tab.todos = items }
-
-    const { PERSONALITY_META } = await import('@/utils/tools/subagent')
-
-    const subAgentSpawnCallback = async ({ personality, mission }: { personality: SubAgentPersonality; mission: string }) => {
-      if (tabs.value.length >= 9) {
-        throw new Error('Cannot spawn sub-agent: tab limit reached (9). Close a tab first.')
-      }
-
-      const meta = PERSONALITY_META[personality as keyof typeof PERSONALITY_META]
-      const titleMission = mission.length > 40 ? `${mission.slice(0, 40)}\u2026` : mission
-      const subTabId = makeId()
-
-      const subTab: ChatTab = {
-        id: subTabId,
-        title: `${meta.label} \u00B7 ${titleMission}`,
-        messages: [],
-        conversationId: null,
-        isStreaming: true,
-        todos: [],
-        subAgent: {
-          personality,
-          mission,
-          parentTabId: tab.id,
-          status: 'running',
-        },
-      }
-
-      tabs.value.push(subTab)
-      activeId.value = subTabId
-
-      const spawnEvent = liveMsg.toolEvents?.slice().reverse().find((e: ToolEvent) => e.toolName === 'spawn_subagent')
-      if (spawnEvent) {
-        spawnEvent.metadata = { ...spawnEvent.metadata, subAgentTabId: subTabId }
-      }
-
-      const subAc = new AbortController()
-      abortControllers.set(subTabId, subAc)
-
-      const completionPromise = runSubAgentStream({
-        subTab,
-        personality,
-        mission,
-        signal: subAc.signal,
-        buildLanguageModel,
-        streamChat,
-        buildSubAgentSystemPrompt,
-        settings,
-        project,
-        osInfo,
-        toolDisplayLabel,
-        shellToolDisplayLabel,
-        webToolDisplayLabel,
-        artifactToolDisplayLabel,
-        createFilesystemTools,
-        createShellTools,
-        createWebTools,
-        createCreateArtifactTool,
-        onAbort: tabId => { abortControllers.delete(tabId) },
-      })
-
-      return { tabId: subTabId, completionPromise }
-    }
-
-    const subAgentAbortCallback = (tabId: string) => {
-      abortControllers.get(tabId)?.abort()
-      abortControllers.delete(tabId)
-      const subTab = tabs.value.find(t => t.id === tabId)
-      if (subTab) {
-        subTab.isStreaming = false
-        if (subTab.subAgent)
-          subTab.subAgent.status = 'error'
-      }
-    }
-
-    const snapshotCallback = async (relPath: string, absPath: string) => {
-      await checkpointStore.snapshotFile(relPath, absPath)
-    }
-
-    const tools = activeModel.supportsToolCalls
-      ? {
-          ask_questions: createQuestionsTool(),
-          write_todo: createWriteTodoTool(todoCallback),
-          spawn_subagent: createSpawnSubAgentTool(subAgentSpawnCallback, subAgentAbortCallback),
-          create_artifact: createCreateArtifactTool(),
-          ...createWebTools(),
-          ...(project.projectPath
-            ? {
-                ...createFilesystemTools(project.projectPath, snapshotCallback),
-                ...createShellTools(project.projectPath, osInfo?.shell),
-              }
-            : {}),
-        }
-      : undefined
-
-    const providerOptions = buildProviderOptions({
-      providerId: activeModel.providerId,
-      modelId: activeModel.id,
-      supportsThinking: activeModel.supportsThinking,
-      thinkingEffort: activeModel.thinkingEffort,
-    })
-
-    const streamOpts: StreamChatOptions = {
-      model: languageModel,
-      messages: apiMessages,
-      systemPrompt,
-      supportsToolCalls: activeModel.supportsToolCalls,
-      maxOutputTokens,
-      onDelta: (delta: string) => {
-        liveMsg.content += delta
-        liveMsg.parts ??= []
-        const last = liveMsg.parts.at(-1)
-        if (last?.type === 'text') { last.text += delta }
-        else { liveMsg.parts.push({ type: 'text', text: delta }) }
-      },
-      onToolCall: handleToolCall,
-      onToolResult: handleToolResult,
-      onFinish: async (fullText: string) => {
-        liveMsg.content = fullText
-        tab.isStreaming = false
-        abortControllers.delete(tab.id)
-        if (tab.conversationId) {
-          const serializedTools = liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null
-          const serializedParts = liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null
-          await dbInsertMessage({
-            id: assistantId,
-            conversation_id: tab.conversationId,
-            role: 'assistant',
-            content: fullText,
-            created_at: Date.now(),
-            tool_events: serializedTools,
-            parts: serializedParts,
-          })
-          await dbTouchConversation(tab.conversationId)
-        }
-        await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => { })
-      },
-      onError: (error: Error) => {
-        liveMsg.error = error.message
-        tab.isStreaming = false
-        abortControllers.delete(tab.id)
-        checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => { })
-      },
-      signal: ac.signal,
-      ...(providerOptions ? { providerOptions } : {}),
-      ...(tools ? { tools } : {}),
-    }
-
-    try {
-      await streamChat(streamOpts)
-    }
-    catch {
-      tab.isStreaming = false
-      abortControllers.delete(tab.id)
-      await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => { })
-    }
-  }
-
-  async function renameTab(tabId: string, newTitle: string): Promise<void> {
+  function updateTabDraft(tabId: string, patch: Partial<ChatDraftState>): void {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab)
       return
-    tab.title = newTitle
-    if (tab.conversationId)
-      await dbUpdateConversationTitle(tab.conversationId, newTitle)
+    tab.draft = {
+      text: patch.text ?? tab.draft.text,
+      mode: patch.mode ?? tab.draft.mode,
+      attachments: patch.attachments ?? tab.draft.attachments,
+    }
+    snapshotConversationState(tab)
   }
 
-  async function restoreToCheckpoint(tabId: string, checkpointId: string): Promise<{ ok: boolean; error?: string }> {
+  function clearTabDraft(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab)
+      return
+    tab.draft = createEmptyDraft()
+    snapshotConversationState(tab)
+  }
+
+  function setTabModel(tabId: string, modelUid: string | null): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab)
+      return
+    tab.modelUid = modelUid
+    snapshotConversationState(tab)
+  }
+
+  function setTabEstimatorState(tabId: string, next: Partial<ChatEstimatorState>): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab)
+      return
+    tab.estimator = {
+      estimate: next.estimate === undefined ? tab.estimator.estimate : next.estimate,
+      error: next.error === undefined ? tab.estimator.error : next.error,
+      estimating: next.estimating === undefined ? tab.estimator.estimating : next.estimating,
+    }
+    snapshotConversationState(tab)
+  }
+
+  // ── questions ─────────────────────────────────────────────────────────────────
+
+  function _resolveQuestions(tabId: string, answers: Array<string | null>): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.pendingQuestions)
+      return
+    const resolve = questionResolvers.get(tabId)
+    if (!resolve)
+      return
+
+    const result = tab.pendingQuestions.questions.map((q, i) => ({
+      question: q.question,
+      answer: answers[i] ?? 'skipped',
+    }))
+
+    questionResolvers.delete(tabId)
+    tab.pendingQuestions = null
+    resolve(result)
+  }
+
+  function submitAnswers(tabId: string, answers: Array<string | null>): void {
+    _resolveQuestions(tabId, answers)
+  }
+
+  function dismissQuestions(tabId: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab?.pendingQuestions)
+      return
+    const skipped = tab.pendingQuestions.questions.map(() => null)
+    _resolveQuestions(tabId, skipped)
+  }
+
+  // ── send message ──────────────────────────────────────────────────────────────
+
+  const sendMessage = createSendMessage(tabs, activeId, activeTab, abortControllers, questionResolvers)
+
+  // ── rename ────────────────────────────────────────────────────────────────────
+
+  async function renameTab(tabId: string, newTitle: string): Promise<void> {
+    const trimmed = newTitle.trim()
+    if (!trimmed)
+      return
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab)
+      return
+    tab.title = trimmed
+    if (tab.conversationId) {
+      await dbUpdateConversationTitle(tab.conversationId, trimmed).catch(e => {
+        console.error('[chat] Failed to rename conversation in DB:', e)
+      })
+    }
+  }
+
+  // ── checkpoint restore ────────────────────────────────────────────────────────
+
+  async function restoreToCheckpoint(
+    tabId: string,
+    checkpointId: string,
+  ): Promise<{ ok: boolean; error?: string }> {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab)
       return { ok: false, error: 'Tab not found' }
     if (tab.isStreaming)
       return { ok: false, error: 'Cannot restore while streaming' }
 
-    const { useCheckpointStore } = await import('./checkpoints')
-    const result = await useCheckpointStore().restoreToCheckpoint(tab, checkpointId)
-    return result
+    try {
+      const { useCheckpointStore } = await import('./checkpoints')
+      return await useCheckpointStore().restoreToCheckpoint(tab, checkpointId)
+    }
+    catch (e) {
+      const msg = e instanceof Error ? e.message : 'Restore failed'
+      console.error('[chat] restoreToCheckpoint error:', e)
+      return { ok: false, error: msg }
+    }
   }
+
+  // ── public API ────────────────────────────────────────────────────────────────
 
   return {
     tabs,
     activeId,
     activeTab,
+    conversationStateCache,
     addTab,
     closeTab,
     openConversation,
+    updateTabDraft,
+    clearTabDraft,
+    setTabModel,
+    setTabEstimatorState,
+    submitAnswers,
+    dismissQuestions,
     sendMessage,
     stopGeneration,
     renameTab,
     restoreToCheckpoint,
   }
+}, {
+  persist: {
+    pick: ['conversationStateCache'],
+  },
 })

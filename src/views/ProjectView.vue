@@ -1,14 +1,24 @@
 <script setup lang="ts">
+import { SquarePlus } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import FileContent from '@/components/project/FileContent.vue'
 import FileTree from '@/components/project/FileTree.vue'
+import ScaffoldModal from '@/components/scaffold/ScaffoldModal.vue'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useProjectStore } from '@/stores/project'
 
 const project = useProjectStore()
 const ft = useFileTreeStore()
 const { projectPath, projectName } = storeToRefs(project)
+
+const scaffoldOpen = ref(false)
+
+async function handleScaffoldSuccess(payload: { projectPath: string; templateId: string }) {
+  scaffoldOpen.value = false
+  if (payload.projectPath)
+    await project.setProject(payload.projectPath)
+}
 
 // ── load tree when project changes ───────────────────────────────────────────
 // fires when the user picks a NEW folder mid-session
@@ -83,26 +93,38 @@ onUnmounted(() => {
       <div class="split-panel split-panel--left" :style="{ width: `${splitPercent}%` }">
         <div class="panel-header">
           <span class="panel-title">{{ projectName }}</span>
+          <button
+            class="panel-action"
+            aria-label="Create new project"
+            title="Scaffold new project"
+            @click="scaffoldOpen = true"
+          >
+            <SquarePlus :size="13" :stroke-width="1.8" />
+          </button>
         </div>
         <div class="panel-body">
           <FileTree />
         </div>
       </div>
 
-      <!-- drag handle -->
+      <!-- drag handle (Cleaned up, no inner line needed) -->
       <div
         class="split-handle"
         :class="{ 'split-handle--active': dragging }"
         @mousedown="onDragStart"
-      >
-        <div class="split-handle-line" />
-      </div>
+      />
 
       <!-- right: file content -->
       <div class="split-panel split-panel--right">
         <FileContent />
       </div>
     </div>
+
+    <ScaffoldModal
+      v-if="scaffoldOpen"
+      @close="scaffoldOpen = false"
+      @success="handleScaffoldSuccess"
+    />
   </div>
 </template>
 
@@ -174,7 +196,7 @@ onUnmounted(() => {
 
 .split-panel--left {
   background: var(--color-bg-surface);
-  border-right: none; /* handle owns the border */
+  border-right: none;
   min-width: 160px;
 }
 
@@ -205,6 +227,27 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
+.panel-action {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.panel-action:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-accent-text);
+}
+
 .panel-body {
   flex: 1;
   overflow: hidden;
@@ -212,35 +255,35 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* ── drag handle ─────────────────────────────────────────────────────────────── */
+/* ── drag handle (Fixed) ─────────────────────────────────────────────────────── */
 .split-handle {
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  width: 5px;
-  min-width: 5px;
+  position: relative;
+  width: 1px; /* Visual width is exactly 1px for a clean look */
+  background: var(--color-border-subtle);
   cursor: col-resize;
   flex-shrink: 0;
-  background: transparent;
-  position: relative;
   z-index: 10;
-  transition: background 120ms ease;
+  transition:
+    background 150ms ease,
+    box-shadow 150ms ease;
 }
 
+/* Invisible expanded hit area so it's easy to grab with the mouse */
+.split-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  z-index: 11;
+}
+
+/* Hover and active dragging states */
 .split-handle:hover,
 .split-handle--active {
-  background: var(--color-accent-muted);
-}
-
-.split-handle-line {
-  width: 1px;
-  background: var(--color-border-subtle);
-  transition: background 120ms ease;
-  align-self: stretch;
-}
-
-.split-handle:hover .split-handle-line,
-.split-handle--active .split-handle-line {
-  background: var(--color-accent-dim);
+  background: var(--color-accent, #10b981); /* Green accent highlight */
+  /* Adds a tiny glow to make the 1px line feel more substantial when dragging */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent, #10b981) 20%, transparent);
 }
 </style>

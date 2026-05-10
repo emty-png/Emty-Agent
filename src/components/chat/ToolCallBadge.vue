@@ -52,6 +52,76 @@ function formatElapsed(s: number): string {
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
+// ── label segmentation ────────────────────────────────────────────────────────
+
+/**
+ * Token kinds the label can contain:
+ *   plain      — unstyled text, inherits parent gradient
+ *   range      — "#0–499" line-range annotation (dimmed)
+ *   diff-add   — "+22"  diff addition count (green)
+ *   diff-remove — "-5"  diff removal count (red)
+ */
+type SegmentKind = 'plain' | 'range' | 'diff-add' | 'diff-remove'
+
+interface LabelSegment {
+  text: string
+  kind: SegmentKind
+}
+
+/**
+ * Unified tokenizer regex — groups in priority order:
+ *   1. Range annotation  #250–499  or  #250-499  (must come first to not
+ *      mis-classify the trailing digit run as a diff token)
+ *   2. Diff addition     +22       (standalone +digits anywhere)
+ *   3. Diff removal      ·-5       (space then -digits — the leading space is
+ *      intentional; it prevents matching hyphens inside filenames like "v1-2.ts")
+ *
+ * The space before group 3 is consumed by the regex so we can emit it as a
+ * plain segment and colour only the "-N" part.
+ */
+const TOKEN_RE = /(#\d+[–\-]\d+)|(\+\d+)|( -\d+)/g
+
+const labelSegments = computed<LabelSegment[]>(() => {
+  const label = props.event.label
+  const segments: LabelSegment[] = []
+  let lastIndex = 0
+
+  const matches = label.matchAll(TOKEN_RE)
+  for (const match of matches) {
+    // Emit any plain text between the last match and this one.
+    if (match.index > lastIndex)
+      segments.push({ text: label.slice(lastIndex, match.index), kind: 'plain' })
+
+    if (match[1]) {
+      // Range token: #250–499
+      segments.push({ text: match[1], kind: 'range' })
+    }
+    else if (match[2]) {
+      // Diff-add token: +22
+      segments.push({ text: match[2], kind: 'diff-add' })
+    }
+    else if (match[3]) {
+      // Diff-remove token: " -5" — split the leading space from the coloured part.
+      segments.push({ text: ' ', kind: 'plain' })
+      segments.push({ text: match[3].trimStart(), kind: 'diff-remove' })
+    }
+
+    lastIndex = match.index + match[0].length
+  }
+
+  // Emit any trailing plain text.
+  if (lastIndex < label.length)
+    segments.push({ text: label.slice(lastIndex), kind: 'plain' })
+
+  // If nothing matched, return a single plain segment — no overhead in template.
+  return segments.length > 0 ? segments : [{ text: label, kind: 'plain' }]
+})
+
+/** True when at least one non-plain segment exists; gates the segmented render path. */
+const hasAnnotations = computed(() =>
+  labelSegments.value.some(s => s.kind !== 'plain'),
+)
+
 // ── sub-agent badge ───────────────────────────────────────────────────────────
 
 const isSubAgent = computed(() => props.event.toolName === 'spawn_subagent')
@@ -60,22 +130,15 @@ const subAgentTabId = computed(
   () => props.event.metadata?.subAgentTabId as string | undefined,
 )
 
-/** True if the sub-agent tab still exists (user hasn't closed it). */
 const subAgentTabExists = computed(() =>
   !!subAgentTabId.value && chat.tabs.some(t => t.id === subAgentTabId.value),
 )
 
-/** The sub-agent tab's live status (for status chip updates after tool result). */
 const subAgentStatus = computed(() => {
   const t = chat.tabs.find(t => t.id === subAgentTabId.value)
   return t?.subAgent?.status ?? 'running'
 })
 
-/**
- * Parse personality from the badge label.
- * Label format: "Explorer · Mission text..." or just "Explorer"
- * We read from the underlying tool event label rather than re-parsing args.
- */
 const personality = computed<SubAgentPersonality | null>(() => {
   const label = props.event.label.toLowerCase()
   if (label.startsWith('explorer'))
@@ -96,7 +159,6 @@ const PERSONALITY_COLOR: Record<string, string> = {
   general: 'accent',
 }
 
-/** CSS class modifier for the personality color theme. */
 const colorKey = computed(() =>
   personality.value ? PERSONALITY_COLOR[personality.value] ?? 'accent' : 'accent',
 )
@@ -119,10 +181,13 @@ function openSubAgentTab() {
       { 'subagent-badge--closed': subAgentTabId && !subAgentTabExists },
     ]"
     :disabled="!subAgentTabExists"
-    :title="subAgentTabExists ? 'Click to open sub-agent tab' : subAgentTabId ? 'Sub-agent tab was closed' : 'Sub-agent is initialising\u2026'"
+    :title="subAgentTabExists
+      ? 'Click to open sub-agent tab'
+      : subAgentTabId
+        ? 'Sub-agent tab was closed'
+        : 'Sub-agent is initialising\u2026'"
     @click="openSubAgentTab"
   >
-    <!-- Personality icon -->
     <span class="sa-icon-wrap" :class="`sa-icon-wrap--${colorKey}`">
       <Compass v-if="personality === 'explorer'" :size="11" :stroke-width="2" />
       <Globe v-else-if="personality === 'researcher'" :size="11" :stroke-width="2" />
@@ -130,14 +195,9 @@ function openSubAgentTab() {
       <Cpu v-else :size="11" :stroke-width="2" />
     </span>
 
-    <!-- Label: "Explorer · Analyze auth flow" -->
     <span class="sa-label">{{ event.label }}</span>
 
-    <!-- Status chip -->
-    <span
-      class="sa-status"
-      :class="`sa-status--${subAgentStatus}`"
-    >
+    <span class="sa-status" :class="`sa-status--${subAgentStatus}`">
       <template v-if="subAgentStatus === 'running'">
         <span class="sa-pulse" />
         <span class="sa-status-text">Running</span>
@@ -161,14 +221,28 @@ function openSubAgentTab() {
     >
       {{ formatElapsed(elapsedSeconds) }}
     </span>
-    <span class="tool-text">
+
+    <!--
+      Segmented render: splits the label into typed tokens so each can carry
+      its own colour while the unstyled parts keep the parent gradient animation.
+      Falls back to a single text node for plain labels — zero extra DOM.
+    -->
+    <span v-if="hasAnnotations" class="tool-text">
+      <template v-for="(seg, i) in labelSegments" :key="i">
+        <span v-if="seg.kind === 'range'" class="tt-range">{{ seg.text }}</span>
+        <span v-else-if="seg.kind === 'diff-add'" class="tt-diff tt-diff--add">{{ seg.text }}</span>
+        <span v-else-if="seg.kind === 'diff-remove'" class="tt-diff tt-diff--remove">{{ seg.text }}</span>
+        <template v-else>{{ seg.text }}</template>
+      </template>
+    </span>
+    <span v-else class="tool-text">
       {{ event.label }}
     </span>
   </span>
 </template>
 
 <style scoped>
-/* ── standard tool badge (unchanged) ─────────────────────────────────────── */
+/* ── standard tool badge ─────────────────────────────────────────────────── */
 
 .tool-wrap {
   display: inline-flex;
@@ -195,6 +269,12 @@ function openSubAgentTab() {
   opacity: 0.55;
 }
 
+/*
+ * The primary label element.
+ * Applies a sweeping gloss gradient to all plain text children.
+ * Coloured child spans (tt-diff, tt-range) must opt out of this gradient
+ * by resetting background-clip and -webkit-text-fill-color.
+ */
 .tool-text {
   display: inline-block;
   font-size: 12px;
@@ -229,6 +309,53 @@ function openSubAgentTab() {
   }
 }
 
+/* ── range annotation: "#0–499" ─────────────────────────────────────────── */
+
+/*
+ * Inherits the parent gradient (text-fill stays transparent) but rendered
+ * smaller, lighter weight, and dimmed so it reads as metadata not primary text.
+ */
+.tt-range {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── diff stat tokens: "+22" / "-5" ─────────────────────────────────────── */
+
+/*
+ * Must escape the parent's `background-clip: text` + `-webkit-text-fill-color: transparent`
+ * gradient to render a solid colour. We do this by:
+ *   1. Clearing the background so background-clip has nothing to clip.
+ *   2. Setting -webkit-text-fill-color to a solid value, overriding transparent.
+ *   3. Setting color as a fallback for non-WebKit engines.
+ * animation: none prevents the parent keyframe from touching these spans.
+ */
+.tt-diff {
+  /* Escape parent gradient */
+  background: none;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+  animation: none;
+  /* Typography */
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+.tt-diff--add {
+  -webkit-text-fill-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.tt-diff--remove {
+  -webkit-text-fill-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
 /* ── sub-agent badge ─────────────────────────────────────────────────────── */
 
 .subagent-badge {
@@ -246,14 +373,12 @@ function openSubAgentTab() {
     background 120ms ease,
     border-color 120ms ease,
     box-shadow 120ms ease;
-  /* Reset button defaults */
   font-family: inherit;
   text-align: left;
   white-space: nowrap;
   max-width: 420px;
 }
 
-/* Clickable state (tab exists) */
 .subagent-badge--clickable {
   cursor: pointer;
 }
@@ -263,38 +388,30 @@ function openSubAgentTab() {
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
 }
 
-/* Closed state (tab was closed) */
 .subagent-badge--closed {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* ── personality color theming ── */
-/* Explorer — info (blue) */
+/* Personality colour theming */
 .subagent-badge--info {
   border-color: color-mix(in srgb, var(--color-info) 30%, var(--color-border-mid));
 }
 .subagent-badge--info:hover {
   border-color: color-mix(in srgb, var(--color-info) 55%, transparent);
 }
-
-/* Researcher — success (green) */
 .subagent-badge--success {
   border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-border-mid));
 }
 .subagent-badge--success:hover {
   border-color: color-mix(in srgb, var(--color-success) 55%, transparent);
 }
-
-/* Debugger — warning (amber) */
 .subagent-badge--warning {
   border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-border-mid));
 }
 .subagent-badge--warning:hover {
   border-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
 }
-
-/* General — accent (orange) */
 .subagent-badge--accent {
   border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border-mid));
 }
@@ -302,7 +419,7 @@ function openSubAgentTab() {
   border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
 }
 
-/* ── personality icon ── */
+/* Personality icon */
 .sa-icon-wrap {
   display: grid;
   place-items: center;
@@ -328,7 +445,7 @@ function openSubAgentTab() {
   color: var(--color-accent-text);
 }
 
-/* ── label ── */
+/* Label */
 .sa-label {
   font-size: 12px;
   font-weight: 600;
@@ -340,7 +457,7 @@ function openSubAgentTab() {
   min-width: 0;
 }
 
-/* ── status chip ── */
+/* Status chip */
 .sa-status {
   display: inline-flex;
   align-items: center;
@@ -353,7 +470,6 @@ function openSubAgentTab() {
   border-radius: 99px;
   flex-shrink: 0;
 }
-
 .sa-status--running {
   background: color-mix(in srgb, var(--color-info) 12%, transparent);
   color: var(--color-info-text);

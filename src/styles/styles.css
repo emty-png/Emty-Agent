@@ -126,6 +126,12 @@ body {
   background: transparent;
 }
 
+/* ── Text selection ───────────────────────────────────────────────────── */
+::selection {
+  background-color: var(--color-selection-bg);
+  color: var(--color-text-primary);
+}
+
 /* ── Focus styles ─────────────────────────────────────────────────────── */
 button:focus,
 input:focus,
@@ -152,166 +158,4 @@ textarea:focus {
   to {
     transform: rotate(360deg);
   }
-}
-
-/* ── Chat artifacts ───────────────────────────────────────────────────────── */
-.artifact-card {
-  width: 100%;
-  border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-card);
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.artifact-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.artifact-type {
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--color-accent-text);
-}
-
-.artifact-title {
-  margin: 2px 0 0;
-  font-size: 14px;
-  color: var(--color-text-primary);
-}
-
-.artifact-subtitle,
-.artifact-description {
-  margin: 4px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-}
-
-.artifact-graph,
-.artifact-showcase {
-  display: grid;
-  gap: 10px;
-}
-
-.artifact-graph {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-}
-
-.artifact-column,
-.artifact-section-card,
-.artifact-swatches {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-surface);
-  padding: 10px;
-}
-
-.artifact-section-title {
-  margin: 0 0 8px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-tertiary);
-}
-
-.artifact-list,
-.artifact-bullets {
-  margin: 0;
-  padding-left: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-
-.artifact-list-item {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-}
-
-.artifact-list-key {
-  color: var(--color-info-text);
-  font-weight: 600;
-}
-
-.artifact-list-value {
-  color: var(--color-text-secondary);
-}
-
-.artifact-sections {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
-}
-
-.artifact-section-description {
-  margin: 0 0 6px;
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.artifact-swatch-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 8px;
-}
-
-.artifact-swatch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-elevated);
-  padding: 7px 8px;
-}
-
-.artifact-swatch-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: var(--color-accent-bright);
-  box-shadow: 0 0 0 1px var(--color-border-mid);
-  flex-shrink: 0;
-}
-
-.artifact-swatch-role {
-  color: var(--color-text-primary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.artifact-swatch-token {
-  margin-left: auto;
-  color: var(--color-info-text);
-  font-size: 11px;
-}
-
-.artifact-svg-wrap {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-surface);
-  padding: 10px;
-}
-
-.artifact-svg {
-  width: 100%;
-}
-
-.artifact-svg svg {
-  width: 100%;
-  max-width: 100%;
-  height: auto;
-  display: block;
 }

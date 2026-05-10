@@ -4,17 +4,25 @@ import type { FileNode } from '@/stores/fileTree'
 import {
   ChevronRight,
   File,
+  FileArchive,
   FileCode,
+  FileImage,
   FileJson,
   FileText,
+  FileVideo,
   Folder,
+  FolderArchive,
+  FolderCode,
+  FolderGit2,
   FolderOpen,
+  FolderSearch,
   Loader,
   Settings,
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { defineComponent, h, resolveComponent } from 'vue'
 import { useFileTreeStore } from '@/stores/fileTree'
+import { getDeviconForFile } from '@/utils/icons'
 
 const ft = useFileTreeStore()
 const { tree, selectedPath, loadingTree } = storeToRefs(ft)
@@ -53,6 +61,62 @@ const EXT_STYLE: Record<string, FileStyle> = {
   // config
   env: { icon: Settings, color: '#d88080' },
   lock: { icon: Settings, color: '#504438' },
+  // images
+  png: { icon: FileImage, color: '#b8a0d8' },
+  jpg: { icon: FileImage, color: '#b8a0d8' },
+  jpeg: { icon: FileImage, color: '#b8a0d8' },
+  gif: { icon: FileImage, color: '#b8a0d8' },
+  webp: { icon: FileImage, color: '#b8a0d8' },
+  svg: { icon: FileImage, color: '#d8b880' },
+  ico: { icon: FileImage, color: '#d8b880' },
+  // media
+  mp4: { icon: FileVideo, color: '#a0b8d8' },
+  mov: { icon: FileVideo, color: '#a0b8d8' },
+  mp3: { icon: FileVideo, color: '#a0b8d8' },
+  wav: { icon: FileVideo, color: '#a0b8d8' },
+  // archives
+  zip: { icon: FileArchive, color: '#b8b8a0' },
+  gz: { icon: FileArchive, color: '#b8b8a0' },
+  tar: { icon: FileArchive, color: '#b8b8a0' },
+  rar: { icon: FileArchive, color: '#b8b8a0' },
+  '7z': { icon: FileArchive, color: '#b8b8a0' },
+}
+
+function folderStyle(name: string, expanded: boolean): { icon: typeof Folder | typeof FolderOpen; color: string } {
+  const n = name.toLowerCase()
+  let icon = expanded ? FolderOpen : Folder
+  let color = '#d4aa68' // default folder yellow
+
+  if (n === 'src' || n === 'lib' || n === 'source') {
+    icon = FolderCode
+    color = '#88be94'
+  }
+  else if (n === 'public' || n === 'static' || n === 'assets' || n === 'images' || n === 'img') {
+    icon = FolderSearch
+    color = '#90cce0'
+  }
+  else if (n === 'node_modules' || n === 'vendor' || n === 'deps') {
+    icon = FolderArchive
+    color = '#d88080'
+  }
+  else if (n === 'dist' || n === 'build' || n === 'out' || n === 'target' || n === 'bin') {
+    icon = FolderArchive
+    color = '#a59688'
+  }
+  else if (n === '.git' || n === '.github' || n === '.gitlab') {
+    icon = FolderGit2
+    color = '#f0a060'
+  }
+  else if (n === '.vscode' || n === '.idea' || n === '.config' || n === 'config') {
+    icon = Settings
+    color = '#ede5d8'
+  }
+  else if (n === 'tests' || n === 'test' || n === '__tests__' || n === 'spec') {
+    icon = FolderSearch
+    color = '#88be94'
+  }
+
+  return { icon, color }
 }
 
 function fileStyle(name: string): FileStyle {
@@ -85,7 +149,7 @@ const FileTreeNode = defineComponent({
   render() {
     const { node, selectedPath } = this
     const fs = fileStyle(node.name)
-    const FolderIcon = node.expanded ? FolderOpen : Folder
+    const { icon: FolderIcon, color: folderColor } = folderStyle(node.name, node.expanded || false)
     const FileTreeNodeComp = resolveComponent('FileTreeNode')
 
     const indent = { paddingLeft: `${node.depth * 14 + 8}px` }
@@ -110,7 +174,7 @@ const FileTreeNode = defineComponent({
 
         // icon
         node.isDir
-          ? h(FolderIcon, { size: 13, strokeWidth: 1.6, class: 'node-folder-icon' })
+          ? h(FolderIcon, { size: 13, strokeWidth: 1.6, class: 'node-folder-icon', style: { color: folderColor } })
           : node.loading
             ? h(Loader, {
                 size: 13,
@@ -118,12 +182,17 @@ const FileTreeNode = defineComponent({
                 class: 'spin node-file-icon',
                 style: { color: '#504438' },
               })
-            : h(fs.icon, {
-                size: 13,
-                strokeWidth: 1.6,
-                class: 'node-file-icon',
-                style: { color: fs.color },
-              }),
+            : getDeviconForFile(node.name)
+              ? h('i', {
+                  class: ['node-file-icon', getDeviconForFile(node.name)],
+                  style: { fontSize: '13px', color: fs.color },
+                })
+              : h(fs.icon, {
+                  size: 13,
+                  strokeWidth: 1.6,
+                  class: 'node-file-icon',
+                  style: { color: fs.color },
+                }),
 
         // label
         h('span', { class: 'node-label' }, node.name),
@@ -190,7 +259,8 @@ const FileTreeNode = defineComponent({
   height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-block: 6px;
+  padding-top: 0;
+  padding-bottom: 6px;
 }
 
 .tree-loading,
@@ -267,6 +337,12 @@ const FileTreeNode = defineComponent({
 
 :deep(.node-file-icon) {
   flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
 }
 
 /* label */

@@ -23,7 +23,7 @@
  *   See SETUP.md for Cargo.toml, lib.rs, tauri.conf.json, and capabilities changes.
  */
 
-import { Command } from '@tauri-apps/plugin-shell'
+import { Child, Command } from '@tauri-apps/plugin-shell'
 import { tool } from 'ai'
 import { z } from 'zod'
 
@@ -35,6 +35,49 @@ import { z } from 'zod'
  * so the model still sees the beginning and the actionable end.
  */
 const MAX_OUTPUT_CHARS = 32_000
+
+// ── background process registry ───────────────────────────────────────────────
+
+/**
+ * In-memory registry of background processes spawned by run_bg_command.
+ * Persists for the lifetime of the app — finished entries are kept so the
+ * agent can still read their final output after they exit.
+ * Capped at MAX_BG_PROCESSES; oldest finished entries are evicted first.
+ */
+const MAX_BG_PROCESSES = 20
+
+interface BgProcess {
+  id: string
+  command: string
+  stdout: string
+  stderr: string
+  running: boolean
+  exitCode: number | null
+  startedAt: number
+  finishedAt: number | null
+}
+
+const bgProcesses = new Map<string, BgProcess>()
+const bgChildren = new Map<string, Child>()
+let _bgCounter = 0
+
+function newBgId(): string {
+  return `bg${++_bgCounter}`
+}
+
+/** Evict oldest finished entries when the registry is full. */
+function evictBgIfNeeded(): void {
+  if (bgProcesses.size < MAX_BG_PROCESSES)
+    return
+  for (const [id, p] of bgProcesses) {
+    if (!p.running) {
+      bgProcesses.delete(id)
+      bgChildren.delete(id)
+      if (bgProcesses.size < MAX_BG_PROCESSES)
+        break
+    }
+  }
+}
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -339,6 +382,173 @@ Returns per operation: stdout, stderr, exit code, duration.`,
   })
 }
 
+// ── run_bg_command ────────────────────────────────────────────────────────────
+
+/**
+ * Spawn a shell command in the background. Returns immediately with an ID —
+ * the agent can continue working while the process runs.
+ * Use bg_command_status to poll output and kill_bg_command to terminate it.
+ */
+export function createRunBgCommandTool(projectPath: string) {
+  return tool({
+    description: `\
+Spawn a shell command in the background and return immediately.
+The command keeps running while you continue with other tasks.
+Returns an id you can pass to bg_command_status or kill_bg_command.
+
+Use this for long-running processes that should not block the agent:
+  • Dev servers:   npm run dev, vite, next dev, cargo watch
+  • Build watchers: tsc --watch, webpack --watch
+  • Test watchers:  jest --watch, vitest --watch
+  • Any process you want to start and then check on later
+
+Do NOT use this for short commands (installs, one-off builds) — use run_command instead.`,
+    inputSchema: z.object({
+      command: z.string().min(1).describe('Shell command to run in the background.'),
+      label: z.string().optional().describe('Optional short human label shown in the UI (e.g. "dev server").'),
+    }),
+    execute: async ({ command, label }) => {
+      evictBgIfNeeded()
+
+      const id = newBgId()
+      const shell = await resolveShell()
+      const shellArgs = shell === 'powershell'
+        ? ['-NoProfile', '-NonInteractive', '-Command', command]
+        : ['-c', command]
+
+      const proc: BgProcess = {
+        id,
+        command: label ? `${label} (${command})` : command,
+        stdout: '',
+        stderr: '',
+        running: true,
+        exitCode: null,
+        startedAt: Date.now(),
+        finishedAt: null,
+      }
+      bgProcesses.set(id, proc)
+
+      const cmd = Command.create(shell, shellArgs, { cwd: projectPath })
+
+      cmd.stdout.on('data', (line: string) => {
+        proc.stdout = trimOutput(`${proc.stdout + line}\n`)
+      })
+      cmd.stderr.on('data', (line: string) => {
+        proc.stderr = trimOutput(`${proc.stderr + line}\n`)
+      })
+      cmd.on('close', (data: { code: number | null }) => {
+        proc.running = false
+        proc.exitCode = data.code
+        proc.finishedAt = Date.now()
+        bgChildren.delete(id)
+      })
+      cmd.on('error', (err: string) => {
+        proc.running = false
+        proc.exitCode = null
+        proc.finishedAt = Date.now()
+        proc.stderr += `\n[spawn error] ${err}`
+        bgChildren.delete(id)
+      })
+
+      try {
+        const child = await cmd.spawn()
+        bgChildren.set(id, child)
+        return {
+          id,
+          message: `Background process started with id "${id}". Use bg_command_status to check on it.`,
+        }
+      }
+      catch (e) {
+        bgProcesses.delete(id)
+        return {
+          id,
+          error: `Failed to spawn: ${e instanceof Error ? e.message : String(e)}`,
+        }
+      }
+    },
+  })
+}
+
+// ── bg_command_status ─────────────────────────────────────────────────────────
+
+export function createBgCommandStatusTool() {
+  return tool({
+    description: `\
+Get the current status and output of a background command started with run_bg_command.
+Returns running state, exit code (if finished), and buffered stdout / stderr.
+Output is trimmed if very large — head and tail are always preserved.`,
+    inputSchema: z.object({
+      id: z.string().describe('Background process id returned by run_bg_command.'),
+    }),
+    execute: async ({ id }) => {
+      const proc = bgProcesses.get(id)
+      if (!proc) {
+        return { error: `No background process found with id "${id}". It may have been evicted or never started.` }
+      }
+
+      const durationMs = proc.finishedAt != null
+        ? proc.finishedAt - proc.startedAt
+        : Date.now() - proc.startedAt
+
+      return {
+        id: proc.id,
+        command: proc.command,
+        running: proc.running,
+        exitCode: proc.exitCode,
+        durationSeconds: Math.floor(durationMs / 1000),
+        ...(proc.stdout ? { stdout: proc.stdout } : {}),
+        ...(proc.stderr ? { stderr: proc.stderr } : {}),
+      }
+    },
+  })
+}
+
+// ── kill_bg_command ───────────────────────────────────────────────────────────
+
+export function createKillBgCommandTool() {
+  return tool({
+    description: `\
+Terminate a background command that was started with run_bg_command.
+Sends a kill signal to the process and marks it as stopped.
+Returns the final buffered output collected before the kill.`,
+    inputSchema: z.object({
+      id: z.string().describe('Background process id returned by run_bg_command.'),
+    }),
+    execute: async ({ id }) => {
+      const proc = bgProcesses.get(id)
+      if (!proc) {
+        return { error: `No background process found with id "${id}".` }
+      }
+      if (!proc.running) {
+        return {
+          id,
+          message: `Process "${id}" was already stopped (exit code: ${proc.exitCode ?? 'unknown'}).`,
+        }
+      }
+
+      const child = bgChildren.get(id)
+      try {
+        await child?.kill()
+      }
+      catch (e) {
+        // kill() may throw if the process already exited between the check and the call
+        proc.stderr += `\n[kill error] ${e instanceof Error ? e.message : String(e)}`
+      }
+
+      proc.running = false
+      proc.finishedAt = Date.now()
+      bgChildren.delete(id)
+
+      return {
+        id,
+        message: `Process "${id}" killed.`,
+        ...(proc.stdout ? { stdout: proc.stdout } : {}),
+        ...(proc.stderr ? { stderr: proc.stderr } : {}),
+      }
+    },
+  })
+}
+
 // ── factory ───────────────────────────────────────────────────────────────────
 
 /**
@@ -358,6 +568,9 @@ export function createShellTools(projectPath: string, shell?: 'sh' | 'powershell
   return {
     run_command: createRunCommandTool(projectPath),
     git_command: createGitCommandTool(projectPath),
+    run_bg_command: createRunBgCommandTool(projectPath),
+    bg_command_status: createBgCommandStatusTool(),
+    kill_bg_command: createKillBgCommandTool(),
   } as const
 }
 
@@ -437,6 +650,24 @@ export function shellToolDisplayLabel(
         return gitArgLabel(commands[0]!.args)
       const first = gitArgLabel(commands[0]!.args)
       return `${first} +${commands.length - 1} more`
+    }
+
+    case 'run_bg_command': {
+      const command = args.command as string | undefined
+      const label = args.label as string | undefined
+      if (label)
+        return `BG: ${truncate(label, 48)}`
+      return command ? `BG: ${truncate(command)}` : 'Run background command'
+    }
+
+    case 'bg_command_status': {
+      const id = args.id as string | undefined
+      return id ? `Status ${id}` : 'BG command status'
+    }
+
+    case 'kill_bg_command': {
+      const id = args.id as string | undefined
+      return id ? `Kill ${id}` : 'Kill BG command'
     }
 
     default:

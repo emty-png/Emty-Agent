@@ -3,6 +3,15 @@ import type { LanguageModel, StreamChatOptions, ToolCallEvent, ToolResultEvent, 
 import type { OsInfo } from '@/utils/os'
 import type { FilesystemTools } from '@/utils/tools/filesystem'
 import type { SubAgentOutcome } from '@/utils/tools/subagent'
+import { buildAgentSystemPrompt } from '@/utils/agentContext'
+import { buildProviderOptions, mergeProviderOptions } from '@/utils/ai'
+import {
+  buildCachedSystemPrompt,
+  buildContextCachingProviderOptions,
+  extractUsageStats,
+} from '@/utils/contextCaching'
+import { createMcpTools, mcpToolDisplayLabel } from '@/utils/tools/mcp'
+import { createSkillTools, skillToolDisplayLabel } from '@/utils/tools/skills'
 import { makeId } from './utils'
 
 export interface SubAgentStreamParams {
@@ -20,11 +29,9 @@ export interface SubAgentStreamParams {
   toolDisplayLabel: (name: string, args: Record<string, unknown>) => string
   shellToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
   webToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
-  artifactToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
   createFilesystemTools: (path: string) => FilesystemTools
   createShellTools: (path: string, shell?: 'sh' | 'powershell') => unknown
   createWebTools: () => unknown
-  createCreateArtifactTool: () => unknown
   onAbort: (tabId: string) => void
 }
 
@@ -46,6 +53,25 @@ interface SettingsSnapshot {
   openai: { apiKey: string; baseURL?: string; organizationId?: string }
   anthropic: { apiKey: string; baseURL?: string }
   google: { apiKey: string }
+  contextCaching: {
+    enabled: boolean
+    anthropicTtl: '5m' | '1h'
+    openaiPromptCacheRetention: 'in_memory' | '24h'
+    googleCachedContent: string
+  }
+  autoContext: {
+    enabled: boolean
+  }
+  disabledSkillIds: string[]
+  mcpServers?: Array<{
+    id: string
+    name: string
+    enabled: boolean
+    command: string
+    argsText: string
+    cwd: string
+    envText: string
+  }>
   compatibleProviders?: ProviderSnapshot[]
 }
 
@@ -76,11 +102,9 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     toolDisplayLabel,
     shellToolDisplayLabel,
     webToolDisplayLabel,
-    artifactToolDisplayLabel,
     createFilesystemTools,
     createShellTools,
     createWebTools,
-    createCreateArtifactTool,
     onAbort,
   } = params
 
@@ -163,13 +187,12 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
           grep: fsTools.grep,
         }
       }
-      tools = { ...tools, create_artifact: createCreateArtifactTool() }
       break
     }
 
     case 'researcher': {
       const webTools = createWebTools() as Record<string, unknown>
-      tools = { ...webTools, create_artifact: createCreateArtifactTool() }
+      tools = { ...webTools }
       break
     }
 
@@ -184,13 +207,13 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
         }
       }
       const webTools = createWebTools() as Record<string, unknown>
-      tools = { ...tools, ...webTools, create_artifact: createCreateArtifactTool() }
+      tools = { ...tools, ...webTools }
       break
     }
 
     case 'general': {
       const webTools = createWebTools() as Record<string, unknown>
-      tools = { ...webTools, create_artifact: createCreateArtifactTool() }
+      tools = { ...webTools }
       if (projectPath) {
         const fsTools = createFilesystemTools(projectPath) as Record<string, unknown>
         const shellTools = createShellTools(projectPath, osInfo?.shell) as Record<string, unknown>
@@ -208,10 +231,16 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     const shellLabel = shellToolDisplayLabel(name, args)
     if (shellLabel !== `Called ${name}`)
       return shellLabel
+    const skillLabel = skillToolDisplayLabel(name, args)
+    if (skillLabel !== `Called ${name}`)
+      return skillLabel
     const webLabel = webToolDisplayLabel(name, args)
     if (webLabel !== `Called ${name}`)
       return webLabel
-    return artifactToolDisplayLabel(name, args)
+    const mcpLabel = mcpToolDisplayLabel(name)
+    if (mcpLabel !== `Called ${name}`)
+      return mcpLabel
+    return `Called ${name}`
   }
 
   // Push the mission as a user message
@@ -238,9 +267,6 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   const liveMsg = assistantMsg
 
   const handleToolCall = (event: ToolCallEvent) => {
-    const metadata = event.name === 'create_artifact'
-      ? { artifact: event.args.artifact }
-      : undefined
     liveMsg.toolEvents ??= []
     liveMsg.toolEvents.push({
       id: event.id,
@@ -249,7 +275,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       status: 'running',
       toolName: event.name,
       startedAt: Date.now(),
-      ...(metadata ? { metadata } : {}),
+      args: event.args,
     })
     liveMsg.parts ??= []
     liveMsg.parts.push({ type: 'tool', toolCallId: event.id })
@@ -260,19 +286,58 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     if (te) {
       te.status = event.ok ? 'done' : 'error'
       te.finishedAt = Date.now()
+      te.result = event.result
     }
   }
 
-  const systemPrompt = buildSubAgentSystemPrompt(personality, projectPath, osInfo)
+  const cacheRuntime = {
+    settings: settings.contextCaching,
+    providerId: activeModel.providerId,
+    modelId: activeModel.id,
+    projectPath,
+    scope: `subagent:${personality}`,
+    promptFingerprint: '',
+  }
+  const mcpTools = await createMcpTools(settings.mcpServers ?? [])
+  const skillTools = createSkillTools(projectPath)
+  const mergedTools = { ...tools, ...skillTools, ...mcpTools }
+
+  const promptBuild = await buildAgentSystemPrompt({
+    basePrompt: buildSubAgentSystemPrompt(personality, projectPath, osInfo),
+    projectPath,
+    requestText: mission,
+    autoContext: settings.autoContext,
+    disabledSkillIds: settings.disabledSkillIds,
+    supportsToolCalls: Object.keys(mergedTools).length > 0,
+  })
+
+  cacheRuntime.promptFingerprint = promptBuild.promptFingerprint
+
+  const systemPrompt = buildCachedSystemPrompt(
+    promptBuild.prompt,
+    cacheRuntime,
+  )
+  const providerOptions = mergeProviderOptions(
+    buildProviderOptions({
+      providerId: activeModel.providerId,
+      modelId: activeModel.id,
+      supportsThinking: activeModel.supportsThinking,
+      thinkingEffort: activeModel.thinkingEffort,
+    }),
+    buildContextCachingProviderOptions(cacheRuntime),
+  )
 
   return new Promise<SubAgentOutcome>(resolve => {
     streamChat({
       model: languageModel,
       messages: [{ role: 'user', content: mission }],
       systemPrompt,
+      ...(providerOptions ? { providerOptions } : {}),
       maxOutputTokens,
-      supportsToolCalls: Object.keys(tools).length > 0,
-      tools: Object.keys(tools).length > 0 ? tools as ToolSet : undefined,
+      supportsToolCalls: Object.keys(mergedTools).length > 0,
+      tools: Object.keys(mergedTools).length > 0
+        ? mergedTools as ToolSet
+        : undefined,
       onDelta: (delta: string) => {
         liveMsg.content += delta
         liveMsg.parts ??= []
@@ -282,8 +347,13 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       },
       onToolCall: handleToolCall,
       onToolResult: handleToolResult,
-      onFinish: (fullText: string) => {
+      onFinish: ({ fullText, usage }) => {
         liveMsg.content = fullText
+        const usageStats = extractUsageStats(usage, activeModel.providerId)
+        if (usageStats)
+          liveMsg.cacheStats = usageStats
+        else
+          delete liveMsg.cacheStats
         subTab.isStreaming = false
         if (subTab.subAgent)
           subTab.subAgent.status = 'done'

@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { Copy, FolderOpen, Minus, Square, X } from 'lucide-vue-next'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useProjectStore } from '@/stores/project'
+import ServicesDropdown from './ServicesDropdown.vue'
 
 interface Props {
   title?: string
@@ -104,6 +105,8 @@ async function pickProject() {
       >
         <FolderOpen :size="15" :stroke-width="1.8" />
       </button>
+
+      <ServicesDropdown />
 
       <div class="divider" aria-hidden="true" />
 

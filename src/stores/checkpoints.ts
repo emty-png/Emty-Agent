@@ -153,9 +153,19 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
     if (!_activeCheckpointId || !_activeTabId)
       return
 
+    // Capture state and clear synchronously to prevent async race conditions
+    const currentCheckpointId = _activeCheckpointId
+    const currentTabId = _activeTabId
+
+    _activeCheckpointId = null
+    _activeTabId = null
+    const pendingSnapshots = [..._pendingSnapshots]
+    _pendingSnapshots.length = 0
+    _snapshotted.clear()
+
     // Update the checkpoint's conversationId (may have been created during sendMessage)
-    const tabCheckpoints = checkpointsByTab.value[_activeTabId]
-    const cp = tabCheckpoints?.find(c => c.id === _activeCheckpointId)
+    const tabCheckpoints = checkpointsByTab.value[currentTabId]
+    const cp = tabCheckpoints?.find(c => c.id === currentCheckpointId)
     if (cp && conversationId) {
       cp.conversationId = conversationId
     }
@@ -173,7 +183,7 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
         })
 
         // 2. Insert all buffered file snapshots (FK now valid)
-        for (const snap of _pendingSnapshots) {
+        for (const snap of pendingSnapshots) {
           try {
             await dbInsertCheckpointFile({
               checkpoint_id: cp.id,
@@ -192,12 +202,6 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
         console.warn('[checkpoints] Failed to persist checkpoint:', e)
       }
     }
-
-    // Clear recording state
-    _activeCheckpointId = null
-    _activeTabId = null
-    _snapshotted.clear()
-    _pendingSnapshots.length = 0
   }
 
   /**

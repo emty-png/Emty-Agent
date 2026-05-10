@@ -1,28 +1,29 @@
 <script setup lang="ts">
+import type { Attachment } from '@/stores/chat/attachment-types'
 import type { ChatMode } from '@/utils/ai'
-import { ArrowUp, Check, ChevronDown, Search, Square, Zap } from 'lucide-vue-next'
-import { storeToRefs } from 'pinia'
-import { computed, onUnmounted, ref } from 'vue'
+import { ArrowUp, Check, ChevronDown, Plus, Square } from 'lucide-vue-next'
+import { computed, nextTick, ref, watch } from 'vue'
 import AtMentionDropdown from '@/components/chat/AtMentionDropdown.vue'
+import AttachmentPreview from '@/components/chat/AttachmentPreview.vue'
+import AttachmentStrip from '@/components/chat/AttachmentStrip.vue'
+import ChatInputEstimator from '@/components/chat/ChatInputEstimator.vue'
+import ModelPicker from '@/components/chat/ModelPicker.vue'
 import QuestionOverlay from '@/components/chat/QuestionOverlay.vue'
 import TodoOverlay from '@/components/chat/TodoOverlay.vue'
 import { useAtMention } from '@/composables/useAtMention'
 import { useChatStore } from '@/stores/chat'
+import { isImageMime } from '@/stores/chat/attachment-types'
 import { useProjectStore } from '@/stores/project'
-import { useSettingsStore } from '@/stores/settings'
-import { pendingBatch } from '@/utils/tools/questions'
+import { openFileDialog, readFileAsAttachment } from '@/utils/attachments'
 
 const props = defineProps<{
   isStreaming?: boolean
 }>()
 
 const emit = defineEmits<{
-  send: [value: string, mode: ChatMode]
+  send: [value: string, mode: ChatMode, attachments: Attachment[]]
   stop: []
 }>()
-
-const s = useSettingsStore()
-const { enabledModels, activeModel } = storeToRefs(s)
 
 const project = useProjectStore()
 const projectPath = computed(() => project.projectPath)
@@ -30,7 +31,10 @@ const projectPath = computed(() => project.projectPath)
 const chat = useChatStore()
 
 // mode popup
-const mode = ref<ChatMode>('build')
+const mode = computed<ChatMode>({
+  get: () => chat.activeTab.draft.mode,
+  set: value => chat.updateTabDraft(chat.activeTab.id, { mode: value }),
+})
 const modeOpen = ref(false)
 const MODES = [{ value: 'build' as ChatMode, label: 'Build' }, { value: 'plan' as ChatMode, label: 'Plan' }]
 function toggleModeMenu() { modeOpen.value = !modeOpen.value }
@@ -41,18 +45,76 @@ function selectMode(m: ChatMode) {
 }
 
 // input state
-const text = ref('')
+const text = computed({
+  get: () => chat.activeTab.draft.text,
+  set: value => chat.updateTabDraft(chat.activeTab.id, { text: value }),
+})
 const focused = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
 // @ mention composable
 const mention = useAtMention(textareaRef, text, projectPath)
 
-function submit() {
-  if (!text.value.trim() || props.isStreaming)
+// ── attachments ─────────────────────────────────────────────────────────────
+const attachments = computed({
+  get: () => chat.activeTab.draft.attachments,
+  set: value => chat.updateTabDraft(chat.activeTab.id, { attachments: value }),
+})
+const previewAttachment = ref<Attachment | null>(null)
+
+async function addFiles(files: FileList | File[]) {
+  const nextAttachments = [...attachments.value]
+  for (const file of files) {
+    try {
+      const attachment = await readFileAsAttachment(file)
+      nextAttachments.push(attachment)
+    }
+    catch (err) {
+      console.warn('[ChatInput] Failed to read file:', file.name, err)
+    }
+  }
+  attachments.value = nextAttachments
+}
+
+function removeAttachment(id: string) {
+  attachments.value = attachments.value.filter(a => a.id !== id)
+}
+
+/** Handle paste events — extract images from clipboard. */
+function onPaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items)
     return
-  emit('send', text.value, mode.value)
-  text.value = ''
+
+  const imageFiles: File[] = []
+  for (const item of items) {
+    if (item.kind === 'file') {
+      const file = item.getAsFile()
+      if (file) {
+        e.preventDefault()
+        imageFiles.push(
+          isImageMime(file.type)
+            ? new File([file], `Pasted image.${file.type.split('/')[1] ?? 'png'}`, { type: file.type })
+            : file,
+        )
+      }
+    }
+  }
+  if (imageFiles.length > 0)
+    addFiles(imageFiles)
+}
+
+async function handleOpenFileDialog() {
+  const newAttachments = await openFileDialog()
+  attachments.value = [...attachments.value, ...newAttachments]
+}
+
+function submit() {
+  const hasText = text.value.trim().length > 0
+  const hasAttachments = attachments.value.length > 0
+  if ((!hasText && !hasAttachments) || props.isStreaming)
+    return
+  emit('send', text.value, mode.value, [...attachments.value])
   if (textareaRef.value)
     textareaRef.value.style.height = 'auto'
 }
@@ -73,48 +135,10 @@ function onInput(e: Event) {
   mention.handleInput(e)
 }
 
-// model picker
-const pickerOpen = ref(false)
-const pickerSearch = ref('')
-function openPicker() {
-  pickerOpen.value = true
-  pickerSearch.value = ''
-}
-function closePicker() { pickerOpen.value = false }
-function selectModel(uid: string) {
-  s.setActiveModel(uid)
-  closePicker()
-}
-
-const groupedModels = computed(() => {
-  const query = pickerSearch.value.toLowerCase().trim()
-  const models = enabledModels.value.filter(m =>
-    !query || m.name.toLowerCase().includes(query) || m.providerName.toLowerCase().includes(query),
-  )
-  const groups = new Map<string, { providerName: string; models: typeof models }>()
-  for (const m of models) {
-    if (!groups.has(m.providerId))
-      groups.set(m.providerId, { providerName: m.providerName, models: [] })
-    groups.get(m.providerId)!.models.push(m)
-  }
-  return [...groups.entries()].map(([id, g]) => ({ providerId: id, ...g }))
-})
-
-function onKeydownGlobal(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    closePicker()
-    closeModeMenu()
-  }
-}
-window.addEventListener('keydown', onKeydownGlobal)
-onUnmounted(() => window.removeEventListener('keydown', onKeydownGlobal))
-
-const activeLabel = computed(() => activeModel.value?.name ?? 'No model')
-const activeBadge = computed(() => activeModel.value?.providerName ?? '')
-const canSend = computed(() => text.value.trim().length > 0 && !props.isStreaming)
+const canSend = computed(() => (text.value.trim().length > 0 || attachments.value.length > 0) && !props.isStreaming)
 
 // ── overlay priority: Questions > AtMention > Todos ───────────────────────────
-const hasQuestions = computed(() => !!pendingBatch.value)
+const hasQuestions = computed(() => !!chat.activeTab.pendingQuestions)
 const hasTodos = computed(() => chat.activeTab.todos.length > 0)
 
 /**
@@ -127,6 +151,18 @@ const showTodos = computed(() => hasTodos.value && !hasQuestions.value && !menti
  * The input shell flattens its top corners whenever ANY overlay is stacked above it.
  */
 const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value || hasTodos.value)
+
+watch(
+  () => [chat.activeTab.id, text.value],
+  async () => {
+    await nextTick()
+    if (!textareaRef.value)
+      return
+    textareaRef.value.style.height = 'auto'
+    textareaRef.value.style.height = `${Math.min(textareaRef.value.scrollHeight, 180)}px`
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -173,9 +209,24 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
         @blur="focused = false"
         @keydown="onKeydown"
         @input="onInput"
+        @paste="onPaste"
       />
 
+      <!-- Attachment preview strip -->
+      <AttachmentStrip :attachments="attachments" @preview="previewAttachment = $event" @remove="removeAttachment" />
+
       <div class="input-toolbar">
+        <!-- Upload button -->
+        <button
+          class="upload-btn"
+          aria-label="Upload files"
+          :disabled="props.isStreaming"
+          @click="handleOpenFileDialog"
+        >
+          <Plus :size="14" :stroke-width="2" />
+        </button>
+
+        <!-- Mode selector after + -->
         <div class="mode-wrap">
           <button
             class="mode-trigger"
@@ -203,69 +254,36 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
 
         <div class="tool-spacer" />
 
-        <div class="picker-wrap">
-          <button class="model-btn" :class="{ 'model-btn--open': pickerOpen }" aria-label="Select model" @click="openPicker">
-            <Zap v-if="!activeModel" :size="12" :stroke-width="1.8" class="model-btn-icon--empty" />
-            <span class="model-name">{{ activeLabel }}</span>
-            <span v-if="activeBadge" class="model-badge">{{ activeBadge }}</span>
-            <ChevronDown :size="12" :stroke-width="2" class="model-chevron" :class="{ 'model-chevron--open': pickerOpen }" />
-          </button>
-          <Transition name="picker">
-            <div v-if="pickerOpen" class="picker-dropdown">
-              <div class="picker-search-wrap">
-                <Search :size="12" :stroke-width="1.8" class="picker-search-icon" />
-                <input v-model="pickerSearch" class="picker-search" placeholder="Search models\u2026" autofocus>
-              </div>
-              <div v-if="enabledModels.length === 0" class="picker-empty">
-                <p>No models available.</p>
-                <p class="picker-empty-hint">
-                  Open Settings &rarr; Providers and test a connection.
-                </p>
-              </div>
-              <div v-else-if="groupedModels.length === 0" class="picker-empty">
-                <p>No models match "{{ pickerSearch }}"</p>
-              </div>
-              <div v-else class="picker-groups">
-                <div v-for="group in groupedModels" :key="group.providerId" class="picker-group">
-                  <span class="picker-group-header">{{ group.providerName }}</span>
-                  <button
-                    v-for="m in group.models"
-                    :key="m.uid"
-                    class="picker-model-row"
-                    :class="{ 'picker-model-row--active': m.uid === activeModel?.uid }"
-                    @click="selectModel(m.uid)"
-                  >
-                    <span class="picker-model-name">{{ m.name }}</span>
-                    <span v-if="m.supportsThinking" class="picker-cap-tag picker-cap-tag--thinking">thinking</span>
-                    <span v-if="m.supportsToolCalls" class="picker-cap-tag picker-cap-tag--tools">tools</span>
-                    <span v-if="m.supportsAttachments" class="picker-cap-tag picker-cap-tag--vision">vision</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Transition>
-        </div>
+        <div class="toolbar-right">
+          <ChatInputEstimator :text="text" :mode="mode" :attachments="attachments" />
 
-        <button v-if="props.isStreaming" class="action-btn action-btn--stop" aria-label="Stop generation" @click="$emit('stop')">
-          <Square :size="11" :stroke-width="0" style="fill: currentColor" />
-        </button>
-        <button
-          v-else
-          class="action-btn action-btn--send"
-          :class="{ 'action-btn--send-active': canSend }"
-          aria-label="Send message"
-          :disabled="!canSend"
-          @click="submit"
-        >
-          <ArrowUp :size="15" :stroke-width="2.2" />
-        </button>
+          <ModelPicker />
+
+          <button v-if="props.isStreaming" class="action-btn action-btn--stop" aria-label="Stop generation" @click="$emit('stop')">
+            <Square :size="11" :stroke-width="0" style="fill: currentColor" />
+          </button>
+          <button
+            v-else
+            class="action-btn action-btn--send"
+            :class="{ 'action-btn--send-active': canSend }"
+            aria-label="Send message"
+            :disabled="!canSend"
+            @click="submit"
+          >
+            <ArrowUp :size="15" :stroke-width="2.2" />
+          </button>
+        </div>
       </div>
 
-      <Teleport to="body">
-        <div v-if="modeOpen" class="global-backdrop" @click="closeModeMenu" />
-        <div v-if="pickerOpen" class="global-backdrop" @click="closePicker" />
-      </Teleport>
+      <div v-if="modeOpen" class="global-backdrop" @click="closeModeMenu" />
     </div>
+
+    <!-- Attachment preview modal -->
+    <AttachmentPreview
+      v-if="previewAttachment"
+      :attachment="previewAttachment"
+      @close="previewAttachment = null"
+    />
   </div>
 </template>
 
@@ -296,7 +314,7 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
 .input-shell {
   width: 100%;
   background: var(--color-bg-card);
-  border: 1px solid var(--color-border-mid);
+  border: 1px solid var(--color-border-bright);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -304,7 +322,7 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
   overflow: visible;
 }
 .input-shell--focused {
-  border-color: var(--color-border-bright);
+  border-color: var(--color-accent-dim);
 }
 .input-shell--flat-top {
   border-radius: 0 0 12px 12px;
@@ -336,12 +354,139 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
 .input-toolbar {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 6px 6px;
+  gap: 6px;
+  padding: 6px 8px 8px;
   position: relative;
 }
+
 .tool-spacer {
   flex: 1;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── attachment preview strip ─────────────────────────────────────────────── */
+.attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 10px 6px;
+}
+
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px 5px 5px;
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border-mid);
+  border-radius: 8px;
+  cursor: pointer;
+  max-width: 220px;
+  transition:
+    background 110ms ease,
+    border-color 110ms ease;
+}
+
+.attachment-chip:hover {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border-bright);
+}
+
+.attachment-thumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.attachment-file-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 5px;
+  background: var(--color-bg-card);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.attachment-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.attachment-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-size {
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.attachment-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+}
+
+.attachment-remove:hover {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger-text);
+}
+
+/* ── upload button ────────────────────────────────────────────────────────── */
+.upload-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 120ms ease;
+}
+
+.upload-btn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-secondary);
+}
+
+.upload-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .mode-wrap {
@@ -351,30 +496,24 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
   display: flex;
   align-items: center;
   gap: 3px;
-  height: 26px;
-  padding-inline: 8px 6px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  height: 32px;
+  padding-inline: 10px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
-  transition:
-    background 110ms ease,
-    border-color 110ms ease;
+  transition: all 120ms ease;
 }
-.mode-trigger:hover {
-  background: var(--color-bg-hover);
-}
+.mode-trigger:hover,
 .mode-trigger--open {
   background: var(--color-bg-hover);
-  border-color: var(--color-border-bright);
+  border-color: var(--color-border-subtle);
 }
-.mode-trigger--plan {
-  border-color: var(--color-accent-dim);
-  background: var(--color-accent-muted);
+.mode-trigger--plan .mode-trigger-label {
+  color: var(--color-accent-text);
 }
-.mode-trigger--plan:hover {
-  background: var(--color-accent-muted);
-  border-color: var(--color-accent);
+.mode-trigger--plan .mode-trigger-chevron {
+  color: var(--color-accent-text);
 }
 .mode-trigger-label {
   font-size: 11.5px;
@@ -401,12 +540,16 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
 .mode-popup {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  left: 50%;
+  transform: translateX(-50%);
   width: 130px;
   background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--color-border-bright);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    0 24px 56px rgba(0, 0, 0, 0.6);
   overflow: hidden;
   z-index: 10000;
   padding: 3px;
@@ -446,13 +589,19 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
 .popup-enter-active,
 .popup-leave-active {
   transition:
-    opacity 110ms ease,
-    transform 110ms ease;
+    opacity 160ms ease,
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .popup-enter-from,
 .popup-leave-to {
   opacity: 0;
-  transform: translateY(4px) scale(0.97);
+  transform: translateX(-50%) translateY(6px) scale(0.97);
+}
+
+.global-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
 }
 
 .action-btn {
@@ -496,209 +645,5 @@ const inputShellFlat = computed(() => hasQuestions.value || mention.isOpen.value
 .action-btn--stop:hover {
   background: color-mix(in srgb, var(--color-danger) 18%, transparent);
   border-color: color-mix(in srgb, var(--color-danger) 50%, transparent);
-}
-
-.picker-wrap {
-  position: relative;
-}
-.model-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding-inline: 8px 6px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  cursor: pointer;
-  transition: background 120ms ease;
-  max-width: 220px;
-}
-.model-btn:hover,
-.model-btn--open {
-  background: var(--color-bg-hover);
-}
-.model-btn-icon--empty {
-  color: var(--color-text-tertiary);
-}
-.model-name {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 120px;
-}
-.model-badge {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-}
-.model-chevron {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-  transition: transform 150ms ease;
-}
-.model-chevron--open {
-  transform: rotate(180deg);
-}
-
-.picker-dropdown {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  width: 260px;
-  max-height: 320px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-mid);
-  border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  z-index: 10000;
-}
-.picker-search-wrap {
-  position: relative;
-  padding: 7px 7px 5px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  flex-shrink: 0;
-}
-.picker-search-icon {
-  position: absolute;
-  left: 17px;
-  top: 50%;
-  transform: translateY(-3px);
-  color: var(--color-text-tertiary);
-  pointer-events: none;
-}
-.picker-search {
-  width: 100%;
-  height: 28px;
-  padding-left: 26px;
-  padding-right: 8px;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-mid);
-  border-radius: 5px;
-  color: var(--color-text-primary);
-  font-size: 12px;
-  outline: none;
-  transition: border-color 120ms ease;
-}
-.picker-search:focus {
-  border-color: var(--color-accent-dim);
-}
-.picker-search::placeholder {
-  color: var(--color-text-tertiary);
-}
-.picker-groups {
-  overflow-y: auto;
-  flex: 1;
-  padding: 3px 0 5px;
-}
-.picker-group {
-  margin-bottom: 1px;
-}
-.picker-group-header {
-  display: block;
-  padding: 7px 11px 3px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
-}
-.picker-model-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 30px;
-  padding-inline: 11px 9px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 12.5px;
-  cursor: pointer;
-  text-align: left;
-  transition:
-    background 100ms ease,
-    color 100ms ease;
-  gap: 8px;
-}
-.picker-model-row:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-}
-.picker-model-row--active {
-  background: var(--color-accent-muted);
-  color: var(--color-accent-text);
-}
-.picker-model-row--active:hover {
-  background: var(--color-accent-muted);
-}
-.picker-model-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.picker-cap-tag {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: 1px 4px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-.picker-cap-tag--thinking {
-  background: var(--color-accent-muted);
-  color: var(--color-accent-text);
-  border: 1px solid var(--color-accent-dim);
-}
-.picker-cap-tag--tools {
-  background: var(--color-success-muted);
-  color: var(--color-success-text);
-  border: 1px solid var(--color-success-muted);
-}
-.picker-cap-tag--vision {
-  background: color-mix(in srgb, var(--color-info) 12%, transparent);
-  color: var(--color-info-text);
-  border: 1px solid color-mix(in srgb, var(--color-info) 25%, transparent);
-}
-.picker-empty {
-  padding: 18px 14px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  line-height: 1.6;
-}
-.picker-empty-hint {
-  font-size: 11px;
-  margin-top: 4px;
-  opacity: 0.7;
-}
-.picker-enter-active,
-.picker-leave-active {
-  transition:
-    opacity 140ms ease,
-    transform 140ms ease;
-}
-.picker-enter-from,
-.picker-leave-to {
-  opacity: 0;
-  transform: translateY(4px) scale(0.98);
-}
-</style>
-
-<style>
-.global-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
 }
 </style>
