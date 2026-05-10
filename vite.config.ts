@@ -16,6 +16,19 @@ export default defineConfig(async () => ({
     },
   },
 
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-shiki': ['shiki'],
+          'vendor-ai': ['ai', '@ai-sdk/anthropic', '@ai-sdk/google', '@ai-sdk/openai', '@ai-sdk/openai-compatible'],
+          'vendor-ui': ['vue', 'pinia', 'lucide-vue-next'],
+        },
+      },
+    },
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
