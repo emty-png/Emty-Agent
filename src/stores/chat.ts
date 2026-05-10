@@ -15,7 +15,9 @@ import type { ChatDraftState, ChatEstimatorState, ChatTab, Message } from './cha
 import type { QuestionAnswer } from '@/utils/tools/questions'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import { dbUpdateConversationTitle } from '@/db/database'
+import {
+  dbUpdateConversationTitle,
+} from '@/db/database'
 import { createSendMessage } from './chat/sendMessage'
 import { createEmptyDraft, createEmptyEstimatorState, makeId, newTab } from './chat/utils'
 
@@ -69,7 +71,7 @@ export const useChatStore = defineStore('chat', () => {
       draft: {
         text: tab.draft.text,
         mode: tab.draft.mode,
-        attachments: [],
+        attachments: [], // We don't persist attachments in the cache for now
       },
       estimator: {
         estimate: tab.estimator.estimate,
@@ -100,19 +102,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // Keep cache in sync as tabs mutate
-  watch(tabs, nextTabs => nextTabs.forEach(snapshotConversationState), { deep: true })
-
-  // ── tab helpers ───────────────────────────────────────────────────────────────
-
-  function isReusableBlankTab(tab: ChatTab): boolean {
-    return (
-      tab.messages.length === 0
-      && !tab.conversationId
-      && !tab.isStreaming
-      && tab.draft.text.trim().length === 0
-      && tab.draft.attachments.length === 0
-    )
-  }
+  watch(tabs, nextTabs => {
+    nextTabs.forEach(snapshotConversationState)
+  }, { deep: true })
 
   // ── tab actions ───────────────────────────────────────────────────────────────
 
@@ -146,9 +138,9 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // Clean up checkpoints for this tab
-    import('./checkpoints')
-      .then(({ useCheckpointStore }) => useCheckpointStore().clearTab(id))
-      .catch(() => { })
+    import('./checkpoints').then(({ useCheckpointStore }) => {
+      useCheckpointStore().clearTab(id)
+    }).catch(() => { })
 
     const idx = tabs.value.findIndex(t => t.id === id)
 
@@ -178,8 +170,8 @@ export const useChatStore = defineStore('chat', () => {
 
     const restoredState = restoreConversationState(payload.conversationId)
 
-    const buildTab = (id: string): ChatTab => ({
-      id,
+    const tab: ChatTab = {
+      id: makeId(),
       title: payload.title,
       messages: payload.messages,
       conversationId: payload.conversationId,
@@ -189,35 +181,18 @@ export const useChatStore = defineStore('chat', () => {
       draft: restoredState.draft,
       estimator: restoredState.estimator,
       pendingQuestions: null,
-    })
-
-    const loadCheckpoints = (tabId: string) => {
-      import('./checkpoints')
-        .then(({ useCheckpointStore }) =>
-          useCheckpointStore().loadForConversation(tabId, payload.conversationId),
-        )
-        .catch(() => { })
     }
 
-    // Reuse an existing blank tab if we're at the tab limit
-    if (tabs.value.length >= MAX_TABS) {
-      const blankIdx = tabs.value.findIndex(isReusableBlankTab)
-      if (blankIdx !== -1) {
-        const existingId = tabs.value[blankIdx]!.id
-        tabs.value[blankIdx] = buildTab(existingId)
-        activeId.value = existingId
-        loadCheckpoints(existingId)
-        return
-      }
-      // All tabs are in use — switch to most recently used (don't open a new one)
-      console.warn('[chat] Tab limit reached; cannot open conversation in a new tab')
-      return
-    }
-
-    const tab = buildTab(makeId())
     tabs.value.push(tab)
     activeId.value = tab.id
-    loadCheckpoints(tab.id)
+
+    // Load checkpoints for this conversation
+    import('./checkpoints').then(({ useCheckpointStore }) => {
+      useCheckpointStore().loadForConversation(
+        tab.id,
+        payload.conversationId,
+      )
+    }).catch(() => { })
   }
 
   function stopGeneration(tabId?: string): void {
@@ -234,30 +209,24 @@ export const useChatStore = defineStore('chat', () => {
 
   function updateTabDraft(tabId: string, patch: Partial<ChatDraftState>): void {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab)
-      return
-    tab.draft = {
-      text: patch.text ?? tab.draft.text,
-      mode: patch.mode ?? tab.draft.mode,
-      attachments: patch.attachments ?? tab.draft.attachments,
+    if (tab) {
+      tab.draft = { ...tab.draft, ...patch }
     }
-    snapshotConversationState(tab)
   }
 
   function clearTabDraft(tabId: string): void {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab)
-      return
-    tab.draft = createEmptyDraft()
-    snapshotConversationState(tab)
+    if (tab) {
+      tab.draft = createEmptyDraft()
+    }
   }
 
   function setTabModel(tabId: string, modelUid: string | null): void {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (!tab)
-      return
-    tab.modelUid = modelUid
-    snapshotConversationState(tab)
+    if (tab) {
+      tab.modelUid = modelUid
+      snapshotConversationState(tab)
+    }
   }
 
   function setTabEstimatorState(tabId: string, next: Partial<ChatEstimatorState>): void {
