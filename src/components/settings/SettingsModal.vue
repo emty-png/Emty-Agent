@@ -7,11 +7,13 @@ import {
   Puzzle,
   Server,
   Settings,
+  Shield,
   X,
   Zap,
 } from 'lucide-vue-next'
 import { ref } from 'vue'
 
+import AgentSection from './sections/AgentSection.vue'
 import GeneralSection from './sections/GeneralSection.vue'
 import McpSection from './sections/McpSection.vue'
 import ModelsSection from './sections/ModelsSection.vue'
@@ -23,11 +25,12 @@ import ThemeSection from './sections/ThemeSection.vue'
 const emit = defineEmits<{ close: [] }>()
 
 //  navigation
-type Section = 'general' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models'
+type Section = 'general' | 'agent' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models'
 const activeSection = ref<Section>('providers')
 
 const NAV: { id: Section; label: string; icon: Component }[] = [
   { id: 'general', label: 'General', icon: Settings },
+  { id: 'agent', label: 'Agent', icon: Shield },
   { id: 'theme', label: 'Theme', icon: Palette },
   { id: 'skills', label: 'Skills', icon: BookOpen },
   { id: 'mcp', label: 'MCP', icon: Server },
@@ -45,7 +48,7 @@ function onKeydown(e: KeyboardEvent) {
 <template>
   <Teleport to="body">
     <!-- backdrop -->
-    <div class="settings-backdrop" @click.self="emit('close')" @keydown="onKeydown">
+    <div class="settings-backdrop" data-overlay @click.self="emit('close')" @keydown="onKeydown">
       <!-- modal -->
       <div class="settings-modal" role="dialog" aria-modal="true" aria-label="Settings">
         <!--  modal header  -->
@@ -81,6 +84,7 @@ function onKeydown(e: KeyboardEvent) {
           <!-- right content -->
           <div class="settings-content">
             <GeneralSection v-if="activeSection === 'general'" />
+            <AgentSection v-else-if="activeSection === 'agent'" />
             <ThemeSection v-else-if="activeSection === 'theme'" />
             <SkillsSection v-else-if="activeSection === 'skills'" />
             <McpSection v-else-if="activeSection === 'mcp'" />

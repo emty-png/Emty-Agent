@@ -1,10 +1,22 @@
 <script setup lang="ts">
-import { Plus, X } from 'lucide-vue-next'
+import { Globe, Plus, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
+import { computed } from 'vue'
+import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
 
 const chat = useChatStore()
+const browser = useBrowserStore()
 const { tabs, activeId } = storeToRefs(chat)
+
+const activeBrowserOwner = computed(() => browser.getOwner(activeId.value))
+
+function toggleBrowser() {
+  if (activeBrowserOwner.value.isPanelOpen)
+    browser.closePanel(activeId.value)
+  else
+    browser.openPanel(activeId.value)
+}
 </script>
 
 <template>
@@ -32,6 +44,16 @@ const { tabs, activeId } = storeToRefs(chat)
         </span>
       </button>
     </div>
+
+    <button
+      class="tab-new"
+      :class="{ 'tab-new--active': activeBrowserOwner.isPanelOpen }"
+      aria-label="Toggle embedded browser"
+      title="Toggle embedded browser"
+      @click="toggleBrowser"
+    >
+      <Globe :size="14" :stroke-width="1.8" />
+    </button>
 
     <button
       class="tab-new"
@@ -174,6 +196,10 @@ const { tabs, activeId } = storeToRefs(chat)
 .tab-new:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-secondary);
+}
+.tab-new--active {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  color: var(--color-accent-text);
 }
 .tab-new--hidden {
   opacity: 0;

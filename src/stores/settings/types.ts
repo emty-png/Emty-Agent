@@ -1,4 +1,5 @@
 import type { SkillMetadata } from '@/utils/skills'
+import type { ToolPermissionMode } from '@/utils/tools/permissions'
 
 export type ConnectionStatus = 'idle' | 'testing' | 'ok' | 'error'
 export type ThinkingEffort = 'low' | 'medium' | 'high'
@@ -98,6 +99,10 @@ export interface ContextCachingConfig {
 
 export interface AutoContextConfig {
   enabled: boolean
+}
+
+export interface AgentConfig {
+  permissionMode: ToolPermissionMode
 }
 
 export interface ConfiguredSkill extends SkillMetadata {

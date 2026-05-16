@@ -1,18 +1,42 @@
 <script setup lang="ts">
 import type { Attachment } from '@/stores/chat/attachment-types'
-import type { ChatMode } from '@/utils/ai'
-import { computed, onUnmounted, shallowRef, watch } from 'vue'
+import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { buildChatRequestPreview } from '@/stores/chat/requestPreview'
 import { useSettingsStore } from '@/stores/settings'
 import { estimateChatPrompt } from '@/utils/chatEstimate'
 
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+interface TooltipState {
+  text: string
+  x: number
+  y: number
+  visible: boolean
+}
 // --- Props ---
 const props = defineProps<{
   text: string
-  mode: ChatMode
   attachments: Attachment[]
 }>()
+// --- Emits ---
+const emit = defineEmits<{
+  compactSession: []
+}>()
+const tooltip = ref<TooltipState>({ text: '', x: 0, y: 0, visible: false })
+let _hideTimer: ReturnType<typeof setTimeout> | null = null
+function showTip(e: MouseEvent, text: string) {
+  if (_hideTimer) {
+    clearTimeout(_hideTimer)
+    _hideTimer = null
+  }
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  tooltip.value = { text, x: r.left + r.width / 2, y: r.bottom + 8, visible: true }
+}
+function hideTip() {
+  _hideTimer = setTimeout(() => {
+    tooltip.value.visible = false
+  }, 80)
+}
 
 // --- Stores ---
 const chat = useChatStore()
@@ -42,8 +66,8 @@ const estimate = computed(() => estimatorState.value.estimate)
 const estimateError = computed(() => estimatorState.value.error)
 const estimating = computed(() => estimatorState.value.estimating)
 
-const hasModel = computed(() =>
-  !!(chat.activeTab.modelUid ?? settings.activeModelUid ?? settings.activeModel?.uid),
+const hasModel = computed(
+  () => !!(chat.activeTab.modelUid ?? settings.activeModelUid ?? settings.activeModel?.uid),
 )
 
 // --- Computed: UI Presentation ---
@@ -73,9 +97,7 @@ const contextSummary = computed(() => {
   const input = intFormatter.format(estimate.value.inputTokens)
   const limit = estimate.value.contextLimit
 
-  return limit == null
-    ? `${input} tokens in prompt`
-    : `${input} / ${intFormatter.format(limit)}`
+  return limit == null ? `${input} tokens in prompt` : `${input} / ${intFormatter.format(limit)}`
 })
 
 const remainingSummary = computed(() => {
@@ -94,7 +116,7 @@ const remainingSummary = computed(() => {
  */
 const estimationDependencies = computed(() => ({
   text: props.text,
-  mode: props.mode,
+  mode: 'build',
   attachmentsSig: props.attachments.map(a => `${a.id}:${a.size}`).join('|'),
   tabId: chat.activeTab.id,
   modelUid: chat.activeTab.modelUid ?? settings.activeModelUid,
@@ -106,9 +128,11 @@ const estimationDependencies = computed(() => ({
     settings.mcpServers.length,
   ].join('|'),
   // Stable fingerprint for messages ignoring rapid mutations (toolEvents, parts)
-  messageSig: chat.activeTab.messages.map(m =>
-    `${m.id}:${m.role}:${m.content.length}:${m.attachments?.length ?? 0}:${m.error ? 1 : 0}`,
-  ).join('|'),
+  messageSig: chat.activeTab.messages
+    .map(
+      m => `${m.id}:${m.role}:${m.content.length}:${m.attachments?.length ?? 0}:${m.error ? 1 : 0}`,
+    )
+    .join('|'),
 }))
 
 // --- Logic: Watchers ---
@@ -126,12 +150,15 @@ watch(
 )
 
 // Watch streaming explicitly to trigger a fast refresh right when it stops
-watch(() => chat.activeTab.isStreaming, isStreaming => {
-  if (!isStreaming && prevStreaming.value) {
-    prevStreaming.value = false
-    scheduleEstimate(150) // Shorter debounce for post-stream refresh
-  }
-})
+watch(
+  () => chat.activeTab.isStreaming,
+  isStreaming => {
+    if (!isStreaming && prevStreaming.value) {
+      prevStreaming.value = false
+      scheduleEstimate(150) // Shorter debounce for post-stream refresh
+    }
+  },
+)
 
 // --- Logic: Fetching & Concurrency ---
 onUnmounted(() => {
@@ -175,7 +202,6 @@ async function refreshEstimate() {
     const preview = await buildChatRequestPreview({
       tab: chat.activeTab,
       content: props.text,
-      mode: props.mode,
       attachments: props.attachments,
     })
 
@@ -209,10 +235,27 @@ async function refreshEstimate() {
         aria-label="Prompt context and cost details"
         aria-haspopup="dialog"
         aria-controls="estimator-popover"
+        @mouseenter="showTip($event, 'Prompt context & cost')"
+        @mouseleave="hideTip"
       >
         <svg class="context-ring-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle class="context-ring-track" cx="12" cy="12" r="9" stroke-width="2.5" stroke-linecap="round" />
-          <circle class="context-ring-progress" cx="12" cy="12" r="9" stroke-width="2.5" stroke-linecap="round" :stroke-dasharray="strokeDasharray" />
+          <circle
+            class="context-ring-track"
+            cx="12"
+            cy="12"
+            r="9"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          />
+          <circle
+            class="context-ring-progress"
+            cx="12"
+            cy="12"
+            r="9"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            :stroke-dasharray="strokeDasharray"
+          />
         </svg>
       </button>
     </div>
@@ -239,15 +282,24 @@ async function refreshEstimate() {
         </div>
         <div class="estimator-row">
           <span class="estimator-label">Max output cost</span>
-          <span class="estimator-value">{{ usdFormatter.format(estimate.projectedOutputCost) }}</span>
+          <span class="estimator-value">
+            {{ usdFormatter.format(estimate.projectedOutputCost) }}
+          </span>
         </div>
-        <div v-if="estimate.projectedReasoningTokens > 0 || estimate.projectedReasoningCost > 0" class="estimator-row">
+        <div
+          v-if="estimate.projectedReasoningTokens > 0 || estimate.projectedReasoningCost > 0"
+          class="estimator-row"
+        >
           <span class="estimator-label">Reasoning budget</span>
-          <span class="estimator-value">{{ usdFormatter.format(estimate.projectedReasoningCost) }}</span>
+          <span class="estimator-value">
+            {{ usdFormatter.format(estimate.projectedReasoningCost) }}
+          </span>
         </div>
         <div class="estimator-row estimator-row--strong">
           <span class="estimator-label">Max total est.</span>
-          <span class="estimator-value">{{ usdFormatter.format(estimate.projectedMaxTotalCost) }}</span>
+          <span class="estimator-value">
+            {{ usdFormatter.format(estimate.projectedMaxTotalCost) }}
+          </span>
         </div>
       </main>
 
@@ -257,7 +309,25 @@ async function refreshEstimate() {
           {{ estimateError }}
         </p>
       </footer>
+
+      <!-- Compact Session Action -->
+      <div class="estimator-compact-row">
+        <button type="button" class="estimator-compact-btn" @click="emit('compactSession')">
+          Compact Session
+        </button>
+      </div>
     </div>
+    <!-- Teleported tooltip -->
+    <Teleport to="body">
+      <div
+        class="est-float-tooltip"
+        :class="{ 'est-float-tooltip--visible': tooltip.visible }"
+        :style="{ left: `${tooltip.x}px`, top: `${tooltip.y}px` }"
+      >
+        {{ tooltip.text }}
+        <span class="est-float-tooltip-caret" />
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -282,22 +352,31 @@ async function refreshEstimate() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 120ms ease;
+  transition:
+    background 120ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 120ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .context-ring:hover,
 .context-ring:focus-visible {
   background: var(--color-bg-hover);
-  border-color: var(--color-border-subtle);
+  border-color: var(--color-border-mid);
+  border-radius: 10px;
   outline: none;
+}
+
+.context-ring:active {
+  transform: scale(0.97);
+  transition-duration: 80ms;
 }
 
 .context-ring-svg {
@@ -465,6 +544,44 @@ async function refreshEstimate() {
   font-weight: 500;
 }
 
+/* --- Compact Session Button --- */
+.estimator-compact-row {
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--color-border-mid);
+}
+
+.estimator-compact-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 100ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 100ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 100ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.estimator-compact-btn:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-subtle);
+}
+
+.estimator-compact-btn:active {
+  transform: scale(0.97);
+  transition-duration: 80ms;
+}
+
 @keyframes estimator-spin {
   from {
     transform: rotate(0deg);
@@ -472,5 +589,44 @@ async function refreshEstimate() {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── Teleported tooltip ───────────────────────────────────────────────────── */
+.est-float-tooltip {
+  position: fixed;
+  transform: translateX(-50%);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-bright);
+  color: var(--color-text-primary);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 99999;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  margin-top: -4px;
+  transition:
+    opacity 140ms cubic-bezier(0.4, 0, 0.2, 1),
+    margin-top 140ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.est-float-tooltip--visible {
+  opacity: 1;
+  margin-top: 0;
+}
+.est-float-tooltip-caret {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  border-bottom-color: var(--color-border-bright);
 }
 </style>

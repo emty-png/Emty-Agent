@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-browser-mount-surface"
+description = "Enables the browser_mount_surface command without any pre-configured scope."
+commands.allow = ["browser_mount_surface"]
+
+[[permission]]
+identifier = "deny-browser-mount-surface"
+description = "Denies the browser_mount_surface command without any pre-configured scope."
+commands.deny = ["browser_mount_surface"]

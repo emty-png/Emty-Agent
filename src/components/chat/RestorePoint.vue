@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Checkpoint } from '@/stores/checkpoints'
 import { History, RotateCcw } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 
 defineProps<{
   checkpoint: Checkpoint
@@ -15,13 +15,18 @@ const emit = defineEmits<{
 const confirming = ref(false)
 const restoring = ref(false)
 
+let _confirmTimer: ReturnType<typeof setTimeout> | null = null
+let _restoreTimer: ReturnType<typeof setTimeout> | null = null
+
 function requestRestore(_id: string) {
   if (restoring.value)
     return
   confirming.value = true
 
+  if (_confirmTimer)
+    clearTimeout(_confirmTimer)
   // Auto-dismiss confirmation after 4 seconds
-  setTimeout(() => { confirming.value = false }, 4000)
+  _confirmTimer = setTimeout(() => { confirming.value = false }, 4000)
 }
 
 async function confirmRestore(id: string) {
@@ -30,8 +35,10 @@ async function confirmRestore(id: string) {
   restoring.value = true
   emit('restore', id)
 
+  if (_restoreTimer)
+    clearTimeout(_restoreTimer)
   // Reset state after a short delay (parent will handle actual restoration)
-  setTimeout(() => {
+  _restoreTimer = setTimeout(() => {
     restoring.value = false
     confirming.value = false
   }, 1500)
@@ -39,7 +46,17 @@ async function confirmRestore(id: string) {
 
 function cancelConfirm() {
   confirming.value = false
+  if (_confirmTimer)
+    clearTimeout(_confirmTimer)
 }
+
+// Clean up timers on unmount to prevent ghost state updates
+onBeforeUnmount(() => {
+  if (_confirmTimer)
+    clearTimeout(_confirmTimer)
+  if (_restoreTimer)
+    clearTimeout(_restoreTimer)
+})
 </script>
 
 <template>
@@ -59,9 +76,13 @@ function cancelConfirm() {
 
     <div class="restore-line-right" />
 
-    <!-- Default state: subtle Restore button -->
-    <Transition name="rp-fade" mode="out-in">
-      <div v-if="!confirming" key="default" class="restore-actions">
+    <!--
+      Replaced Vue <Transition> with pure CSS.
+      This prevents the component from blocking Vue's unmount lifecycle during tab switches.
+    -->
+    <div class="restore-wrapper">
+      <!-- Default state: subtle Restore button -->
+      <div class="restore-actions" :class="{ 'is-hidden': confirming }">
         <button
           class="restore-btn"
           :disabled="disabled"
@@ -74,7 +95,7 @@ function cancelConfirm() {
       </div>
 
       <!-- Confirmation state -->
-      <div v-else key="confirm" class="restore-confirm">
+      <div class="restore-confirm" :class="{ 'is-hidden': !confirming }">
         <span class="restore-confirm-text">Restore files &amp; remove messages after this point?</span>
         <button
           class="restore-confirm-yes"
@@ -91,7 +112,7 @@ function cancelConfirm() {
           Cancel
         </button>
       </div>
-    </Transition>
+    </div>
   </div>
 </template>
 
@@ -143,12 +164,41 @@ function cancelConfirm() {
   text-transform: uppercase;
 }
 
-/* ── restore button ────────────────────────────────────────────────────────── */
-.restore-actions {
-  flex-shrink: 0;
+/* ── css transition wrappers ───────────────────────────────────────────────── */
+.restore-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   padding-left: 6px;
 }
 
+.restore-actions,
+.restore-confirm {
+  display: flex;
+  align-items: center;
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease,
+    visibility 150ms;
+  transform-origin: center right;
+}
+
+.restore-confirm {
+  gap: 6px;
+}
+
+/* Instead of vue transitioning, we absolutely position the hidden element */
+.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  transform: scale(0.96);
+  visibility: hidden;
+}
+
+/* ── restore button ────────────────────────────────────────────────────────── */
 .restore-btn {
   display: flex;
   align-items: center;
@@ -183,14 +233,6 @@ function cancelConfirm() {
 }
 
 /* ── confirmation bar ──────────────────────────────────────────────────────── */
-.restore-confirm {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  padding-left: 6px;
-}
-
 .restore-confirm-text {
   font-size: 11px;
   color: var(--color-text-secondary);
@@ -248,15 +290,5 @@ function cancelConfirm() {
 .restore-confirm-no:hover:not(:disabled) {
   color: var(--color-text-secondary);
   background: var(--color-bg-hover);
-}
-
-/* ── fade transition ───────────────────────────────────────────────────────── */
-.rp-fade-enter-active,
-.rp-fade-leave-active {
-  transition: opacity 140ms ease;
-}
-.rp-fade-enter-from,
-.rp-fade-leave-to {
-  opacity: 0;
 }
 </style>

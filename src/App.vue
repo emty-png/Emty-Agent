@@ -49,14 +49,14 @@ function reloadApp() {
           @select-view="selectView"
           @open-settings="settingsOpen = true"
         />
-        <ChatView v-if="activeView === 'chat'" style="flex: 1" />
+        <ChatView v-show="activeView === 'chat'" style="flex: 1" />
         <HistoryView
-          v-else-if="activeView === 'history'"
+          v-if="activeView === 'history'"
           style="flex: 1"
           @new-chat="selectView('chat')"
           @open-chat="selectView('chat')"
         />
-        <ProjectView v-else style="flex: 1" />
+        <ProjectView v-if="activeView === 'projects'" style="flex: 1" />
       </div>
 
       <SettingsModal v-if="settingsOpen" @close="settingsOpen = false" />

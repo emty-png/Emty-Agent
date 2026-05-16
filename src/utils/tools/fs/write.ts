@@ -10,15 +10,20 @@ export function createWriteFilesTool(
   onBeforeFileWrite?: BeforeFileWriteCallback,
 ) {
   return tool({
-    description: `Create or overwrite one or more files in the project.
+    description: `Create new files or fully replace the content of existing ones.
 Pass an array of { path, content } pairs to write multiple files in one call.
 Parent directories are created automatically if they don't exist.
-Use this to implement features, write configs, create new source files, etc.`,
+
+ONLY use this for new files or when the entire file content must be replaced.
+If the file already exists and you only need to change part of it, use edit_files instead — it is faster, safer, and preferred.`,
     inputSchema: z.object({
-      files: z.array(z.object({
-        path: z.string().describe('File path relative to the project root.'),
-        content: z.string().describe('Full content to write to the file.'),
-      })).min(1).describe('List of files to write.'),
+      files: z.preprocess(
+        val => (Array.isArray(val) ? val : [val]),
+        z.array(z.object({
+          path: z.string().describe('File path relative to the project root.'),
+          content: z.string().describe('Full content to write to the file.'),
+        })).min(1),
+      ).describe('List of files to write.'),
     }),
     execute: async ({ files }) => {
       const written: string[] = []

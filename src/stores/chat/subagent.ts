@@ -2,6 +2,7 @@ import type { ChatTab, Message, SubAgentPersonality } from './types'
 import type { LanguageModel, StreamChatOptions, ToolCallEvent, ToolResultEvent, ToolSet } from '@/utils/ai'
 import type { OsInfo } from '@/utils/os'
 import type { FilesystemTools } from '@/utils/tools/filesystem'
+import type { RequestToolPermission, ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { SubAgentOutcome } from '@/utils/tools/subagent'
 import { buildAgentSystemPrompt } from '@/utils/agentContext'
 import { buildProviderOptions, mergeProviderOptions } from '@/utils/ai'
@@ -10,7 +11,9 @@ import {
   buildContextCachingProviderOptions,
   extractUsageStats,
 } from '@/utils/contextCaching'
+import { filterDisabledTools } from '@/utils/tools/catalog'
 import { createMcpTools, mcpToolDisplayLabel } from '@/utils/tools/mcp'
+import { wrapToolSetWithPermissions } from '@/utils/tools/permissions'
 import { createSkillTools, skillToolDisplayLabel } from '@/utils/tools/skills'
 import { makeId } from './utils'
 
@@ -29,9 +32,12 @@ export interface SubAgentStreamParams {
   toolDisplayLabel: (name: string, args: Record<string, unknown>) => string
   shellToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
   webToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
+  browserToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
   createFilesystemTools: (path: string) => FilesystemTools
   createShellTools: (path: string, shell?: 'sh' | 'powershell') => unknown
   createWebTools: () => unknown
+  createBrowserTools: (ownerId: string) => unknown
+  requestToolPermission: (tabId: string, request: Parameters<RequestToolPermission>[0]) => Promise<ToolPermissionDecision>
   onAbort: (tabId: string) => void
 }
 
@@ -62,6 +68,10 @@ interface SettingsSnapshot {
   autoContext: {
     enabled: boolean
   }
+  agent: {
+    permissionMode: 'ask' | 'auto'
+  }
+  disabledToolIds: string[]
   disabledSkillIds: string[]
   mcpServers?: Array<{
     id: string
@@ -102,9 +112,12 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     toolDisplayLabel,
     shellToolDisplayLabel,
     webToolDisplayLabel,
+    browserToolDisplayLabel,
     createFilesystemTools,
     createShellTools,
     createWebTools,
+    createBrowserTools,
+    requestToolPermission,
     onAbort,
   } = params
 
@@ -175,12 +188,21 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   // Tool set scoped by personality
   const projectPath = project.projectPath
   let tools: Record<string, unknown> = {}
+  const browserTools = filterDisabledTools(
+    createBrowserTools(subTab.id) as Record<string, unknown>,
+    settings.disabledToolIds,
+  )
 
   switch (personality) {
     case 'explorer': {
+      tools = { ...browserTools }
       if (projectPath) {
-        const fsTools = createFilesystemTools(projectPath)
+        const fsTools = filterDisabledTools(
+          createFilesystemTools(projectPath) as Record<string, unknown>,
+          settings.disabledToolIds,
+        )
         tools = {
+          ...tools,
           list_directory: fsTools.list_directory,
           read_files: fsTools.read_files,
           glob: fsTools.glob,
@@ -191,14 +213,20 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     }
 
     case 'researcher': {
-      const webTools = createWebTools() as Record<string, unknown>
-      tools = { ...webTools }
+      const webTools = filterDisabledTools(
+        createWebTools() as Record<string, unknown>,
+        settings.disabledToolIds,
+      )
+      tools = { ...webTools, ...browserTools }
       break
     }
 
     case 'debugger': {
       if (projectPath) {
-        const fsTools = createFilesystemTools(projectPath)
+        const fsTools = filterDisabledTools(
+          createFilesystemTools(projectPath) as Record<string, unknown>,
+          settings.disabledToolIds,
+        )
         tools = {
           list_directory: fsTools.list_directory,
           read_files: fsTools.read_files,
@@ -206,17 +234,29 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
           grep: fsTools.grep,
         }
       }
-      const webTools = createWebTools() as Record<string, unknown>
-      tools = { ...tools, ...webTools }
+      const webTools = filterDisabledTools(
+        createWebTools() as Record<string, unknown>,
+        settings.disabledToolIds,
+      )
+      tools = { ...tools, ...webTools, ...browserTools }
       break
     }
 
     case 'general': {
-      const webTools = createWebTools() as Record<string, unknown>
-      tools = { ...webTools }
+      const webTools = filterDisabledTools(
+        createWebTools() as Record<string, unknown>,
+        settings.disabledToolIds,
+      )
+      tools = { ...webTools, ...browserTools }
       if (projectPath) {
-        const fsTools = createFilesystemTools(projectPath) as Record<string, unknown>
-        const shellTools = createShellTools(projectPath, osInfo?.shell) as Record<string, unknown>
+        const fsTools = filterDisabledTools(
+          createFilesystemTools(projectPath) as Record<string, unknown>,
+          settings.disabledToolIds,
+        )
+        const shellTools = filterDisabledTools(
+          createShellTools(projectPath, osInfo?.shell) as Record<string, unknown>,
+          settings.disabledToolIds,
+        )
         tools = { ...tools, ...fsTools, ...shellTools }
       }
       break
@@ -237,10 +277,20 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     const webLabel = webToolDisplayLabel(name, args)
     if (webLabel !== `Called ${name}`)
       return webLabel
+    const browserLabel = browserToolDisplayLabel(name, args)
+    if (browserLabel !== `Called ${name}`)
+      return browserLabel
     const mcpLabel = mcpToolDisplayLabel(name)
     if (mcpLabel !== `Called ${name}`)
       return mcpLabel
     return `Called ${name}`
+  }
+
+  async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
+    if (settings.agent.permissionMode === 'auto')
+      return 'allow-once' as const
+
+    return await requestToolPermission(subTab.id, request)
   }
 
   // Push the mission as a user message
@@ -298,9 +348,19 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     scope: `subagent:${personality}`,
     promptFingerprint: '',
   }
-  const mcpTools = await createMcpTools(settings.mcpServers ?? [])
-  const skillTools = createSkillTools(projectPath)
-  const mergedTools = { ...tools, ...skillTools, ...mcpTools }
+  const mcpTools = filterDisabledTools(
+    await createMcpTools(settings.mcpServers ?? []),
+    settings.disabledToolIds,
+  )
+  const skillTools = filterDisabledTools(createSkillTools(projectPath), settings.disabledToolIds)
+  const mergedTools = filterDisabledTools({ ...tools, ...skillTools, ...mcpTools }, settings.disabledToolIds)
+  const runtimeTools = Object.keys(mergedTools).length > 0
+    ? wrapToolSetWithPermissions(mergedTools as ToolSet, {
+        tabId: subTab.id,
+        requestPermission: requestPermissionForTool,
+        getToolLabel: subAgentDisplayLabel,
+      })
+    : undefined
 
   const promptBuild = await buildAgentSystemPrompt({
     basePrompt: buildSubAgentSystemPrompt(personality, projectPath, osInfo),
@@ -335,9 +395,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       ...(providerOptions ? { providerOptions } : {}),
       maxOutputTokens,
       supportsToolCalls: Object.keys(mergedTools).length > 0,
-      tools: Object.keys(mergedTools).length > 0
-        ? mergedTools as ToolSet
-        : undefined,
+      tools: runtimeTools,
       onDelta: (delta: string) => {
         liveMsg.content += delta
         liveMsg.parts ??= []

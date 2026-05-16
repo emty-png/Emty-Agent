@@ -26,7 +26,8 @@
       "csp": null,
       "capabilities": [
         "default",
-        "desktop-capability"
+        "desktop-capability",
+        "browser-remote"
       ]
     }
   },

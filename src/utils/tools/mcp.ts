@@ -2,38 +2,12 @@ import type { CallToolResult, ToolResultContent } from '@modelcontextprotocol/sd
 import type { McpServerConfig } from '@/stores/settings/types'
 import { dynamicTool, jsonSchema } from 'ai'
 import { getMcpSession } from '@/utils/mcp'
+import { buildMcpAliasedTools } from './mcpAliases'
 
 export type McpToolServerConfig = Pick<
   McpServerConfig,
   'id' | 'name' | 'enabled' | 'command' | 'argsText' | 'cwd' | 'envText'
 >
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    || 'server'
-}
-
-function aliasFor(serverName: string, toolName: string): string {
-  return `mcp__${slugify(serverName)}__${slugify(toolName)}`
-}
-
-function makeUniqueAlias(base: string, used: Set<string>): string {
-  if (!used.has(base)) {
-    used.add(base)
-    return base
-  }
-
-  let index = 2
-  while (used.has(`${base}__${index}`))
-    index++
-
-  const next = `${base}__${index}`
-  used.add(next)
-  return next
-}
 
 function normalizeArguments(input: unknown): Record<string, unknown> {
   if (typeof input === 'object' && input != null && !Array.isArray(input))
@@ -97,15 +71,51 @@ export async function createMcpTools(servers: McpToolServerConfig[]) {
   if (enabledServers.length === 0)
     return {}
 
-  const usedAliases = new Set<string>()
   const tools: Record<string, ReturnType<typeof dynamicTool>> = {}
 
-  await Promise.allSettled(enabledServers.map(async server => {
+  const discoveredByServer = await Promise.allSettled(enabledServers.map(async server => {
     const session = await getMcpSession(server as McpServerConfig)
     const discovered = await session.listTools()
+    return { server, discovered }
+  }))
+
+  const successful: Array<{
+    server: McpToolServerConfig
+    discovered: Array<{
+      name: string
+      title?: string
+      description?: string
+      inputSchema: Record<string, unknown>
+    }>
+  }> = []
+
+  for (const result of discoveredByServer) {
+    if (result.status === 'fulfilled')
+      successful.push(result.value)
+  }
+
+  const aliasEntries = buildMcpAliasedTools(
+    successful.map(({ server, discovered }) => ({
+      id: server.id,
+      name: server.name,
+      tools: discovered.map(tool => ({
+        name: tool.name,
+        ...(tool.title ? { title: tool.title } : {}),
+        description: tool.description ?? '',
+        inputSchema: tool.inputSchema as Record<string, unknown>,
+      })),
+    })),
+  )
+
+  for (const { server, discovered } of successful) {
+    const aliasByToolName = new Map(
+      aliasEntries
+        .filter(entry => entry.serverId === server.id)
+        .map(entry => [entry.toolName, entry.alias]),
+    )
 
     for (const tool of discovered) {
-      const alias = makeUniqueAlias(aliasFor(server.name, tool.name), usedAliases)
+      const alias = aliasByToolName.get(tool.name) ?? tool.name
       const descriptionParts = [
         `MCP tool from ${server.name}.`,
         tool.title ? `Title: ${tool.title}.` : '',
@@ -129,7 +139,7 @@ export async function createMcpTools(servers: McpToolServerConfig[]) {
         },
       })
     }
-  }))
+  }
 
   return tools
 }

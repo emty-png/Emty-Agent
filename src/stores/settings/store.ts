@@ -1,4 +1,5 @@
 import type {
+  AgentConfig,
   AnthropicConfig,
   AutoContextConfig,
   CompatibleProvider,
@@ -19,6 +20,7 @@ import { inspectMcpServer, invalidateMcpServerSession } from '@/utils/mcp'
 import { getModelsDevData } from '@/utils/modelsdev'
 import { platformFetch } from '@/utils/platformFetch'
 import { BUILTIN_SKILL_METADATA, discoverProjectSkills } from '@/utils/skills'
+import { buildToolCatalogGroups } from '@/utils/tools/catalog'
 import { useProjectStore } from '../project'
 import { fetchAnthropic, fetchGoogle, fetchOllamaDownloadedModels, fetchOpenAI } from './api'
 import { makeId, mergeExplicitProviderModels, mergeProviderModels, resolveMdevId } from './helpers'
@@ -57,6 +59,8 @@ export const useSettingsStore = defineStore(
       googleCachedContent: '',
     })
     const autoContext = ref<AutoContextConfig>({ enabled: true })
+    const agent = ref<AgentConfig>({ permissionMode: 'ask' })
+    const disabledToolIds = ref<string[]>([])
     const disabledSkillIds = ref<string[]>([])
     const projectSkills = ref<SkillMetadata[]>([])
     const projectSkillsStatus = ref<ConnectionStatus>('idle')
@@ -68,6 +72,7 @@ export const useSettingsStore = defineStore(
         enabled: !disabledSkillIds.value.includes(skill.id),
       })),
     )
+    const availableToolGroups = computed(() => buildToolCatalogGroups(mcpServers.value))
 
     // ── discovered models + active selection ──────────────────────────────────
     const discoveredModels = ref<DiscoveredModel[]>([])
@@ -114,6 +119,31 @@ export const useSettingsStore = defineStore(
         disabledSkillIds.value = disabledSkillIds.value.filter(skillId => skillId !== id)
       else if (!disabledSkillIds.value.includes(id))
         disabledSkillIds.value = [...disabledSkillIds.value, id]
+    }
+
+    function isToolEnabled(id: string): boolean {
+      return !disabledToolIds.value.includes(id)
+    }
+
+    function setToolEnabled(id: string, enabled: boolean): void {
+      if (enabled)
+        disabledToolIds.value = disabledToolIds.value.filter(toolId => toolId !== id)
+      else if (!disabledToolIds.value.includes(id))
+        disabledToolIds.value = [...disabledToolIds.value, id]
+    }
+
+    function setToolsEnabled(ids: string[], enabled: boolean): void {
+      const uniqueIds = [...new Set(ids)]
+      if (enabled) {
+        const disabled = new Set(disabledToolIds.value)
+        uniqueIds.forEach(id => disabled.delete(id))
+        disabledToolIds.value = [...disabled]
+        return
+      }
+
+      const next = new Set(disabledToolIds.value)
+      uniqueIds.forEach(id => next.add(id))
+      disabledToolIds.value = [...next]
     }
 
     async function refreshProjectSkills(projectPath: string | null): Promise<void> {
@@ -468,11 +498,17 @@ export const useSettingsStore = defineStore(
       resetTavilyStatus,
       contextCaching,
       autoContext,
+      agent,
+      disabledToolIds,
       disabledSkillIds,
       projectSkills,
       projectSkillsStatus,
       projectSkillsStatusMessage,
       availableSkills,
+      availableToolGroups,
+      isToolEnabled,
+      setToolEnabled,
+      setToolsEnabled,
       setSkillEnabled,
       refreshProjectSkills,
       compatibleProviders,
@@ -509,6 +545,8 @@ export const useSettingsStore = defineStore(
         'tavily.apiKey',
         'contextCaching',
         'autoContext',
+        'agent',
+        'disabledToolIds',
         'disabledSkillIds',
         'compatibleProviders',
         'mcpServers',

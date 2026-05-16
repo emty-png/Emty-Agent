@@ -2,16 +2,22 @@ import type { LanguageModel } from 'ai'
 import type { ComputedRef, Ref } from 'vue'
 import type { Attachment, ChatMode, ChatTab, Message, SubAgentPersonality, ToolEvent } from './types'
 import type { StreamChatOptions, ToolCallEvent, ToolResultEvent } from '@/utils/ai'
+import type { RequestToolPermission, ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { QuestionAnswer, QuestionSpec } from '@/utils/tools/questions'
 import type { TodoItem } from '@/utils/tools/todos'
 import {
   dbInsertConversation,
   dbInsertMessage,
   dbTouchConversation,
+  dbUpdateMessage,
 } from '@/db/database'
 import { buildMentionContext } from './mentions'
 import { runSubAgentStream } from './subagent'
 import { makeId, toModelMessages } from './utils'
+
+// How often (ms) to write partial content to the DB during a text/reasoning stream.
+// Tool-call and tool-result events always flush immediately regardless of this value.
+const PERSIST_THROTTLE_MS = 1500
 
 export function createSendMessage(
   tabs: Ref<ChatTab[]>,
@@ -19,6 +25,7 @@ export function createSendMessage(
   activeTab: ComputedRef<ChatTab>,
   abortControllers: Map<string, AbortController>,
   questionResolvers: Map<string, (answers: QuestionAnswer[]) => void>,
+  requestToolPermission: (tabId: string, request: Parameters<RequestToolPermission>[0]) => Promise<ToolPermissionDecision>,
 ) {
   return async function sendMessage(content: string, mode: ChatMode = 'build', attachments?: Attachment[]): Promise<void> {
     const tab = activeTab.value
@@ -36,8 +43,11 @@ export function createSendMessage(
       { createQuestionsTool, questionsToolDisplayLabel },
       { createSkillTools, skillToolDisplayLabel },
       { createWebTools, webToolDisplayLabel },
+      { createBrowserTools, browserToolDisplayLabel },
       { createMcpTools, mcpToolDisplayLabel },
       { createWriteTodoTool, todosToolDisplayLabel },
+      { filterDisabledTools },
+      { wrapToolSetWithPermissions },
       { createSpawnSubAgentTool, subAgentDisplayLabel, buildSubAgentSystemPrompt },
       { getOsInfo },
     ] = await Promise.all([
@@ -51,8 +61,11 @@ export function createSendMessage(
       import('@/utils/tools/questions'),
       import('@/utils/tools/skills'),
       import('@/utils/tools/web'),
+      import('@/utils/tools/browser'),
       import('@/utils/tools/mcp'),
       import('@/utils/tools/todos'),
+      import('@/utils/tools/catalog'),
+      import('@/utils/tools/permissions'),
       import('@/utils/tools/subagent'),
       import('@/utils/os'),
     ])
@@ -92,6 +105,9 @@ export function createSendMessage(
       const webLabel = webToolDisplayLabel(name, args)
       if (webLabel !== `Called ${name}`)
         return webLabel
+      const browserLabel = browserToolDisplayLabel(name, args)
+      if (browserLabel !== `Called ${name}`)
+        return browserLabel
       const mcpLabel = mcpToolDisplayLabel(name)
       if (mcpLabel !== `Called ${name}`)
         return mcpLabel
@@ -99,6 +115,13 @@ export function createSendMessage(
       if (todoLabel !== `Called ${name}`)
         return todoLabel
       return subAgentDisplayLabel(name, args)
+    }
+
+    async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
+      if (settings.agent.permissionMode === 'auto')
+        return 'allow-once' as const
+
+      return await requestToolPermission(tab.id, request)
     }
 
     const now = Date.now()
@@ -109,7 +132,6 @@ export function createSendMessage(
     tab.todos = []
     tab.draft = {
       text: '',
-      mode,
       attachments: [],
     }
     tab.estimator = {
@@ -173,6 +195,18 @@ export function createSendMessage(
     tab.messages.push(assistantMsg)
     tab.isStreaming = true
 
+    // ── Insert assistant row immediately so a crash won't lose this turn ───
+    // is_complete = 0 flags it as in-progress. We flip it to 1 in onFinish.
+    // Subsequent live updates go through dbUpdateMessage (not a second insert).
+    await dbInsertMessage({
+      id: assistantId,
+      conversation_id: tab.conversationId!,
+      role: 'assistant',
+      content: '',
+      created_at: Date.now(),
+      is_complete: 0,
+    }).catch(e => console.error('[sendMessage] Failed to pre-insert assistant row:', e))
+
     let languageModel: LanguageModel | undefined
     try {
       const pid = activeModel.providerId
@@ -220,7 +254,7 @@ export function createSendMessage(
       providerId: activeModel.providerId,
       modelId: activeModel.id,
       projectPath: project.projectPath,
-      scope: `chat:${mode}`,
+      scope: 'chat:build',
       promptFingerprint: '',
     }
 
@@ -244,6 +278,25 @@ export function createSendMessage(
 
     const liveMsg = tab.messages.find(m => m.id === assistantId)!
 
+    // ── Live persistence helpers ───────────────────────────────────────────
+    // persistLive() is throttled for text/reasoning deltas. Pass force=true
+    // to flush immediately (used by tool-call and tool-result events).
+    let _lastPersistAt = 0
+
+    function persistLive(force = false): void {
+      if (!tab.conversationId)
+        return
+      const now = Date.now()
+      if (!force && now - _lastPersistAt < PERSIST_THROTTLE_MS)
+        return
+      _lastPersistAt = now
+      dbUpdateMessage(assistantId, {
+        content: liveMsg.content,
+        parts: liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null,
+        tool_events: liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null,
+      }).catch(() => { /* non-fatal during streaming */ })
+    }
+
     const handleToolCall = (event: ToolCallEvent) => {
       liveMsg.toolEvents ??= []
       liveMsg.toolEvents.push({
@@ -257,6 +310,8 @@ export function createSendMessage(
       })
       liveMsg.parts ??= []
       liveMsg.parts.push({ type: 'tool', toolCallId: event.id })
+      // Flush immediately — tool calls are important for crash recovery
+      persistLive(true)
     }
 
     const handleToolResult = (event: ToolResultEvent) => {
@@ -285,6 +340,9 @@ export function createSendMessage(
           }
         }
       }
+      // Flush immediately — tool results (including file contents) are the
+      // most critical data to not lose on a crash
+      persistLive(true)
     }
 
     const apiMessages = applyMentionContextToMessages(
@@ -323,7 +381,6 @@ export function createSendMessage(
         modelUid: resolvedModelUid,
         draft: {
           text: '',
-          mode: 'build',
           attachments: [],
         },
         estimator: {
@@ -332,6 +389,7 @@ export function createSendMessage(
           estimating: false,
         },
         pendingQuestions: null,
+        pendingPermissions: [],
         subAgent: {
           personality,
           mission,
@@ -368,6 +426,9 @@ export function createSendMessage(
         createFilesystemTools,
         createShellTools,
         createWebTools,
+        createBrowserTools,
+        browserToolDisplayLabel,
+        requestToolPermission,
         onAbort: tabId => { abortControllers.delete(tabId) },
       })
 
@@ -390,24 +451,36 @@ export function createSendMessage(
     }
 
     const mcpTools = activeModel.supportsToolCalls
-      ? await createMcpTools(settings.mcpServers)
+      ? filterDisabledTools(
+          await createMcpTools(settings.mcpServers),
+          settings.disabledToolIds,
+        )
       : {}
 
-    const tools = activeModel.supportsToolCalls
-      ? {
+    const rawTools = activeModel.supportsToolCalls
+      ? filterDisabledTools({
           ask_questions: createQuestionsTool(questionCallback),
           write_todo: createWriteTodoTool(todoCallback),
           ...createSkillTools(project.projectPath),
           spawn_subagent: createSpawnSubAgentTool(subAgentSpawnCallback, subAgentAbortCallback),
           ...mcpTools,
           ...createWebTools(),
+          ...createBrowserTools(tab.id),
           ...(project.projectPath
             ? {
                 ...createFilesystemTools(project.projectPath, snapshotCallback),
                 ...createShellTools(project.projectPath, osInfo?.shell),
               }
             : {}),
-        }
+        }, settings.disabledToolIds)
+      : undefined
+
+    const tools = rawTools && Object.keys(rawTools).length > 0
+      ? wrapToolSetWithPermissions(rawTools, {
+          tabId: tab.id,
+          requestPermission: requestPermissionForTool,
+          getToolLabel: allToolDisplayLabel,
+        })
       : undefined
 
     const providerOptions = mergeProviderOptions(
@@ -432,12 +505,16 @@ export function createSendMessage(
         const last = liveMsg.parts.at(-1)
         if (last?.type === 'text') { last.text += delta }
         else { liveMsg.parts.push({ type: 'text', text: delta }) }
+        // Throttled — fires at most every PERSIST_THROTTLE_MS
+        persistLive()
       },
       onReasoningDelta: (delta: string) => {
         liveMsg.parts ??= []
         const last = liveMsg.parts.at(-1)
         if (last?.type === 'reasoning') { last.text += delta }
         else { liveMsg.parts.push({ type: 'reasoning', text: delta }) }
+        // Throttled — thinking tokens are saved just like regular text
+        persistLive()
       },
       onToolCall: handleToolCall,
       onToolResult: handleToolResult,
@@ -451,18 +528,13 @@ export function createSendMessage(
         tab.isStreaming = false
         abortControllers.delete(tabId)
         if (tab.conversationId) {
-          const serializedTools = liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null
-          const serializedParts = liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null
-          const serializedUsageStats = liveMsg.cacheStats ? JSON.stringify(liveMsg.cacheStats) : null
-          await dbInsertMessage({
-            id: assistantId,
-            conversation_id: tab.conversationId,
-            role: 'assistant',
+          // Final authoritative write — marks the row as complete
+          await dbUpdateMessage(assistantId, {
             content: fullText,
-            created_at: Date.now(),
-            tool_events: serializedTools,
-            parts: serializedParts,
-            cache_stats: serializedUsageStats,
+            parts: liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null,
+            tool_events: liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null,
+            cache_stats: liveMsg.cacheStats ? JSON.stringify(liveMsg.cacheStats) : null,
+            is_complete: 1,
           })
           await dbTouchConversation(tab.conversationId)
         }
@@ -472,6 +544,16 @@ export function createSendMessage(
         liveMsg.error = error.message
         tab.isStreaming = false
         abortControllers.delete(tabId)
+        // Persist whatever was generated before the error so it isn't lost.
+        // is_complete stays 0, signalling the message was interrupted.
+        if (tab.conversationId) {
+          dbUpdateMessage(assistantId, {
+            content: liveMsg.content,
+            parts: liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null,
+            tool_events: liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null,
+          }).catch(() => { })
+          dbTouchConversation(tab.conversationId).catch(() => { })
+        }
         checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => { })
       },
       signal: ac.signal,

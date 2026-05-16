@@ -1,10 +1,12 @@
 import type { JSONSchema7, SystemModelMessage } from 'ai'
-import type { Attachment, ChatMode, ChatTab, Message } from './types'
+import type { Attachment, ChatTab, Message } from './types'
 import type { CompatibleProvider, DiscoveredModel, McpServerConfig } from '@/stores/settings/types'
 import type { ToolSet } from '@/utils/ai'
 import { asSchema } from 'ai'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
+import { filterDisabledTools } from '@/utils/tools/catalog'
+import { buildMcpAliasedTools } from '@/utils/tools/mcpAliases'
 import { buildMentionContext } from './mentions'
 import { normalizeContentParts, normalizeModelMessages } from './requestPreviewParts'
 import { toModelMessages } from './utils'
@@ -79,10 +81,10 @@ function getCachedOsInfo() {
 export async function buildChatRequestPreview(options: {
   tab: ChatTab
   content: string
-  mode: ChatMode
+
   attachments?: Attachment[]
 }): Promise<ChatRequestPreview | null> {
-  const { tab, content, mode, attachments = [] } = options
+  const { tab, content, attachments = [] } = options
   const settings = useSettingsStore()
   const project = useProjectStore()
 
@@ -123,12 +125,12 @@ export async function buildChatRequestPreview(options: {
     providerId: activeModel.providerId,
     modelId: activeModel.id,
     projectPath: project.projectPath,
-    scope: `chat:${mode}`,
+    scope: 'chat:build',
     promptFingerprint: '',
   }
 
   const promptBuild = await buildAgentSystemPrompt({
-    basePrompt: buildSystemPrompt(project.projectPath, mode, osInfo),
+    basePrompt: buildSystemPrompt(project.projectPath, 'build', osInfo),
     projectPath: project.projectPath,
     requestText: text,
     autoContext: settings.autoContext,
@@ -178,6 +180,7 @@ export async function buildChatRequestPreview(options: {
     ? await buildToolDefinitions({
         projectPath: project.projectPath,
         mcpServers: settings.mcpServers,
+        disabledToolIds: settings.disabledToolIds,
         ...(osInfo?.shell ? { shell: osInfo.shell } : {}),
       })
     : []
@@ -337,9 +340,10 @@ function buildReasoningMessages(messages: Message[]): PreviewPromptMessage[] {
 async function buildToolDefinitions(options: {
   projectPath: string | null
   mcpServers: McpServerConfig[]
+  disabledToolIds: string[]
   shell?: 'sh' | 'powershell'
 }): Promise<PromptToolDefinition[]> {
-  const { projectPath, mcpServers, shell } = options
+  const { projectPath, mcpServers, disabledToolIds, shell } = options
   const [
     { createFilesystemTools },
     { createQuestionsTool },
@@ -348,6 +352,7 @@ async function buildToolDefinitions(options: {
     { createSpawnSubAgentTool },
     { createWriteTodoTool },
     { createWebTools },
+    { createBrowserTools },
   ] = await Promise.all([
     import('@/utils/tools/filesystem'),
     import('@/utils/tools/questions'),
@@ -356,6 +361,7 @@ async function buildToolDefinitions(options: {
     import('@/utils/tools/subagent'),
     import('@/utils/tools/todos'),
     import('@/utils/tools/web'),
+    import('@/utils/tools/browser'),
   ])
 
   const noopSpawn = async () => ({
@@ -372,6 +378,7 @@ async function buildToolDefinitions(options: {
     ...createSkillTools(projectPath),
     spawn_subagent: createSpawnSubAgentTool(noopSpawn, () => {}),
     ...createWebTools(),
+    ...createBrowserTools('__preview__'),
   }
 
   if (projectPath) {
@@ -379,7 +386,7 @@ async function buildToolDefinitions(options: {
     Object.assign(toolSet, shell ? createShellTools(projectPath, shell) : createShellTools(projectPath))
   }
 
-  const builtInTools = Object.entries(toolSet).map(([name, tool]) => ({
+  const builtInTools = Object.entries(filterDisabledTools(toolSet, disabledToolIds)).map(([name, tool]) => ({
     name,
     description: tool.description ?? '',
     inputSchema: asSchema(tool.inputSchema).jsonSchema as JSONSchema7,
@@ -387,58 +394,24 @@ async function buildToolDefinitions(options: {
 
   return [
     ...builtInTools,
-    ...buildMcpToolDefinitions(mcpServers),
+    ...buildMcpToolDefinitions(mcpServers, disabledToolIds),
   ]
 }
 
-function buildMcpToolDefinitions(servers: McpServerConfig[]): PromptToolDefinition[] {
-  return servers
-    .filter(server => server.enabled && server.command.trim())
-    .flatMap(server => {
-      const seenAliases = new Set<string>()
-
-      return server.tools.map(tool => {
-        const alias = makeUniqueAlias(aliasFor(server.name, tool.name), seenAliases)
-        const description = [
-          `MCP tool from ${server.name}.`,
-          tool.title ? `Title: ${tool.title}.` : '',
-          tool.description || 'No description provided.',
-        ].filter(Boolean).join(' ')
-
-        return {
-          name: alias,
-          description,
-          inputSchema: tool.inputSchema as JSONSchema7,
-        }
-      })
-    })
-}
-
-function aliasFor(serverName: string, toolName: string): string {
-  return `mcp__${slugify(serverName)}__${slugify(toolName)}`
-}
-
-function makeUniqueAlias(base: string, usedAliases: Set<string>): string {
-  if (!usedAliases.has(base)) {
-    usedAliases.add(base)
-    return base
-  }
-
-  let index = 2
-  while (usedAliases.has(`${base}__${index}`))
-    index++
-
-  const alias = `${base}__${index}`
-  usedAliases.add(alias)
-  return alias
-}
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    || 'server'
+function buildMcpToolDefinitions(servers: McpServerConfig[], disabledToolIds: string[]): PromptToolDefinition[] {
+  return buildMcpAliasedTools(
+    servers.filter(server => server.enabled && server.command.trim()),
+  )
+    .filter(tool => !disabledToolIds.includes(tool.alias))
+    .map(tool => ({
+      name: tool.alias,
+      description: [
+        `MCP tool from ${tool.serverName}.`,
+        tool.toolTitle ? `Title: ${tool.toolTitle}.` : '',
+        tool.toolDescription || 'No description provided.',
+      ].filter(Boolean).join(' '),
+      inputSchema: tool.inputSchema as JSONSchema7,
+    }))
 }
 
 function flattenPromptMessages(messages: PreviewPromptMessage[]): string {

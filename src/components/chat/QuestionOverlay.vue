@@ -7,20 +7,21 @@
  *
  * Step machine:
  *   • The user is shown one question at a time.
- *   • Options 1–3 are clickable buttons; pressing one immediately advances.
- *   • Option 4 is a free-text input. The user types then presses Enter to confirm.
+ *   • Options are clickable buttons; pressing one immediately advances.
+ *   • The final option is a free-text input. The user types then presses Enter to confirm.
  *   • Esc or the Skip button marks the current question as "skipped" and advances.
+ *   • The < and > arrows allow navigating back and forth between questions.
  *   • The × button in the header dismisses all remaining questions as "skipped".
  *   • After the last question, submitAnswers() resolves the tool Promise.
  *
  * Keyboard navigation:
- *   ↑ / ↓ — move between options (wraps, 0–3)
+ *   ↑ / ↓ — move between options (wraps)
  *   Enter  — confirm selection; if on free-text row, focus the input first,
  *             then Enter in the input submits the text
  *   Esc    — skip current question and advance
  */
 
-import { Pencil, X } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Pencil, X } from 'lucide-vue-next'
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
 
@@ -37,10 +38,8 @@ const localAnswers = ref<Array<string | null>>([])
 
 /**
  * Which row the keyboard cursor is on.
- *   0 = option A (first preset)
- *   1 = option B
- *   2 = option C
- *   3 = free-text row
+ *   0 to N-1 = preset options
+ *   N = free-text row
  */
 const selectedIdx = ref(0)
 
@@ -59,6 +58,9 @@ const totalSteps = computed(() => pendingBatch.value?.questions.length ?? 0)
 const currentQuestion = computed(
   () => pendingBatch.value?.questions[step.value] ?? null,
 )
+
+/** The index reserved for the free-text input */
+const maxIdx = computed(() => currentQuestion.value?.options.length ?? 0)
 
 // ── reset on new batch ────────────────────────────────────────────────────────
 
@@ -89,7 +91,7 @@ async function advance(answer: string | null): Promise<void> {
     await new Promise(r => setTimeout(r, 90))
     step.value++
     selectedIdx.value = 0
-    freeText.value = ''
+    freeText.value = localAnswers.value[step.value] || ''
     _advancing = false
   }
   else {
@@ -97,6 +99,22 @@ async function advance(answer: string | null): Promise<void> {
     answers[step.value] = answer
     chat.submitAnswers(chat.activeId, answers)
     // _advancing intentionally left true; the overlay is about to unmount.
+  }
+}
+
+function goBack() {
+  if (step.value > 0) {
+    step.value--
+    selectedIdx.value = 0
+    freeText.value = localAnswers.value[step.value] || ''
+  }
+}
+
+function goForward() {
+  if (step.value < totalSteps.value - 1) {
+    step.value++
+    selectedIdx.value = 0
+    freeText.value = localAnswers.value[step.value] || ''
   }
 }
 
@@ -127,7 +145,7 @@ async function focusFreeText(): Promise<void> {
 }
 
 function onFreeRowClick(): void {
-  selectedIdx.value = 3
+  selectedIdx.value = maxIdx.value
   focusFreeText()
 }
 
@@ -144,21 +162,21 @@ function onGlobalKeydown(e: KeyboardEvent): void {
       if (isFreeTextFocused)
         return
       e.preventDefault()
-      selectedIdx.value = (selectedIdx.value - 1 + 4) % 4
+      selectedIdx.value = (selectedIdx.value - 1 + (maxIdx.value + 1)) % (maxIdx.value + 1)
       break
 
     case 'ArrowDown':
       if (isFreeTextFocused)
         return
       e.preventDefault()
-      selectedIdx.value = (selectedIdx.value + 1) % 4
+      selectedIdx.value = (selectedIdx.value + 1) % (maxIdx.value + 1)
       break
 
     case 'Enter':
       if (isFreeTextFocused)
         return
       e.preventDefault()
-      if (selectedIdx.value === 3) {
+      if (selectedIdx.value === maxIdx.value) {
         focusFreeText()
       }
       else {
@@ -187,14 +205,9 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
     aria-modal="false"
     aria-label="Agent question"
   >
-    <!-- ── Accent strip ──────────────────────────────────────────────── -->
-
     <!-- ── Header bar ──────────────────────────────────────────────── -->
     <div class="q-header">
       <div class="q-header-main">
-        <!-- Label chip -->
-        <span class="q-label-chip" aria-hidden="true">Q</span>
-
         <!-- Question text — fades between steps -->
         <Transition name="q-text" mode="out-in">
           <p :key="step" class="q-question-text">
@@ -204,21 +217,19 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
       </div>
 
       <div class="q-header-end">
-        <!-- Progress dots (multi-step only) -->
+        <!-- Pagination (multi-step only) -->
         <div
           v-if="totalSteps > 1"
-          class="q-dots"
+          class="q-pagination"
           :aria-label="`Question ${step + 1} of ${totalSteps}`"
         >
-          <span
-            v-for="i in totalSteps"
-            :key="i"
-            class="q-dot"
-            :class="{
-              'q-dot--done': i - 1 < step,
-              'q-dot--active': i - 1 === step,
-            }"
-          />
+          <button class="q-page-btn" :disabled="step === 0" @click="goBack">
+            <ChevronLeft :size="14" />
+          </button>
+          <span class="q-page-text">{{ step + 1 }} of {{ totalSteps }}</span>
+          <button class="q-page-btn" :disabled="step === totalSteps - 1" @click="goForward">
+            <ChevronRight :size="14" />
+          </button>
         </div>
 
         <!-- Dismiss button -->
@@ -227,7 +238,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           aria-label="Dismiss all questions"
           @click="dismiss"
         >
-          <X :size="12" :stroke-width="2.2" />
+          <X :size="16" :stroke-width="1.5" />
         </button>
       </div>
     </div>
@@ -235,7 +246,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
     <!-- ── Options area (transitions between steps) ── -->
     <Transition name="q-step" mode="out-in">
       <div :key="step" class="q-options">
-        <!-- Options A, B, C -->
+        <!-- Preset Options -->
         <button
           v-for="(option, idx) in currentQuestion.options"
           :key="idx"
@@ -244,9 +255,6 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           @click="selectOption(idx)"
           @mouseenter="selectedIdx = idx"
         >
-          <!-- Left accent sliver -->
-          <span class="q-option-accent" aria-hidden="true" />
-
           <span
             class="q-num"
             :class="{ 'q-num--sel': selectedIdx === idx }"
@@ -259,33 +267,27 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           <span class="q-key-hint" aria-hidden="true">↵</span>
         </button>
 
-        <!-- Option D: free text -->
+        <!-- Option: free text -->
         <div
           class="q-option q-option--free"
-          :class="{ 'q-option--sel': selectedIdx === 3 }"
+          :class="{ 'q-option--sel': selectedIdx === maxIdx }"
           role="button"
           tabindex="-1"
-          @mouseenter="selectedIdx = 3"
+          @mouseenter="selectedIdx = maxIdx"
           @click="onFreeRowClick"
         >
-          <!-- Left accent sliver -->
-          <span class="q-option-accent" aria-hidden="true" />
-
-          <Pencil
-            :size="12"
-            :stroke-width="1.8"
-            class="q-pencil"
-            aria-hidden="true"
-          />
+          <span class="q-num q-num--pencil" aria-hidden="true">
+            <Pencil :size="11" :stroke-width="2.5" />
+          </span>
 
           <input
             ref="freeTextRef"
             v-model="freeText"
             class="q-free-input"
             type="text"
-            placeholder="Something else…"
+            placeholder="Something else"
             aria-label="Custom answer"
-            @focus="selectedIdx = 3"
+            @focus="selectedIdx = maxIdx"
             @keydown.enter.prevent.stop="confirmFreeText"
             @keydown.escape.prevent.stop="skipQuestion"
           >
@@ -304,108 +306,91 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 </template>
 
 <style scoped>
-/* ── outer shell ───────────────────────────────────────────────────────────── */
+/* ── outer shell — detached design ─────────────────────────────────────────── */
 
 .q-overlay {
   width: 100%;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-bright);
-  border-bottom: none;
-  border-radius: 12px 12px 0 0;
-  margin-bottom: -1px;
+  border-radius: 12px;
+  margin-bottom: 8px; /* Adds space above the chat input */
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Subtle ambient glow from the accent strip */
-  box-shadow: 0 -4px 20px -6px color-mix(in srgb, var(--color-accent) 12%, transparent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Subtle floating shadow */
 }
-
-/* ── top accent strip — removed */
 
 /* ── header ────────────────────────────────────────────────────────────────── */
 
 .q-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  padding: 13px 13px 11px;
-  border-bottom: 1px solid var(--color-border-mid);
+  padding: 16px 16px 12px 16px;
 }
 
 .q-header-main {
   flex: 1;
   display: flex;
-  align-items: flex-start;
-  gap: 9px;
+  align-items: center;
   min-width: 0;
 }
 
-/* "Q" chip label */
-.q-label-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  border-radius: 5px;
-  background: var(--color-accent-muted-plus);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0;
-  color: var(--color-accent-text);
-  user-select: none;
-}
-
 .q-question-text {
-  flex: 1;
   margin: 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.5;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--color-text-primary);
-  min-height: 1.5em;
+  line-height: 1.4;
 }
 
 .q-header-end {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 16px;
   flex-shrink: 0;
-  margin-top: 2px;
 }
 
-/* ── progress dots ─────────────────────────────────────────────────────────── */
+/* ── pagination ────────────────────────────────────────────────────────────── */
 
-.q-dots {
+.q-pagination {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-dim);
 }
 
-.q-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: var(--radius-pill);
-  background: var(--color-border-bright);
+.q-page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 4px;
   transition:
-    background 300ms cubic-bezier(0.4, 0, 0.2, 1),
-    width 300ms cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 300ms ease;
+    background 150ms ease,
+    color 150ms ease;
 }
 
-.q-dot--done {
-  background: color-mix(in srgb, var(--color-success) 70%, var(--color-border-mid));
+.q-page-btn:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
 }
 
-.q-dot--active {
-  width: 14px;
-  background: var(--color-accent);
+.q-page-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
-/* ── dismiss button ─────────────────────────────────────────────────────────── */
+/* ── dismiss button ────────────────────────────────────────────────────────── */
 
 .q-dismiss-btn {
   display: flex;
@@ -414,20 +399,18 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   width: 22px;
   height: 22px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border: none;
   background: transparent;
   color: var(--color-text-dim);
   cursor: pointer;
+  border-radius: 4px;
   transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms ease,
-    border-color 150ms ease;
+    background 150ms ease,
+    color 150ms ease;
 }
 .q-dismiss-btn:hover {
   background: var(--color-bg-elevated);
   color: var(--color-text-secondary);
-  border-color: var(--color-border-mid);
 }
 
 /* ── options container ─────────────────────────────────────────────────────── */
@@ -435,6 +418,8 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 .q-options {
   display: flex;
   flex-direction: column;
+  padding: 0 16px 16px 16px;
+  gap: 4px; /* Slight gap separating the options */
 }
 
 /* ── option row ────────────────────────────────────────────────────────────── */
@@ -443,45 +428,21 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-inline: 13px;
-  height: 42px;
+  gap: 12px;
+  padding: 6px 8px;
+  min-height: 36px;
   border: none;
-  border-top: 1px solid var(--color-border-mid);
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
   width: 100%;
   text-align: left;
-  transition: background 130ms cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-}
-.q-option:first-child {
-  border-top: none;
+  transition: background 130ms ease;
 }
 
-/* Left accent sliver — shown when selected */
-.q-option-accent {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%) scaleY(0);
-  transform-origin: center;
-  width: 2px;
-  height: 55%;
-  min-height: 14px;
-  border-radius: var(--radius-pill);
-  background: var(--color-accent);
-  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.q-option--sel .q-option-accent {
-  transform: translateY(-50%) scaleY(1);
-}
-
-.q-option--sel {
-  background: color-mix(in srgb, var(--color-bg-elevated) 80%, var(--color-accent-muted));
-}
-.q-option:hover:not(.q-option--sel) {
-  background: var(--color-bg-elevated);
+.q-option:hover:not(.q-option--free),
+.q-option--sel:not(.q-option--free) {
+  background: var(--color-bg-hover);
 }
 
 /* Number badge */
@@ -489,27 +450,16 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 19px;
-  height: 19px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
-  border-radius: 5px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-mid);
-  font-size: 10.5px;
-  font-weight: 700;
-  color: var(--color-text-tertiary);
+  border-radius: 6px;
+  background: var(--color-bg-elevated); /* Solid dark rounded rect */
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 150ms ease,
-    color 150ms ease,
-    transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.q-num--sel {
-  background: var(--color-accent-muted-plus);
-  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-  color: var(--color-accent-text);
-  transform: scale(1.08);
+  transition: all 150ms ease;
 }
 
 .q-option-label {
@@ -518,11 +468,11 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   color: var(--color-text-secondary);
   line-height: 1.4;
   transition: color 130ms ease;
-  /* Prevent long labels from squishing the key hint */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .q-option--sel .q-option-label {
   color: var(--color-text-primary);
 }
@@ -536,7 +486,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   transform: translateX(4px);
   transition:
     opacity 150ms ease,
-    transform 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 150ms ease,
     color 150ms ease;
 }
 .q-option--sel .q-key-hint {
@@ -549,17 +499,17 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 .q-option--free {
   cursor: default;
-  gap: 8px;
-  height: 40px;
+  background: var(--color-bg-elevated); /* Distinct raised background block */
+  margin-top: 4px; /* Separation from rest of items */
+  padding-right: 12px;
+}
+.q-option--sel.q-option--free {
+  /* Subtle highlight when using keyboard to focus the input block */
+  background: color-mix(in srgb, var(--color-bg-elevated) 80%, var(--color-accent-muted));
 }
 
-.q-pencil {
-  flex-shrink: 0;
-  color: var(--color-text-dim);
-  transition: color 150ms ease;
-}
-.q-option--sel .q-pencil {
-  color: var(--color-text-tertiary);
+.q-num--pencil {
+  background: color-mix(in srgb, var(--color-bg-card) 60%, var(--color-bg-elevated));
 }
 
 .q-free-input {
@@ -570,7 +520,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   color: var(--color-text-primary);
   font-size: 13px;
   font-family: inherit;
-  caret-color: var(--color-accent-bright);
+  caret-color: var(--color-text-primary);
   outline: none;
   cursor: text;
 }
@@ -584,36 +534,31 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 /* Skip button */
 .q-skip-btn {
-  height: 20px;
-  padding-inline: 9px;
+  height: 24px;
+  padding-inline: 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-pill);
+  border-radius: 6px;
   background: transparent;
-  color: var(--color-text-dim);
+  color: var(--color-text-primary);
   font-size: 11px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
   flex-shrink: 0;
-  letter-spacing: 0.02em;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms ease,
-    border-color 150ms ease;
+  transition: all 150ms ease;
 }
 .q-skip-btn:hover {
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
   border-color: var(--color-border-bright);
 }
 
 /* ── question text fade between steps ─────────────────────────────────────── */
 
 .q-text-enter-active {
-  transition: opacity 140ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 140ms ease;
 }
 .q-text-leave-active {
-  transition: opacity 90ms cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity 90ms ease;
   position: absolute;
 }
 .q-text-enter-from,
@@ -625,13 +570,13 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 .q-step-enter-active {
   transition:
-    opacity 180ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
+    opacity 180ms ease,
+    transform 180ms ease;
 }
 .q-step-leave-active {
   transition:
-    opacity 100ms cubic-bezier(0.4, 0, 1, 1),
-    transform 100ms cubic-bezier(0.4, 0, 1, 1);
+    opacity 100ms ease,
+    transform 100ms ease;
 }
 .q-step-enter-from {
   opacity: 0;

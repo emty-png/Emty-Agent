@@ -9,7 +9,6 @@ export function makeId(): string {
 export function createEmptyDraft() {
   return {
     text: '',
-    mode: 'build' as const,
     attachments: [],
   }
 }
@@ -34,6 +33,7 @@ export function newTab(): ChatTab {
     draft: createEmptyDraft(),
     estimator: createEmptyEstimatorState(),
     pendingQuestions: null,
+    pendingPermissions: [],
   }
 }
 

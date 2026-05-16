@@ -10,6 +10,13 @@
  *   to run against pre-existing databases from any prior schema version.
  * - Public helpers throw descriptive errors on failure so callers can
  *   surface them in the UI instead of silently corrupting state.
+ *
+ * Live-streaming persistence:
+ * - Assistant messages are inserted immediately when streaming begins with
+ *   is_complete = 0. They are updated incrementally via dbUpdateMessage()
+ *   during the stream, and marked is_complete = 1 in onFinish.
+ * - On app restart, any message with is_complete = 0 was interrupted mid-stream.
+ *   Callers can detect this and render a truncation indicator if desired.
  */
 
 import Database from '@tauri-apps/plugin-sql'
@@ -161,6 +168,9 @@ async function migrate(instance: Database): Promise<void> {
     { name: 'attachments', definition: 'TEXT' },
     { name: 'cache_stats', definition: 'TEXT' },
     { name: 'mention_context', definition: 'TEXT' },
+    // is_complete = 0 means streaming was interrupted; 1 means fully saved.
+    // DEFAULT 1 so all pre-existing rows are treated as complete.
+    { name: 'is_complete', definition: 'INTEGER NOT NULL DEFAULT 1' },
   ])
 
   await ensureColumns(instance, 'conversations', [
@@ -202,6 +212,13 @@ export interface MessageRow {
   parts?: string | null
   attachments?: string | null
   cache_stats?: string | null
+  /**
+   * 0 = inserted at stream-start but never completed (app crashed mid-stream).
+   * 1 = fully saved by onFinish (default for all pre-existing rows).
+   * Callers loading messages should check this field and surface a truncation
+   * indicator when is_complete === 0.
+   */
+  is_complete?: number
 }
 
 export interface CheckpointRow {
@@ -315,8 +332,8 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
   await d.execute(
     `INSERT INTO messages
        (id, conversation_id, role, content, created_at,
-        mention_context, tool_events, parts, attachments, cache_stats)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        mention_context, tool_events, parts, attachments, cache_stats, is_complete)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       msg.id,
       msg.conversation_id,
@@ -328,8 +345,65 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
       msg.parts ?? null,
       msg.attachments ?? null,
       msg.cache_stats ?? null,
+      msg.is_complete ?? 1,
     ],
   )
+}
+
+/**
+ * Partially update a message row during or after streaming.
+ *
+ * Only the fields present in `patch` are written; omitting a key leaves the
+ * stored value unchanged. This is intentionally lightweight so it can be
+ * called on every tool-call event and on a ~1.5 s throttle during text/
+ * reasoning deltas without redundant full-row rewrites.
+ *
+ * Set `is_complete: 1` in the final onFinish call to mark the message as
+ * fully saved. Rows with `is_complete: 0` were interrupted mid-stream.
+ */
+export async function dbUpdateMessage(
+  id: string,
+  patch: {
+    content?: string
+    parts?: string | null
+    tool_events?: string | null
+    cache_stats?: string | null
+    is_complete?: number
+  },
+): Promise<void> {
+  if (!id)
+    throw new Error('dbUpdateMessage: id is required')
+
+  const sets: string[] = []
+  const values: unknown[] = []
+
+  if (patch.content !== undefined) {
+    sets.push('content = ?')
+    values.push(patch.content)
+  }
+  if ('parts' in patch) {
+    sets.push('parts = ?')
+    values.push(patch.parts ?? null)
+  }
+  if ('tool_events' in patch) {
+    sets.push('tool_events = ?')
+    values.push(patch.tool_events ?? null)
+  }
+  if ('cache_stats' in patch) {
+    sets.push('cache_stats = ?')
+    values.push(patch.cache_stats ?? null)
+  }
+  if (patch.is_complete !== undefined) {
+    sets.push('is_complete = ?')
+    values.push(patch.is_complete)
+  }
+
+  if (sets.length === 0)
+    return
+
+  values.push(id)
+  const d = await getDb()
+  await d.execute(`UPDATE messages SET ${sets.join(', ')} WHERE id = ?`, values)
 }
 
 export async function dbLoadMessages(conversationId: string): Promise<MessageRow[]> {

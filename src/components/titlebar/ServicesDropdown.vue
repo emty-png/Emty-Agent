@@ -225,7 +225,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .picker-panel {
   position: absolute;
   top: calc(100% + 8px);
-  right: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  transform-origin: top center;
   width: 300px;
   max-height: 280px;
   background: var(--color-bg-elevated);
@@ -239,6 +241,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   flex-direction: column;
   overflow: hidden;
   z-index: 10000;
+  will-change: transform, opacity;
 }
 
 /* ── Tabs ───────────────────────────────────────────────────────────────────── */
@@ -433,17 +436,27 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 /* ── Transitions & Backdrop ─────────────────────────────────────────────────── */
-.picker-enter-active,
+.picker-enter-active {
+  transition:
+    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .picker-leave-active {
   transition:
-    opacity 150ms ease,
-    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 160ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 160ms cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 .picker-enter-from,
 .picker-leave-to {
   opacity: 0;
-  transform: translateY(8px) scale(0.96);
+  transform: translateX(-50%) translateY(-8px) scale(0.96);
+}
+
+.picker-enter-to,
+.picker-leave-from {
+  transform: translateX(-50%) translateY(0) scale(1);
 }
 
 .global-backdrop {

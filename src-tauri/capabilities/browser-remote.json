@@ -1,0 +1,21 @@
+{
+  "$schema": "../gen/schemas/capabilities.json",
+  "identifier": "browser-remote",
+  "description": "Allows the embedded browser surface to send tightly-scoped bridge events back to the main app.",
+  "windows": [
+    "main"
+  ],
+  "webviews": [
+    "browser-surface-*"
+  ],
+  "local": false,
+  "remote": {
+    "urls": [
+      "http://**",
+      "https://**"
+    ]
+  },
+  "permissions": [
+    "core:event:allow-emit-to"
+  ]
+}

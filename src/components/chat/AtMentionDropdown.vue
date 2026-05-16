@@ -3,16 +3,30 @@
  * AtMentionDropdown.vue
  *
  * The file-picker panel that appears above the chat input when the user types "@".
- * Uses the same visual fusion trick as QuestionOverlay — no bottom border + -1px
- * margin so it merges with the input shell into one continuous panel.
- *
- * Props:  entries, selectedIdx, loading, query
- * Emits:  select(entry), hover(idx), close()
+ * Appears as a detached, floating panel above the chat input shell.
  */
 
+import type { Component } from 'vue'
 import type { FsEntry } from '@/composables/useAtMention'
-import { File, Folder, X } from 'lucide-vue-next'
+import {
+  File,
+  FileArchive,
+  FileCode,
+  FileImage,
+  FileJson,
+  FileText,
+  FileVideo,
+  Folder,
+  FolderArchive,
+  FolderCode,
+  FolderGit2,
+  FolderOpen,
+  FolderSearch,
+  Settings,
+  X,
+} from 'lucide-vue-next'
 import { ref, watchEffect } from 'vue'
+import { getDeviconForFile } from '@/utils/icons'
 
 const props = defineProps<{
   entries: FsEntry[]
@@ -26,6 +40,85 @@ const emit = defineEmits<{
   hover: [idx: number]
   close: []
 }>()
+
+// ── icon logic migrated from FileTree ─────────────────────────────────────────
+
+interface FileStyle { icon: Component; color: string }
+
+const EXT_STYLE: Record<string, FileStyle> = {
+  ts: { icon: FileCode, color: '#90cce0' },
+  tsx: { icon: FileCode, color: '#90cce0' },
+  js: { icon: FileCode, color: '#d4aa68' },
+  jsx: { icon: FileCode, color: '#d4aa68' },
+  vue: { icon: FileCode, color: '#88be94' },
+  css: { icon: FileCode, color: '#6aaec8' },
+  scss: { icon: FileCode, color: '#6aaec8' },
+  json: { icon: FileJson, color: '#d4aa68' },
+  jsonc: { icon: FileJson, color: '#d4aa68' },
+  yaml: { icon: FileJson, color: '#f0a060' },
+  yml: { icon: FileJson, color: '#f0a060' },
+  toml: { icon: FileJson, color: '#f0a060' },
+  html: { icon: FileCode, color: '#f0a060' },
+  md: { icon: FileText, color: '#ede5d8' },
+  mdx: { icon: FileText, color: '#ede5d8' },
+  rs: { icon: FileCode, color: '#e07830' },
+  py: { icon: FileCode, color: '#88be94' },
+  env: { icon: Settings, color: '#d88080' },
+  lock: { icon: Settings, color: '#504438' },
+  png: { icon: FileImage, color: '#b8a0d8' },
+  jpg: { icon: FileImage, color: '#b8a0d8' },
+  jpeg: { icon: FileImage, color: '#b8a0d8' },
+  gif: { icon: FileImage, color: '#b8a0d8' },
+  webp: { icon: FileImage, color: '#b8a0d8' },
+  svg: { icon: FileImage, color: '#d8b880' },
+  ico: { icon: FileImage, color: '#d8b880' },
+  mp4: { icon: FileVideo, color: '#a0b8d8' },
+  mov: { icon: FileVideo, color: '#a0b8d8' },
+  mp3: { icon: FileVideo, color: '#a0b8d8' },
+  wav: { icon: FileVideo, color: '#a0b8d8' },
+  zip: { icon: FileArchive, color: '#b8b8a0' },
+  gz: { icon: FileArchive, color: '#b8b8a0' },
+  tar: { icon: FileArchive, color: '#b8b8a0' },
+  rar: { icon: FileArchive, color: '#b8b8a0' },
+  '7z': { icon: FileArchive, color: '#b8b8a0' },
+}
+
+function folderStyle(name: string, expanded: boolean): { icon: Component; color: string } {
+  const n = name.toLowerCase()
+  let icon = expanded ? FolderOpen : Folder
+  let color = '#d4aa68'
+  if (['src', 'lib', 'source'].includes(n)) {
+    icon = FolderCode; color = '#88be94'
+  }
+  else if (['public', 'static', 'assets', 'images', 'img'].includes(n)) {
+    icon = FolderSearch; color = '#90cce0'
+  }
+  else if (['node_modules', 'vendor', 'deps'].includes(n)) {
+    icon = FolderArchive; color = '#d88080'
+  }
+  else if (['dist', 'build', 'out', 'target', 'bin'].includes(n)) {
+    icon = FolderArchive; color = '#a59688'
+  }
+  else if (['.git', '.github', '.gitlab'].includes(n)) {
+    icon = FolderGit2; color = '#f0a060'
+  }
+  else if (['.vscode', '.idea', '.config', 'config'].includes(n)) {
+    icon = Settings; color = '#ede5d8'
+  }
+  else if (['tests', 'test', '__tests__', 'spec'].includes(n)) {
+    icon = FolderSearch; color = '#88be94'
+  }
+  return { icon, color }
+}
+
+function fileStyle(name: string): FileStyle {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return EXT_STYLE[ext] ?? { icon: File, color: '#8a7868' }
+}
+
+function getFilename(path: string) {
+  return path.split('/').pop() || path
+}
 
 // ── highlight helper ──────────────────────────────────────────────────────────
 
@@ -58,35 +151,24 @@ watchEffect(() => {
 
 <template>
   <div class="at-overlay" role="listbox" aria-label="Link a file or folder">
-    <!-- ── Header ──────────────────────────────────────────────────── -->
     <div class="at-header">
       <span class="at-header-title">Link file or folder</span>
       <span v-if="query" class="at-query-chip">@{{ query }}</span>
-      <button
-        class="at-close-btn"
-        aria-label="Close file picker"
-        @click="emit('close')"
-      >
+      <button class="at-close-btn" aria-label="Close file picker" @click="emit('close')">
         <X :size="13" :stroke-width="2" />
       </button>
     </div>
 
-    <!-- ── Loading ─────────────────────────────────────────────────── -->
     <div v-if="loading" class="at-state">
       <span class="at-state-text">Loading project files…</span>
     </div>
-
-    <!-- ── No project open ─────────────────────────────────────────── -->
     <div v-else-if="entries.length === 0 && !query" class="at-state">
       <span class="at-state-text">Open a project to link files</span>
     </div>
-
-    <!-- ── No matches ──────────────────────────────────────────────── -->
     <div v-else-if="entries.length === 0" class="at-state">
       <span class="at-state-text">No matches for "<strong>{{ query }}</strong>"</span>
     </div>
 
-    <!-- ── Entry list ──────────────────────────────────────────────── -->
     <div v-else ref="listRef" class="at-list" role="presentation">
       <button
         v-for="(entry, idx) in entries"
@@ -98,34 +180,43 @@ watchEffect(() => {
         @click="emit('select', entry)"
         @mouseenter="emit('hover', idx)"
       >
-        <!-- Icon -->
-        <Folder
-          v-if="entry.isDir"
-          :size="13"
-          :stroke-width="1.6"
-          class="at-icon at-icon--dir"
-          aria-hidden="true"
-        />
-        <File
-          v-else
-          :size="13"
-          :stroke-width="1.6"
-          class="at-icon at-icon--file"
-          aria-hidden="true"
-        />
+        <!-- Dynamic Icon Rendering -->
+        <template v-if="entry.isDir">
+          <component
+            :is="folderStyle(getFilename(entry.path), false).icon"
+            :size="13"
+            :stroke-width="1.6"
+            class="at-icon"
+            :style="{ color: folderStyle(getFilename(entry.path), false).color }"
+            aria-hidden="true"
+          />
+        </template>
+        <template v-else>
+          <i
+            v-if="getDeviconForFile(getFilename(entry.path))"
+            class="at-icon" :class="[getDeviconForFile(getFilename(entry.path))]"
+            :style="{ fontSize: '13px', color: fileStyle(getFilename(entry.path)).color }"
+            aria-hidden="true"
+          />
+          <component
+            :is="fileStyle(getFilename(entry.path)).icon"
+            v-else
+            :size="13"
+            :stroke-width="1.6"
+            class="at-icon"
+            :style="{ color: fileStyle(getFilename(entry.path)).color }"
+            aria-hidden="true"
+          />
+        </template>
 
         <!-- Path with match highlighting -->
         <span class="at-path">
-          <template
-            v-for="part in highlightParts(entry.path, query)"
-            :key="part.text + String(part.match)"
-          >
+          <template v-for="part in highlightParts(entry.path, query)" :key="part.text + String(part.match)">
             <span v-if="part.match" class="at-path-match">{{ part.text }}</span>
             <template v-else>{{ part.text }}</template>
           </template>
         </span>
 
-        <!-- Dir badge -->
         <span v-if="entry.isDir" class="at-dir-badge">dir</span>
       </button>
     </div>
@@ -133,23 +224,20 @@ watchEffect(() => {
 </template>
 
 <style scoped>
-/* ── outer shell — fuses with input-shell below ──────────────────────────── */
+/* ── outer shell — detached from input-shell below ──────────────────────────── */
 
 .at-overlay {
   width: 100%;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-bright);
-  border-bottom: none; /* fuse with input-shell top border */
-  border-radius: 12px 12px 0 0; /* round only the top corners */
-  margin-bottom: -1px; /* overlap input-shell's top border by 1px */
+  border-radius: 12px;
+  margin-bottom: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Limit height so it doesn't push the input off-screen */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   max-height: 320px;
 }
-
-/* ── header ─────────────────────────────────────────────────────────────── */
 
 .at-header {
   display: flex;
@@ -204,8 +292,6 @@ watchEffect(() => {
   color: var(--color-text-secondary);
 }
 
-/* ── state (loading / empty) ─────────────────────────────────────────────── */
-
 .at-state {
   display: flex;
   align-items: center;
@@ -213,7 +299,6 @@ watchEffect(() => {
   height: 52px;
   padding-inline: 16px;
 }
-
 .at-state-text {
   font-size: 12.5px;
   color: var(--color-text-tertiary);
@@ -223,13 +308,14 @@ watchEffect(() => {
   font-weight: 600;
 }
 
-/* ── entry list ──────────────────────────────────────────────────────────── */
-
 .at-list {
   flex: 1;
   overflow-y: auto;
-  padding: 3px 0;
+  padding: 6px;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .at-entry {
@@ -238,33 +324,27 @@ watchEffect(() => {
   gap: 8px;
   width: 100%;
   height: 36px;
-  padding-inline: 12px;
+  padding-inline: 10px;
   border: none;
-  border-top: 1px solid transparent;
-  border-bottom: 1px solid transparent;
+  border-radius: 6px;
   background: transparent;
   cursor: pointer;
   text-align: left;
   transition: background 70ms ease;
 }
+
 .at-entry:hover,
 .at-entry--sel {
   background: var(--color-bg-elevated);
-  border-color: var(--color-border-mid);
 }
 
-/* icons */
 .at-icon {
   flex-shrink: 0;
-}
-.at-icon--dir {
-  color: var(--color-warning-text);
-}
-.at-icon--file {
-  color: var(--color-text-tertiary);
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
-/* path text */
 .at-path {
   flex: 1;
   font-size: 12.5px;
@@ -279,13 +359,11 @@ watchEffect(() => {
   color: var(--color-text-primary);
 }
 
-/* matched portion highlight */
 .at-path-match {
   color: var(--color-accent-text);
   font-weight: 600;
 }
 
-/* dir badge */
 .at-dir-badge {
   font-size: 9.5px;
   font-weight: 700;

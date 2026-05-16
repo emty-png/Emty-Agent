@@ -29,7 +29,7 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { isLoopFinished, streamText } from 'ai'
 import { buildPrompt } from '@/prompts/build'
-import { planPrompt } from '@/prompts/plan'
+
 import { platformFetch } from '@/utils/platformFetch'
 
 export type { LanguageModel, ToolSet }
@@ -413,16 +413,14 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
  * Build the full system prompt for the current session.
  *
  * @param projectPath - Absolute path to the open project, or null if none.
- * @param mode        - 'build' (implement) | 'plan' (design only).
+ * @param _mode       - 'build' (implement) | 'plan' (design only).
  * @param osInfo      - OS info from getOsInfo(). Injects platform-specific
  *                      shell/path conventions so the agent uses correct syntax.
  */
 export function buildSystemPrompt(
   projectPath: string | null,
-  mode: ChatMode = 'build',
+  _mode: ChatMode = 'build',
   osInfo?: OsInfo,
 ): string {
-  return mode === 'plan'
-    ? planPrompt(projectPath, osInfo)
-    : buildPrompt(projectPath, osInfo)
+  return buildPrompt(projectPath, osInfo)
 }

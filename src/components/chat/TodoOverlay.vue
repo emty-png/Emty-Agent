@@ -20,7 +20,7 @@ const allDone = computed(() => totalCount.value > 0 && doneCount.value === total
 /** Index of the first incomplete task — gets the active indicator. */
 const activeIdx = computed(() => todos.value.findIndex(t => !t.done))
 
-const isCollapsed = ref(false)
+const isCollapsed = ref(true) // Default to collapsed if you want it to match the image initially, or false
 const bodyRef = ref<HTMLElement | null>(null)
 
 function toggleCollapse() {
@@ -137,29 +137,26 @@ watch(activeIdx, async newIdx => {
 </template>
 
 <style scoped>
-/* ── outer shell ───────────────────────────────────────────────────────────── */
+/* ── outer shell — detached & slimmer design ───────────────────────────────── */
 
 .todo-overlay {
-  width: 100%;
+  /* Make the width slightly smaller than the chat input so it feels nested */
+  width: calc(100% - 24px);
+  margin: 0 auto 10px auto;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-bright);
-  border-bottom: none;
-  border-radius: 12px 12px 0 0;
-  margin-bottom: -1px;
+  border-radius: 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Subtle floating shadow */
   transition:
     border-color 400ms cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 400ms cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* Subtle ambient glow */
-  box-shadow: 0 -4px 20px -6px color-mix(in srgb, var(--color-accent) 12%, transparent);
 }
 
-/* no special border/glow when all done — panel just goes quiet */
 .todo-overlay--done {
-  box-shadow: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 /* ── header ────────────────────────────────────────────────────────────────── */
@@ -169,27 +166,18 @@ watch(activeIdx, async newIdx => {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 13px 13px 11px;
+  /* Significantly reduced padding to make it slim like the screenshot */
+  padding: 8px 14px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--color-border-mid);
   cursor: pointer;
   text-align: left;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.todo-overlay--collapsed .todo-header {
-  border-bottom-color: transparent;
-}
-
-.todo-header:hover {
-  background: var(--color-bg-hover);
 }
 
 .todo-header-main {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .todo-header-end {
@@ -208,6 +196,7 @@ watch(activeIdx, async newIdx => {
 .todo-chevron--collapsed {
   transform: rotate(-90deg);
 }
+/* Highlight only the text/icons on hover for a cleaner look */
 .todo-header:hover .todo-chevron {
   color: var(--color-text-tertiary);
 }
@@ -215,7 +204,7 @@ watch(activeIdx, async newIdx => {
 .todo-title {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
   user-select: none;
@@ -230,20 +219,16 @@ watch(activeIdx, async newIdx => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 20px;
+  height: 20px; /* Shorter pill to fit the slim header */
   padding: 0 8px;
-  border-radius: var(--radius-pill);
+  border-radius: 10px;
   background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-mid);
   font-size: 10.5px;
-  font-weight: 700;
-  color: var(--color-text-tertiary);
+  font-weight: 600;
+  color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
   user-select: none;
-  transition:
-    color 400ms cubic-bezier(0.4, 0, 0.2, 1),
-    background 400ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 400ms ease;
 }
 
 .todo-count-sep {
@@ -255,7 +240,6 @@ watch(activeIdx, async newIdx => {
 /* badge stays neutral when all done */
 .todo-count--done {
   color: var(--color-text-dim);
-  border-color: transparent;
   background: transparent;
 }
 
@@ -267,6 +251,7 @@ watch(activeIdx, async newIdx => {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
+  padding: 0 12px 12px 12px;
 
   /* Firefox Scrollbar */
   scrollbar-width: thin;
@@ -317,6 +302,7 @@ watch(activeIdx, async newIdx => {
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 4px; /* Slight gap separating the items */
 }
 
 /* ── individual item ─────────────────────────────────────────────────────── */
@@ -325,16 +311,15 @@ watch(activeIdx, async newIdx => {
   position: relative;
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--color-border-mid);
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  gap: 12px;
+  padding: 7px 10px; /* Slimmer inner padding */
+  border: none;
+  border-radius: 8px; /* Gives interior items rounded pill styling */
+  transition: background 150ms ease;
 }
-.todo-item:first-child {
-  border-top: none;
-}
+
 .todo-item:hover {
-  background: var(--color-bg-elevated);
+  background: var(--color-bg-hover);
 }
 
 /* Left accent sliver — shown when active */
@@ -344,21 +329,17 @@ watch(activeIdx, async newIdx => {
   top: 50%;
   transform: translateY(-50%) scaleY(0);
   transform-origin: center;
-  width: 2px;
-  height: 55%;
-  min-height: 14px;
-  border-radius: var(--radius-pill);
-  background: var(--color-accent);
+  width: 3px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--color-accent); /* Usually maps to the cyan color in screenshot */
   transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .todo-item--active .todo-option-accent {
   transform: translateY(-50%) scaleY(1);
 }
 .todo-item--active {
-  background: color-mix(in srgb, var(--color-bg-elevated) 80%, var(--color-accent-muted));
-}
-.todo-item--active:hover {
-  background: color-mix(in srgb, var(--color-bg-elevated) 100%, var(--color-accent-muted));
+  background: var(--color-bg-elevated);
 }
 
 /* Status icon */
@@ -373,7 +354,7 @@ watch(activeIdx, async newIdx => {
   color: color-mix(in srgb, var(--color-text-dim) 40%, transparent);
 }
 .todo-icon--active-svg {
-  color: var(--color-success); /* Bright green matching the check circle */
+  color: var(--color-accent); /* Cyan */
 }
 
 /* Icon cross-fade */
@@ -424,9 +405,9 @@ watch(activeIdx, async newIdx => {
 
 .todo-item-enter-active {
   transition:
-    opacity 220ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
-    max-height 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 220ms ease,
+    transform 220ms ease,
+    max-height 220ms ease,
     padding 220ms ease;
   max-height: 80px;
   overflow: hidden;
@@ -434,7 +415,7 @@ watch(activeIdx, async newIdx => {
 .todo-item-leave-active {
   transition:
     opacity 150ms ease,
-    max-height 150ms cubic-bezier(0.4, 0, 1, 1),
+    max-height 150ms ease,
     padding 150ms ease;
   max-height: 80px;
   overflow: hidden;
@@ -448,9 +429,8 @@ watch(activeIdx, async newIdx => {
   max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
-  border-top-color: transparent;
 }
 .todo-item-move {
-  transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 220ms ease;
 }
 </style>

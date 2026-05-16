@@ -1,6 +1,7 @@
 import type { Attachment } from './attachment-types'
 import type { ChatMode } from '@/utils/ai'
 import type { ChatPromptEstimate } from '@/utils/chatEstimate'
+import type { ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { PendingBatch } from '@/utils/tools/questions'
 import type { SubAgentInfo, SubAgentPersonality } from '@/utils/tools/subagent'
 import type { TodoItem } from '@/utils/tools/todos'
@@ -54,7 +55,6 @@ export interface Message {
 
 export interface ChatDraftState {
   text: string
-  mode: ChatMode
   attachments: Attachment[]
 }
 
@@ -62,6 +62,14 @@ export interface ChatEstimatorState {
   estimate: ChatPromptEstimate | null
   error: string
   estimating: boolean
+}
+
+export interface PendingToolPermission {
+  requestId: string
+  toolName: string
+  toolLabel: string
+  actionTitle: string
+  actionDetails: string[]
 }
 
 export interface ChatTab {
@@ -75,6 +83,7 @@ export interface ChatTab {
   draft: ChatDraftState
   estimator: ChatEstimatorState
   pendingQuestions?: PendingBatch | null
+  pendingPermissions: PendingToolPermission[]
   /**
    * Present only on sub-agent tabs. Contains personality, mission, parent tab ID,
    * and live status. Sub-agent tabs never persist to the database — they are
@@ -83,4 +92,4 @@ export interface ChatTab {
   subAgent?: SubAgentInfo
 }
 
-export type { Attachment, ChatMode, SubAgentInfo, SubAgentPersonality, TodoItem }
+export type { Attachment, ChatMode, SubAgentInfo, SubAgentPersonality, TodoItem, ToolPermissionDecision }

@@ -9,15 +9,25 @@
  * - Manages per-tab conversation state cache so switching tabs is instant.
  * - All async operations that mutate tab state are guarded — a failure never
  *   leaves a tab permanently stuck in isStreaming=true.
+ *
+ * Crash recovery:
+ * - Assistant messages are now inserted into the DB the moment streaming
+ *   begins (is_complete = 0) and updated incrementally throughout the stream.
+ *   The old localStorage-based recovery system has been removed; SQLite is
+ *   the single source of truth. On restart, any message with is_complete = 0
+ *   was interrupted — the conversation loader can surface a truncation note
+ *   if desired by checking that field on the loaded MessageRow.
  */
 
 import type { ChatDraftState, ChatEstimatorState, ChatTab, Message } from './chat/types'
+import type { ToolPermissionDecision, ToolPermissionRequest } from '@/utils/tools/permissions'
 import type { QuestionAnswer } from '@/utils/tools/questions'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import {
   dbUpdateConversationTitle,
 } from '@/db/database'
+import { useBrowserStore } from '@/stores/browser'
 import { createSendMessage } from './chat/sendMessage'
 import { createEmptyDraft, createEmptyEstimatorState, makeId, newTab } from './chat/utils'
 
@@ -27,6 +37,7 @@ export type {
   ChatTab,
   Message,
   MessagePart,
+  PendingToolPermission,
   SubAgentInfo,
   SubAgentPersonality,
   ToolEvent,
@@ -44,6 +55,9 @@ export const useChatStore = defineStore('chat', () => {
   const activeId = ref<string>(tabs.value[0]!.id)
   const abortControllers = new Map<string, AbortController>()
   const questionResolvers = new Map<string, (answers: QuestionAnswer[]) => void>()
+  /** Keyed by unique requestId (not tabId) so parallel tool calls each get their own resolver. */
+  const permissionResolvers = new Map<string, (decision: ToolPermissionDecision) => void>()
+  const sessionToolApprovals = ref<string[]>([])
 
   /**
    * Per-conversation state cache so switching back to a conversation
@@ -70,7 +84,6 @@ export const useChatStore = defineStore('chat', () => {
       modelUid: tab.modelUid ?? null,
       draft: {
         text: tab.draft.text,
-        mode: tab.draft.mode,
         attachments: [], // We don't persist attachments in the cache for now
       },
       estimator: {
@@ -96,7 +109,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     return {
       modelUid: cached.modelUid,
-      draft: { text: cached.draft.text, mode: cached.draft.mode, attachments: [] },
+      draft: { text: cached.draft.text, attachments: [] },
       estimator: { ...cached.estimator, estimating: false },
     }
   }
@@ -121,6 +134,8 @@ export const useChatStore = defineStore('chat', () => {
     if (tab)
       snapshotConversationState(tab)
 
+    const browser = useBrowserStore()
+
     // Cancel any in-flight request
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
@@ -137,6 +152,16 @@ export const useChatStore = defineStore('chat', () => {
       questionResolvers.delete(id)
     }
 
+    // Deny all queued permission requests for this tab
+    const closingTab = tabs.value.find(t => t.id === id)
+    if (closingTab) {
+      for (const perm of closingTab.pendingPermissions) {
+        permissionResolvers.get(perm.requestId)?.('deny')
+        permissionResolvers.delete(perm.requestId)
+      }
+      closingTab.pendingPermissions = []
+    }
+
     // Clean up checkpoints for this tab
     import('./checkpoints').then(({ useCheckpointStore }) => {
       useCheckpointStore().clearTab(id)
@@ -146,11 +171,13 @@ export const useChatStore = defineStore('chat', () => {
 
     if (tabs.value.length === 1) {
       // Always keep at least one tab
+      browser.disposeOwner(id)
       tabs.value = [newTab()]
       activeId.value = tabs.value[0]!.id
       return
     }
 
+    browser.disposeOwner(id)
     tabs.value.splice(idx, 1)
     if (activeId.value === id)
       activeId.value = tabs.value[Math.max(0, idx - 1)]!.id
@@ -181,6 +208,7 @@ export const useChatStore = defineStore('chat', () => {
       draft: restoredState.draft,
       estimator: restoredState.estimator,
       pendingQuestions: null,
+      pendingPermissions: [],
     }
 
     tabs.value.push(tab)
@@ -197,6 +225,15 @@ export const useChatStore = defineStore('chat', () => {
 
   function stopGeneration(tabId?: string): void {
     const id = tabId ?? activeId.value
+    // Deny all queued permission requests for this tab
+    const stoppingTab = tabs.value.find(t => t.id === id)
+    if (stoppingTab) {
+      for (const perm of stoppingTab.pendingPermissions) {
+        permissionResolvers.get(perm.requestId)?.('deny')
+        permissionResolvers.delete(perm.requestId)
+      }
+      stoppingTab.pendingPermissions = []
+    }
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
     const tab = tabs.value.find(t => t.id === id)
@@ -273,9 +310,68 @@ export const useChatStore = defineStore('chat', () => {
     _resolveQuestions(tabId, skipped)
   }
 
+  function isToolApprovedForSession(toolName: string): boolean {
+    return sessionToolApprovals.value.includes(toolName)
+  }
+
+  function clearSessionToolApprovals(): void {
+    sessionToolApprovals.value = []
+  }
+
+  function requestToolPermission(
+    tabId: string,
+    request: ToolPermissionRequest,
+  ): Promise<ToolPermissionDecision> {
+    if (isToolApprovedForSession(request.toolName))
+      return Promise.resolve('allow-session')
+
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab)
+      return Promise.resolve('deny')
+
+    const requestId = `${tabId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+    return new Promise(resolve => {
+      tab.pendingPermissions.push({
+        requestId,
+        toolName: request.toolName,
+        toolLabel: request.toolLabel,
+        actionTitle: request.actionTitle,
+        actionDetails: request.actionDetails,
+      })
+
+      permissionResolvers.set(requestId, decision => {
+        if (decision === 'allow-session' && !sessionToolApprovals.value.includes(request.toolName))
+          sessionToolApprovals.value = [...sessionToolApprovals.value, request.toolName]
+
+        permissionResolvers.delete(requestId)
+        tab.pendingPermissions = tab.pendingPermissions.filter(p => p.requestId !== requestId)
+        resolve(decision)
+      })
+    })
+  }
+
+  function submitToolPermission(tabId: string, decision: ToolPermissionDecision, requestId?: string): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab || tab.pendingPermissions.length === 0)
+      return
+
+    // Resolve a specific request, or the first one in the queue
+    const targetId = requestId ?? tab.pendingPermissions[0]?.requestId
+    if (targetId)
+      permissionResolvers.get(targetId)?.(decision)
+  }
+
   // ── send message ──────────────────────────────────────────────────────────────
 
-  const sendMessage = createSendMessage(tabs, activeId, activeTab, abortControllers, questionResolvers)
+  const sendMessage = createSendMessage(
+    tabs,
+    activeId,
+    activeTab,
+    abortControllers,
+    questionResolvers,
+    requestToolPermission,
+  )
 
   // ── rename ────────────────────────────────────────────────────────────────────
 
@@ -333,6 +429,10 @@ export const useChatStore = defineStore('chat', () => {
     setTabEstimatorState,
     submitAnswers,
     dismissQuestions,
+    submitToolPermission,
+    requestToolPermission,
+    clearSessionToolApprovals,
+    sessionToolApprovals,
     sendMessage,
     stopGeneration,
     renameTab,

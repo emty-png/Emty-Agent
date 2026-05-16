@@ -1,6 +1,18 @@
+mod browser;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            browser::browser_mount_surface,
+            browser::browser_resize_surface,
+            browser::browser_unmount_surface,
+            browser::browser_close_surface,
+            browser::browser_surface_navigate,
+            browser::browser_surface_reload,
+            browser::browser_surface_screenshot,
+            browser::browser_surface_dispatch,
+        ])
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())

@@ -2,15 +2,29 @@
  * src/utils/tools/shell.ts
  *
  * Shell execution tools for the Emty coding agent.
- *   • run_command  — run one or more shell commands sequentially in the project directory
- *   • git_command  — run one or more git operations sequentially in the project directory
+ *   • run_command      — run one or more shell commands sequentially in the project directory
+ *   • git_command      — run one or more git operations sequentially in the project directory
+ *   • run_bg_command   — spawn a long-running background process and return immediately
+ *   • bg_command_status — poll a background process for output and status
+ *   • kill_bg_command  — terminate a background process
  *
- * Both tools:
+ * Both run_command / git_command:
  *   - Execute with the project root as the working directory
  *   - Run sequentially so later commands can depend on earlier ones
  *   - Stop the sequence on first failure and report skipped commands
  *   - Return stdout, stderr, exit code, and duration per command
  *   - Trim oversized output before returning it to the model context
+ *
+ * FIX 4 — run_bg_command improvements:
+ *   - Accepts an optional `waitForFirstOutputMs` (default 0).
+ *   - When set, the execute() waits up to that many ms for the first line of
+ *     stdout or stderr before returning. This lets the agent confirm the process
+ *     actually started (e.g. "vite: Local: http://localhost:5173") rather than
+ *     getting back a bare ID with no confirmation.
+ *   - The response now always includes `initialStdout` / `initialStderr` fields
+ *     (empty string when nothing arrived) so the agent can inspect them.
+ *   - `alreadyExited` is set to true when the process died within the wait
+ *     window — a reliable signal that the command string was bad.
  *
  * Security note:
  *   run_command executes arbitrary shell strings. This is intentional for a developer
@@ -38,12 +52,6 @@ const MAX_OUTPUT_CHARS = 32_000
 
 // ── background process registry ───────────────────────────────────────────────
 
-/**
- * In-memory registry of background processes spawned by run_bg_command.
- * Persists for the lifetime of the app — finished entries are kept so the
- * agent can still read their final output after they exit.
- * Capped at MAX_BG_PROCESSES; oldest finished entries are evicted first.
- */
 const MAX_BG_PROCESSES = 20
 
 interface BgProcess {
@@ -94,12 +102,6 @@ let _resolvedShell: 'sh' | 'powershell' | null = null
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Lazily resolve which shell to use for run_command.
- * Reads OsInfo injected at app startup when available; falls back to
- * a runtime platform() check the first time it is called.
- * Result is cached for the lifetime of the process.
- */
 export function primeShell(shell: 'sh' | 'powershell'): void {
   _resolvedShell = shell
 }
@@ -107,7 +109,6 @@ export function primeShell(shell: 'sh' | 'powershell'): void {
 async function resolveShell(): Promise<'sh' | 'powershell'> {
   if (_resolvedShell != null)
     return _resolvedShell
-  // Fallback: runtime detection (only happens if primeShell was never called)
   const { platform } = await import('@tauri-apps/plugin-os')
   const p = await platform()
   _resolvedShell = p === 'windows' ? 'powershell' : 'sh'
@@ -137,14 +138,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ])
 }
 
-/**
- * Execute one shell command string in the given working directory.
- *   Unix  → sh  -c  "<cmd>"
- *   Windows → powershell -NoProfile -NonInteractive -Command "<cmd>"
- *
- * The -NoProfile / -NonInteractive flags keep PowerShell launches fast and
- * deterministic (no user profile side-effects).
- */
 async function execShellCommand(
   commandStr: string,
   cwd: string,
@@ -181,10 +174,6 @@ async function execShellCommand(
   }
 }
 
-/**
- * Execute one git operation with the given argument list.
- * Spawns the git binary directly — no shell interpretation, no injection risk.
- */
 async function execGitCommand(
   args: string[],
   cwd: string,
@@ -385,10 +374,30 @@ Returns per operation: stdout, stderr, exit code, duration.`,
 // ── run_bg_command ────────────────────────────────────────────────────────────
 
 /**
- * Spawn a shell command in the background. Returns immediately with an ID —
- * the agent can continue working while the process runs.
- * Use bg_command_status to poll output and kill_bg_command to terminate it.
+ * FIX 4: Wait up to `ms` for the process to produce any output or exit.
+ * Resolves as soon as one of these happens:
+ *   - stdout or stderr receives at least one non-empty line
+ *   - the process exits (running → false)
+ *   - the timeout elapses
+ * Returns the number of ms actually waited.
  */
+function waitForOutput(proc: BgProcess, ms: number): Promise<number> {
+  if (ms <= 0)
+    return Promise.resolve(0)
+  const start = Date.now()
+  return new Promise(resolve => {
+    const POLL_INTERVAL = 50 // ms
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - start
+      const hasOutput = proc.stdout.length > 0 || proc.stderr.length > 0
+      if (hasOutput || !proc.running || elapsed >= ms) {
+        clearInterval(timer)
+        resolve(elapsed)
+      }
+    }, POLL_INTERVAL)
+  })
+}
+
 export function createRunBgCommandTool(projectPath: string) {
   return tool({
     description: `\
@@ -402,12 +411,31 @@ Use this for long-running processes that should not block the agent:
   • Test watchers:  jest --watch, vitest --watch
   • Any process you want to start and then check on later
 
-Do NOT use this for short commands (installs, one-off builds) — use run_command instead.`,
+Do NOT use this for short commands (installs, one-off builds) — use run_command instead.
+
+FIX 4: Set waitForFirstOutputMs (e.g. 3000) to wait up to that many milliseconds
+for the process to emit its first line of output before returning. This lets you
+confirm the server actually started instead of receiving a bare id.
+If the process exits within the wait window, alreadyExited will be true — which
+typically means the command string was wrong.`,
     inputSchema: z.object({
       command: z.string().min(1).describe('Shell command to run in the background.'),
       label: z.string().optional().describe('Optional short human label shown in the UI (e.g. "dev server").'),
+      // FIX 4: new parameter
+      waitForFirstOutputMs: z
+        .number()
+        .int()
+        .min(0)
+        .max(30_000)
+        .optional()
+        .describe(
+          'Wait up to this many milliseconds for the process to emit its first line of output '
+          + 'before returning. Default: 0 (return immediately). '
+          + 'Recommended: 2000–5000 for dev servers so you can confirm a successful start. '
+          + 'If the process exits within this window, alreadyExited will be true.',
+        ),
     }),
-    execute: async ({ command, label }) => {
+    execute: async ({ command, label, waitForFirstOutputMs = 0 }) => {
       evictBgIfNeeded()
 
       const id = newBgId()
@@ -453,9 +481,28 @@ Do NOT use this for short commands (installs, one-off builds) — use run_comman
       try {
         const child = await cmd.spawn()
         bgChildren.set(id, child)
+
+        // FIX 4: optionally wait for first output before returning
+        let waitedMs = 0
+        if (waitForFirstOutputMs > 0) {
+          waitedMs = await waitForOutput(proc, waitForFirstOutputMs)
+        }
+
+        // FIX 4: richer return — always include initial output snapshot and
+        // a flag indicating whether the process had already exited.
         return {
           id,
-          message: `Background process started with id "${id}". Use bg_command_status to check on it.`,
+          running: proc.running,
+          // FIX 4: surface initial output so the agent can confirm startup
+          initialStdout: proc.stdout || '',
+          initialStderr: proc.stderr || '',
+          // FIX 4: explicit flag — if false within the wait window, command likely failed
+          alreadyExited: !proc.running,
+          exitCode: proc.running ? null : proc.exitCode,
+          waitedMs,
+          message: proc.running
+            ? `Background process started with id "${id}". Use bg_command_status to check on it.`
+            : `Process "${id}" exited immediately (exit code: ${proc.exitCode ?? 'unknown'}). Check initialStderr for errors.`,
         }
       }
       catch (e) {
@@ -531,7 +578,6 @@ Returns the final buffered output collected before the kill.`,
         await child?.kill()
       }
       catch (e) {
-        // kill() may throw if the process already exited between the check and the call
         proc.stderr += `\n[kill error] ${e instanceof Error ? e.message : String(e)}`
       }
 
@@ -551,16 +597,6 @@ Returns the final buffered output collected before the kill.`,
 
 // ── factory ───────────────────────────────────────────────────────────────────
 
-/**
- * Create both shell tools bound to a project directory.
- *
- * Pass the `shell` from OsInfo so the resolved shell is cached immediately
- * rather than being detected lazily on the first command.
- *
- * @example
- * const shellTools = createShellTools(projectPath, osInfo.shell)
- * const tools = { ...createFilesystemTools(projectPath), ...shellTools }
- */
 export function createShellTools(projectPath: string, shell?: 'sh' | 'powershell') {
   if (shell != null)
     primeShell(shell)
@@ -578,13 +614,11 @@ export type ShellTools = ReturnType<typeof createShellTools>
 
 // ── display labels ────────────────────────────────────────────────────────────
 
-/** Trim a command string to a readable length for badge display. */
 function truncate(s: string, max = 52): string {
   const trimmed = s.trim()
   return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed
 }
 
-/** Extract a human-readable label from git args. */
 function gitArgLabel(args: string[]): string {
   const sub = args[0]?.toLowerCase() ?? 'operation'
 

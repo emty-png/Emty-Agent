@@ -312,15 +312,25 @@ function openSubAgentTab() {
 /* ── range annotation: "#0–499" ─────────────────────────────────────────── */
 
 /*
- * Inherits the parent gradient (text-fill stays transparent) but rendered
- * smaller, lighter weight, and dimmed so it reads as metadata not primary text.
+ * Escapes the parent gradient (same technique as .tt-diff) so it renders
+ * as a solid colour instead of an invisible dimmed gradient fragment.
+ * Uses --color-success-text (green) at reduced opacity to read as metadata
+ * rather than competing with the diff-add "+" tokens.
  */
 .tt-range {
+  /* Escape parent gradient */
+  background: none;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+  animation: none;
+  /* Typography */
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  opacity: 0.6;
   font-variant-numeric: tabular-nums;
+  /* Colour */
+  -webkit-text-fill-color: color-mix(in srgb, var(--color-success-text) 70%, transparent);
+  color: color-mix(in srgb, var(--color-success-text) 70%, transparent);
 }
 
 /* ── diff stat tokens: "+22" / "-5" ─────────────────────────────────────── */

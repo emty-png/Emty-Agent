@@ -9,23 +9,28 @@ export function createEditFilesTool(
   onBeforeFileWrite?: BeforeFileWriteCallback,
 ) {
   return tool({
-    description: `Make surgical string-replacement edits to existing files.
-Each edit replaces an exact string with a new string — like a precise find-and-replace.
-Batches multiple edits across multiple files in one call.
-Use this instead of write_files when you want to change specific parts of a file
-without rewriting the entire content. Safer for large files.
+    description: `PREFERRED tool for modifying any existing file.
+Applies precise string-replacement edits without touching the rest of the file.
+Faster, safer, and more token-efficient than rewriting the whole file.
+Batches edits across multiple files in one call.
+
+ALWAYS use this tool when a file already exists and you only need to change part of it.
+Only use write_files for brand-new files or when the entire content must be replaced.
 
 Rules:
 - oldString must match EXACTLY as it appears in the file (including whitespace and indentation).
-- Each oldString within a file must be unique — if it appears multiple times, be more specific.
+- Each oldString within a file must be unique — make it longer/more specific if needed.
 - Multiple edits to the same file are applied in order, top to bottom.
 - If any edit fails (oldString not found), that edit is reported as an error but others continue.`,
     inputSchema: z.object({
-      edits: z.array(z.object({
-        path: z.string().describe('File path relative to the project root.'),
-        oldString: z.string().describe('Exact string to find and replace. Must be unique in the file.'),
-        newString: z.string().describe('String to replace oldString with. Can be empty to delete.'),
-      })).min(1).describe('List of edits to apply.'),
+      edits: z.preprocess(
+        val => (Array.isArray(val) ? val : [val]),
+        z.array(z.object({
+          path: z.string().describe('File path relative to the project root.'),
+          oldString: z.string().describe('Exact string to find and replace. Must be unique in the file.'),
+          newString: z.string().describe('String to replace oldString with. Can be empty to delete.'),
+        })).min(1),
+      ).describe('List of edits to apply.'),
     }),
     execute: async ({ edits }) => {
       // Group edits by file path so we read each file once
