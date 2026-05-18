@@ -9,19 +9,13 @@ export function createEditFilesTool(
   onBeforeFileWrite?: BeforeFileWriteCallback,
 ) {
   return tool({
-    description: `PREFERRED tool for modifying any existing file.
-Applies precise string-replacement edits without touching the rest of the file.
-Faster, safer, and more token-efficient than rewriting the whole file.
-Batches edits across multiple files in one call.
-
-ALWAYS use this tool when a file already exists and you only need to change part of it.
-Only use write_files for brand-new files or when the entire content must be replaced.
+    description: `PREFERRED way to modify existing files. Applies targeted string replacements — faster and safer than rewriting. Batches edits across files in one call.
+Use write_files only for new files or full rewrites.
 
 Rules:
-- oldString must match EXACTLY as it appears in the file (including whitespace and indentation).
-- Each oldString within a file must be unique — make it longer/more specific if needed.
-- Multiple edits to the same file are applied in order, top to bottom.
-- If any edit fails (oldString not found), that edit is reported as an error but others continue.`,
+- oldString must match exactly (whitespace, indentation).
+- oldString must be unique in the file; expand context if needed.
+- Edits per file applied top-to-bottom. Failed edits are reported but don't block others.`,
     inputSchema: z.object({
       edits: z.preprocess(
         val => (Array.isArray(val) ? val : [val]),

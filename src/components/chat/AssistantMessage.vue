@@ -82,16 +82,20 @@ const layout = computed(() => {
       events: [],
       key,
       streaming: false,
-      wordCount: type === 'reasoning' ? countWords(text) : 0,
+      // Only count words when not streaming — word count is shown in the
+      // collapsed summary header which is hidden while streaming anyway.
+      wordCount: (type === 'reasoning' && !props.isStreaming) ? countWords(text) : 0,
     })
   }
 
   const parseText = (text: string, baseKey: string) => {
-    const thinkRegex = /<(?:think|thought)>([\s\S]*?)(?:<\/(?:think|thought)>|$)/gi
-    if (!/<(?:think|thought)>/i.test(text)) {
+    // Fast path: skip the expensive regex entirely if no think tag present.
+    // indexOf is O(n) but far cheaper than regex compilation + execution.
+    if (!text.includes('<think') && !text.includes('<thought')) {
       pushText(text, `${baseKey}-text`, 'text')
       return
     }
+    const thinkRegex = /<(?:think|thought)>([\s\S]*?)(?:<\/(?:think|thought)>|$)/gi
 
     let lastIndex = 0
     let match = thinkRegex.exec(text)

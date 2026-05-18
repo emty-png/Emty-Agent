@@ -72,6 +72,7 @@ Before every tool call, write a short paragraph explaining what you are trying t
 - Explain only what the code cannot communicate itself.
 - Use fenced code blocks with the correct language tag.
 - Keep non-code explanation short and actionable.
+- NEVER use emojis in your responses. Keep all text strictly professional and text-only.
 </response_style>
 
 <quality_bar>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Check, Loader, TriangleAlert } from 'lucide-vue-next'
+import { Check, ChevronDown, ChevronUp, Loader, X } from 'lucide-vue-next'
+import { ref } from 'vue'
 
 defineProps<{
   name: string
@@ -8,10 +9,12 @@ defineProps<{
   statusMessage?: string
   logoClass?: string
 }>()
+
+const isExpanded = ref(false)
 </script>
 
 <template>
-  <div class="provider-card">
+  <div class="provider-card" :class="{ 'is-expanded': isExpanded }">
     <div class="provider-card-header">
       <div class="provider-info">
         <div class="provider-logo" :class="logoClass">
@@ -19,41 +22,53 @@ defineProps<{
         </div>
         <div class="provider-text">
           <span class="provider-name">{{ name }}</span>
-          <span class="provider-url">{{ url }}</span>
+          <!-- Only show the URL if expanded to match the cleaner mockup -->
+          <span v-if="isExpanded" class="provider-url">{{ url }}</span>
         </div>
       </div>
 
       <div class="header-right">
-        <slot name="header-right">
-          <div v-if="status !== 'idle'" class="status-badge" :class="`status-badge--${status}`">
-            <Loader v-if="status === 'testing'" :size="13" class="spin" />
-            <Check v-else-if="status === 'ok'" :size="13" />
-            <TriangleAlert v-else :size="13" />
-            <span>{{ status === 'testing' ? 'Testing...' : statusMessage }}</span>
-          </div>
-        </slot>
+        <slot name="actions" />
+
+        <div v-if="status !== 'idle'" class="status-icon" :class="`status-icon--${status}`" :title="statusMessage">
+          <Loader v-if="status === 'testing'" :size="16" class="spin" />
+          <Check v-else-if="status === 'ok'" :size="16" />
+          <X v-else :size="16" />
+        </div>
+
+        <button class="configure-btn" @click="isExpanded = !isExpanded">
+          Configure
+          <ChevronUp v-if="isExpanded" :size="14" />
+          <ChevronDown v-else :size="14" />
+        </button>
       </div>
     </div>
 
-    <div class="provider-content">
-      <slot name="fields" />
-    </div>
+    <div v-show="isExpanded" class="provider-content-wrapper">
+      <div class="provider-content">
+        <slot name="fields" />
+      </div>
 
-    <div class="card-footer">
-      <slot name="footer" />
+      <div class="card-footer">
+        <slot name="footer" />
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .provider-card {
+  max-width: 580px;
+  width: 100%;
+  box-sizing: border-box;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: 8px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 20px; /* Better breathing room between header, fields, and footer */
+  gap: 14px;
+  transition: all 200ms ease;
 }
 
 .provider-card-header {
@@ -62,6 +77,7 @@ defineProps<{
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+  min-height: 44px; /* Reaches exactly 70px total card height in collapsed state (12px top/bottom padding + 44px header + 2px borders) */
 }
 
 .provider-info {
@@ -73,10 +89,9 @@ defineProps<{
 .provider-logo {
   display: grid;
   place-items: center;
-  width: 38px; /* Larger hit-box for the logo */
-  height: 38px;
-  border-radius: 8px;
-  /* Distinct box to prevent logos from blending into the background */
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
   background: var(--color-bg-elevated, color-mix(in srgb, var(--color-bg-surface) 60%, transparent));
   border: 1px solid var(--color-border-mid);
   box-shadow:
@@ -93,7 +108,7 @@ defineProps<{
 
 .provider-name {
   display: block;
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.2;
@@ -112,48 +127,60 @@ defineProps<{
   gap: 12px;
 }
 
-/* Restyled Badge */
-.status-badge {
-  display: inline-flex;
+.status-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.status-icon--testing {
+  color: var(--color-text-secondary);
+}
+
+.status-icon--ok {
+  color: var(--color-success-text);
+  background: color-mix(in srgb, var(--color-success-muted) 30%, transparent);
+}
+
+.status-icon--error {
+  color: var(--color-danger-text);
+  background: color-mix(in srgb, var(--color-danger-muted) 30%, transparent);
+}
+
+.configure-btn {
+  display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px; /* Removed 99px pill shape to match modern layouts */
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  max-width: 260px;
-}
-
-.status-badge span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-badge--testing {
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
+  height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--color-border-mid);
+  border-radius: 6px;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms ease;
 }
 
-.status-badge--ok {
-  background: color-mix(in srgb, var(--color-success-muted) 30%, transparent);
-  color: var(--color-success-text);
-  border: 1px solid var(--color-success-muted);
+.configure-btn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-strong);
 }
 
-.status-badge--error {
-  background: color-mix(in srgb, var(--color-danger-muted) 30%, transparent);
-  color: var(--color-danger-text);
-  border: 1px solid var(--color-danger-muted);
+.provider-content-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .provider-content {
   display: flex;
   flex-direction: column;
-  gap: 16px; /* standardizes spacing for injected fields */
+  gap: 16px;
 }
 
 .card-footer {
@@ -164,7 +191,6 @@ defineProps<{
   border-top: 1px solid var(--color-border-subtle);
 }
 
-/* Hides the footer entirely if the parent doesn't provide slot content */
 .card-footer:empty {
   display: none;
 }

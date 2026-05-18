@@ -121,6 +121,69 @@ const MIGRATIONS: string[] = [
 
   // v3 — created_at index for faster timeline queries
   'CREATE INDEX IF NOT EXISTS idx_msg_created_at ON messages (created_at)',
+
+  // v4 — conversation workspace metadata
+  'ALTER TABLE conversations ADD COLUMN workspace_path TEXT',
+  'ALTER TABLE conversations ADD COLUMN workspace_meta TEXT',
+
+  // v5 — durable memory
+  `CREATE TABLE IF NOT EXISTS memories (
+    id            TEXT    PRIMARY KEY,
+    scope         TEXT    NOT NULL CHECK(scope IN ('global','project')),
+    project_key   TEXT,
+    kind          TEXT    NOT NULL CHECK(kind IN ('preference','task','note')),
+    memory_key    TEXT,
+    title         TEXT    NOT NULL,
+    content       TEXT    NOT NULL,
+    source        TEXT    NOT NULL DEFAULT 'agent',
+    metadata      TEXT,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    last_used_at  INTEGER NOT NULL,
+    pinned        INTEGER NOT NULL DEFAULT 0,
+    disabled      INTEGER NOT NULL DEFAULT 0
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_memory_scope_project ON memories (scope, project_key, updated_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_memory_key ON memories (scope, memory_key)',
+
+  // v6 — replay harness
+  `CREATE TABLE IF NOT EXISTS replay_runs (
+    id                 TEXT    PRIMARY KEY,
+    conversation_id    TEXT    NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    workspace_key      TEXT,
+    workspace_path     TEXT,
+    model_uid          TEXT,
+    prompt_fingerprint TEXT    NOT NULL,
+    request_text       TEXT    NOT NULL,
+    system_prompt      TEXT    NOT NULL,
+    messages_json      TEXT    NOT NULL,
+    provider_options   TEXT,
+    tool_names         TEXT    NOT NULL,
+    tool_trace         TEXT    NOT NULL,
+    usage_json         TEXT,
+    status             TEXT    NOT NULL CHECK(status IN ('started','completed','error','aborted')),
+    error_code         TEXT,
+    error_message      TEXT,
+    created_at         INTEGER NOT NULL,
+    finished_at        INTEGER,
+    duration_ms        INTEGER
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_replay_conv_created ON replay_runs (conversation_id, created_at DESC)',
+
+  // v7 — failure recovery history
+  `CREATE TABLE IF NOT EXISTS failure_events (
+    id              TEXT    PRIMARY KEY,
+    replay_id       TEXT    REFERENCES replay_runs(id) ON DELETE SET NULL,
+    conversation_id TEXT    NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    category        TEXT    NOT NULL,
+    severity        TEXT    NOT NULL CHECK(severity IN ('warning','error')),
+    message         TEXT    NOT NULL,
+    recovery_hint   TEXT    NOT NULL,
+    details         TEXT,
+    created_at      INTEGER NOT NULL,
+    resolved_at     INTEGER
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_failure_conv_created ON failure_events (conversation_id, created_at DESC)',
 ]
 
 // ── column existence helper ───────────────────────────────────────────────────
@@ -143,6 +206,11 @@ async function ensureColumns(
       await instance.execute(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.definition}`)
     }
   }
+}
+
+function isIgnorableMigrationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  return message.includes('duplicate column name')
 }
 
 // ── migration runner ──────────────────────────────────────────────────────────
@@ -178,10 +246,20 @@ async function migrate(instance: Database): Promise<void> {
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ])
 
+  await ensureColumns(instance, 'memories', [
+    { name: 'memory_key', definition: 'TEXT' },
+  ])
+
   // ── apply pending migrations ──────────────────────────────────────────────
   if (current < MIGRATIONS.length) {
     for (let i = current; i < MIGRATIONS.length; i++) {
-      await instance.execute(MIGRATIONS[i]!)
+      try {
+        await instance.execute(MIGRATIONS[i]!)
+      }
+      catch (error) {
+        if (!isIgnorableMigrationError(error))
+          throw error
+      }
     }
 
     await instance.execute(
@@ -199,6 +277,8 @@ export interface ConversationRow {
   created_at: number
   updated_at: number
   msg_count: number
+  workspace_path?: string | null
+  workspace_meta?: string | null
 }
 
 export interface MessageRow {
@@ -238,6 +318,58 @@ export interface CheckpointFileRow {
   existed: number
 }
 
+export interface MemoryRow {
+  id: string
+  scope: 'global' | 'project'
+  project_key: string | null
+  kind: 'preference' | 'task' | 'note'
+  key: string | null
+  title: string
+  content: string
+  source: 'agent' | 'user' | 'system'
+  metadata: string | null
+  created_at: number
+  updated_at: number
+  last_used_at: number
+  pinned: number
+  disabled: number
+}
+
+export interface ReplayRunRow {
+  id: string
+  conversation_id: string
+  workspace_key: string | null
+  workspace_path: string | null
+  model_uid: string | null
+  prompt_fingerprint: string
+  request_text: string
+  system_prompt: string
+  messages_json: string
+  provider_options: string | null
+  tool_names: string
+  tool_trace: string
+  usage_json?: string | null
+  status: 'started' | 'completed' | 'error' | 'aborted'
+  error_code: string | null
+  error_message: string | null
+  created_at: number
+  finished_at: number | null
+  duration_ms: number | null
+}
+
+export interface FailureEventRow {
+  id: string
+  replay_id: string | null
+  conversation_id: string
+  category: string
+  severity: 'warning' | 'error'
+  message: string
+  recovery_hint: string
+  details: string | null
+  created_at: number
+  resolved_at: number | null
+}
+
 // ── conversation helpers ──────────────────────────────────────────────────────
 
 export async function dbInsertConversation(
@@ -245,10 +377,51 @@ export async function dbInsertConversation(
 ): Promise<void> {
   const d = await getDb()
   await d.execute(
-    `INSERT INTO conversations (id, title, created_at, updated_at, msg_count)
-     VALUES (?, ?, ?, ?, 0)`,
-    [conv.id, conv.title, conv.created_at, conv.updated_at],
+    `INSERT INTO conversations (id, title, created_at, updated_at, msg_count, workspace_path, workspace_meta)
+     VALUES (?, ?, ?, ?, 0, ?, ?)`,
+    [
+      conv.id,
+      conv.title,
+      conv.created_at,
+      conv.updated_at,
+      conv.workspace_path ?? null,
+      conv.workspace_meta ?? null,
+    ],
   )
+}
+
+export async function dbUpdateConversationWorkspace(
+  id: string,
+  patch: {
+    workspace_path?: string | null
+    workspace_meta?: string | null
+  },
+): Promise<void> {
+  if (!id)
+    throw new Error('dbUpdateConversationWorkspace: id is required')
+
+  const sets: string[] = []
+  const values: unknown[] = []
+
+  if ('workspace_path' in patch) {
+    sets.push('workspace_path = ?')
+    values.push(patch.workspace_path ?? null)
+  }
+
+  if ('workspace_meta' in patch) {
+    sets.push('workspace_meta = ?')
+    values.push(patch.workspace_meta ?? null)
+  }
+
+  if (sets.length === 0)
+    return
+
+  sets.push('updated_at = ?')
+  values.push(Date.now())
+  values.push(id)
+
+  const d = await getDb()
+  await d.execute(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`, values)
 }
 
 export async function dbUpdateConversationTitle(id: string, title: string): Promise<void> {
@@ -484,5 +657,293 @@ export async function dbDeleteCheckpointsFrom(
   await d.execute(
     'DELETE FROM checkpoints WHERE conversation_id = ? AND created_at >= ?',
     [conversationId, fromTimestamp],
+  )
+}
+
+// —— memory helpers ————————————————————————————————————————————————————————————————
+
+export async function dbListMemories(options: {
+  scope: MemoryRow['scope']
+  projectKey?: string | null
+  kind?: MemoryRow['kind']
+  key?: string
+  limit?: number
+}): Promise<MemoryRow[]> {
+  const d = await getDb()
+  const conditions = ['scope = ?']
+  const values: unknown[] = [options.scope]
+
+  if (options.projectKey === null) {
+    conditions.push('project_key IS NULL')
+  }
+  else if (options.projectKey !== undefined) {
+    conditions.push('project_key = ?')
+    values.push(options.projectKey)
+  }
+
+  if (options.kind) {
+    conditions.push('kind = ?')
+    values.push(options.kind)
+  }
+
+  if (options.key) {
+    conditions.push('memory_key = ?')
+    values.push(options.key)
+  }
+
+  values.push(Math.max(1, options.limit ?? 50))
+
+  return d.select<MemoryRow[]>(
+    `SELECT id, scope, project_key, kind, memory_key AS key, title, content, source, metadata,
+            created_at, updated_at, last_used_at, pinned, disabled
+     FROM memories
+     WHERE ${conditions.join(' AND ')}
+       AND disabled = 0
+     ORDER BY pinned DESC, updated_at DESC
+     LIMIT ?`,
+    values,
+  )
+}
+
+export async function dbSaveMemory(input: {
+  scope: MemoryRow['scope']
+  project_key: string | null
+  kind: MemoryRow['kind']
+  key?: string | null
+  title: string
+  content: string
+  source: MemoryRow['source']
+  metadata?: string | null
+  pinned?: number
+  disabled?: number
+}): Promise<MemoryRow> {
+  const d = await getDb()
+  const now = Date.now()
+
+  let existing: MemoryRow | undefined
+  if (input.key) {
+    const existingRows = await d.select<MemoryRow[]>(
+      `SELECT id, scope, project_key, kind, memory_key AS key, title, content, source, metadata,
+              created_at, updated_at, last_used_at, pinned, disabled
+       FROM memories
+       WHERE scope = ?
+         AND ${input.project_key == null ? 'project_key IS NULL' : 'project_key = ?'}
+         AND memory_key = ?
+       LIMIT 1`,
+      input.project_key == null
+        ? [input.scope, input.key]
+        : [input.scope, input.project_key, input.key],
+    )
+    existing = existingRows[0]
+  }
+
+  if (existing) {
+    await d.execute(
+      `UPDATE memories
+       SET kind = ?, title = ?, content = ?, source = ?, metadata = ?, updated_at = ?, last_used_at = ?, disabled = 0
+       WHERE id = ?`,
+      [
+        input.kind,
+        input.title,
+        input.content,
+        input.source,
+        input.metadata ?? null,
+        now,
+        now,
+        existing.id,
+      ],
+    )
+
+    return {
+      ...existing,
+      kind: input.kind,
+      title: input.title,
+      content: input.content,
+      source: input.source,
+      metadata: input.metadata ?? null,
+      updated_at: now,
+      last_used_at: now,
+      disabled: 0,
+    }
+  }
+
+  const row: MemoryRow = {
+    id: `memory-${Math.random().toString(36).slice(2, 10)}`,
+    scope: input.scope,
+    project_key: input.project_key,
+    kind: input.kind,
+    key: input.key ?? null,
+    title: input.title,
+    content: input.content,
+    source: input.source,
+    metadata: input.metadata ?? null,
+    created_at: now,
+    updated_at: now,
+    last_used_at: now,
+    pinned: input.pinned ?? 0,
+    disabled: input.disabled ?? 0,
+  }
+
+  await d.execute(
+    `INSERT INTO memories
+      (id, scope, project_key, kind, memory_key, title, content, source, metadata, created_at, updated_at, last_used_at, pinned, disabled)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      row.id,
+      row.scope,
+      row.project_key,
+      row.kind,
+      row.key,
+      row.title,
+      row.content,
+      row.source,
+      row.metadata,
+      row.created_at,
+      row.updated_at,
+      row.last_used_at,
+      row.pinned,
+      row.disabled,
+    ],
+  )
+
+  return row
+}
+
+// —— replay helpers ————————————————————————————————————————————————————————————————
+
+export async function dbInsertReplayRun(row: ReplayRunRow): Promise<void> {
+  const d = await getDb()
+  await d.execute(
+    `INSERT INTO replay_runs
+      (id, conversation_id, workspace_key, workspace_path, model_uid, prompt_fingerprint, request_text,
+       system_prompt, messages_json, provider_options, tool_names, tool_trace, usage_json, status,
+       error_code, error_message, created_at, finished_at, duration_ms)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      row.id,
+      row.conversation_id,
+      row.workspace_key,
+      row.workspace_path,
+      row.model_uid,
+      row.prompt_fingerprint,
+      row.request_text,
+      row.system_prompt,
+      row.messages_json,
+      row.provider_options,
+      row.tool_names,
+      row.tool_trace,
+      row.usage_json ?? null,
+      row.status,
+      row.error_code,
+      row.error_message,
+      row.created_at,
+      row.finished_at,
+      row.duration_ms,
+    ],
+  )
+}
+
+export async function dbUpdateReplayRun(
+  id: string,
+  patch: {
+    usage_json?: string | null
+    tool_trace?: string | null
+    status?: ReplayRunRow['status']
+    error_code?: string | null
+    error_message?: string | null
+    finished_at?: number | null
+    duration_ms?: number | null
+  },
+): Promise<void> {
+  if (!id)
+    throw new Error('dbUpdateReplayRun: id is required')
+
+  const sets: string[] = []
+  const values: unknown[] = []
+
+  if ('usage_json' in patch) {
+    sets.push('usage_json = ?')
+    values.push(patch.usage_json ?? null)
+  }
+  if ('tool_trace' in patch) {
+    sets.push('tool_trace = ?')
+    values.push(patch.tool_trace ?? null)
+  }
+  if (patch.status) {
+    sets.push('status = ?')
+    values.push(patch.status)
+  }
+  if ('error_code' in patch) {
+    sets.push('error_code = ?')
+    values.push(patch.error_code ?? null)
+  }
+  if ('error_message' in patch) {
+    sets.push('error_message = ?')
+    values.push(patch.error_message ?? null)
+  }
+  if ('finished_at' in patch) {
+    sets.push('finished_at = ?')
+    values.push(patch.finished_at ?? null)
+  }
+  if ('duration_ms' in patch) {
+    sets.push('duration_ms = ?')
+    values.push(patch.duration_ms ?? null)
+  }
+
+  if (sets.length === 0)
+    return
+
+  values.push(id)
+
+  const d = await getDb()
+  await d.execute(`UPDATE replay_runs SET ${sets.join(', ')} WHERE id = ?`, values)
+}
+
+// —— failure recovery helpers ————————————————————————————————————————————————————————
+
+export async function dbInsertFailureEvent(row: FailureEventRow): Promise<void> {
+  const d = await getDb()
+  await d.execute(
+    `INSERT INTO failure_events
+      (id, replay_id, conversation_id, category, severity, message, recovery_hint, details, created_at, resolved_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      row.id,
+      row.replay_id,
+      row.conversation_id,
+      row.category,
+      row.severity,
+      row.message,
+      row.recovery_hint,
+      row.details,
+      row.created_at,
+      row.resolved_at,
+    ],
+  )
+}
+
+export async function dbListFailureEvents(
+  conversationId: string,
+  limit = 10,
+): Promise<FailureEventRow[]> {
+  const d = await getDb()
+  return d.select<FailureEventRow[]>(
+    `SELECT *
+     FROM failure_events
+     WHERE conversation_id = ?
+     ORDER BY created_at DESC
+     LIMIT ?`,
+    [conversationId, Math.max(1, limit)],
+  )
+}
+
+export async function dbResolveFailureEvents(conversationId: string): Promise<void> {
+  const d = await getDb()
+  await d.execute(
+    `UPDATE failure_events
+     SET resolved_at = ?
+     WHERE conversation_id = ?
+       AND resolved_at IS NULL`,
+    [Date.now(), conversationId],
   )
 }

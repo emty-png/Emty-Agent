@@ -52,30 +52,15 @@ function makeItemId(index: number, text: string): string {
  */
 export function createWriteTodoTool(onUpdate: (items: TodoItem[]) => void) {
   return tool({
-    description: `\
-Maintain a live task list in the UI to track your progress on complex work.
+    description: `Maintain a live task list in the UI for complex multi-step work.
 
-WHEN to use this tool:
-  • Any task requiring 3 or more sequential steps
-  • Before starting: write all items with done=false
-  • After completing each item: re-call with that item's done=true
-  • After the final item: all items should be done=true
-  • Never use for trivial single-step tasks
+Use for tasks with 3+ sequential steps. Never use for trivial single-step tasks.
 
-HOW it works:
-  Send the COMPLETE current list on every call — this fully replaces the previous state.
-  Do not send partial updates. Always include all items, updating done=true as you finish each one.
-  Call this tool immediately before beginning work so the user sees the plan.
-  An empty items array clears the todo list.
-
-GOOD examples:
-  Start: [{text:"Read existing auth code", done:false}, {text:"Write new OAuth handler", done:false}, {text:"Update tests", done:false}]
-  Mid:   [{text:"Read existing auth code", done:true},  {text:"Write new OAuth handler", done:false}, {text:"Update tests", done:false}]
-  Done:  [{text:"Read existing auth code", done:true},  {text:"Write new OAuth handler", done:true},  {text:"Update tests", done:true}]
-
-BAD examples:
-  Calling for "fix the typo in README" — too simple, no todo needed.
-  Sending only the changed items — always send the full list.`,
+How it works:
+- Call BEFORE starting work so the user sees the plan upfront.
+- Send the COMPLETE list every call — this fully replaces the previous state.
+- Start with all items done=false. After finishing each step, re-call with that item done=true.
+- Empty array clears the list.`,
 
     inputSchema: z.object({
       items: z

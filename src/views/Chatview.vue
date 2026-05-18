@@ -10,32 +10,44 @@ import WeatherBackground from '@/components/chat/Illu_1.vue'
 import MessageThread from '@/components/chat/MessageThread.vue'
 import SubAgentBanner from '@/components/chat/SubAgentBanner.vue'
 import TabBar from '@/components/chat/TabBar.vue'
+import GitPane from '@/components/git/GitPane.vue'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
+import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
+import { useGitPaneStore } from '@/stores/gitPane'
+import { useProjectStore } from '@/stores/project'
 
-const SPLIT_MIN = 28
-const SPLIT_MAX = 72
-const SPLIT_DEFAULT = 50
+const SPLIT_MIN = 35
+const SPLIT_MAX = 70
+const SPLIT_DEFAULT = 35
 
 const chat = useChatStore()
 const browser = useBrowserStore()
+const gitPane = useGitPaneStore()
+const project = useProjectStore()
 const { activeId, activeTab } = storeToRefs(chat)
 
 const containerRef = ref<HTMLElement | null>(null)
 const dragging = ref(false)
 
 const activeBrowserOwner = computed(() => browser.getOwner(activeId.value))
+const activeGitOwner = computed(() => gitPane.getOwner(activeId.value))
+const hasRightPane = computed(() => activeBrowserOwner.value.isPanelOpen || activeGitOwner.value.isPanelOpen)
+
+const resolvedWorkspacePath = computed(() => resolveTabWorkspacePath(activeTab.value, project.projectPath))
+
 const splitPercent = computed(() => {
+  if (activeGitOwner.value.isPanelOpen) {
+    const stored = activeGitOwner.value.splitPercent || SPLIT_DEFAULT
+    return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, stored))
+  }
   const stored = activeBrowserOwner.value.splitPercent || SPLIT_DEFAULT
   return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, stored))
 })
 const mainPaneStyle = computed(() => {
-  if (!activeBrowserOwner.value.isPanelOpen)
+  if (!hasRightPane.value)
     return undefined
 
-  // Use flex shorthand so this inline style wins over the CSS `flex: 1`.
-  // Setting only `width` doesn't work because flexbox uses flex-basis for
-  // sizing, not width — `flex: 0 0 X%` sets flex-basis directly.
   return {
     flex: `0 0 ${splitPercent.value}%`,
     maxWidth: `${splitPercent.value}%`,
@@ -43,7 +55,7 @@ const mainPaneStyle = computed(() => {
 })
 
 function onDragStart(event: MouseEvent) {
-  if (!activeBrowserOwner.value.isPanelOpen)
+  if (!hasRightPane.value)
     return
 
   event.preventDefault()
@@ -57,7 +69,10 @@ function onMouseMove(event: MouseEvent) {
   const rect = containerRef.value.getBoundingClientRect()
   const raw = ((event.clientX - rect.left) / rect.width) * 100
   const next = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, raw))
-  browser.setSplitPercent(activeId.value, next)
+  if (activeGitOwner.value.isPanelOpen)
+    gitPane.setSplitPercent(activeId.value, next)
+  else
+    browser.setSplitPercent(activeId.value, next)
 }
 
 function onMouseUp() {
@@ -288,7 +303,7 @@ const parentTabExists = computed(() => {
       </div>
 
       <div
-        v-if="activeBrowserOwner.isPanelOpen"
+        v-if="hasRightPane"
         class="chat-split-handle"
         :class="{ 'chat-split-handle--active': dragging }"
         @mousedown="onDragStart"
@@ -296,6 +311,10 @@ const parentTabExists = computed(() => {
 
       <div v-if="activeBrowserOwner.isPanelOpen" class="chat-browser-panel">
         <BrowserPane :owner-id="activeTab.id" />
+      </div>
+
+      <div v-else-if="activeGitOwner.isPanelOpen && resolvedWorkspacePath" class="chat-git-panel">
+        <GitPane :cwd="resolvedWorkspacePath" @close="gitPane.closePanel(activeId)" />
       </div>
     </div>
 
@@ -333,7 +352,7 @@ const parentTabExists = computed(() => {
   position: relative;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  z-index: 30;
 }
 
 .chat-browser-panel {
@@ -341,6 +360,14 @@ const parentTabExists = computed(() => {
   min-width: 320px;
   background: var(--color-bg-base);
   overflow: hidden;
+}
+
+.chat-git-panel {
+  flex: 1;
+  min-width: 320px;
+  background: var(--color-bg-base);
+  overflow: hidden;
+  position: relative;
 }
 
 .chat-split-handle {

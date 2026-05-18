@@ -3,7 +3,7 @@ import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '@/stores/settings'
 
 const s = useSettingsStore()
-const { contextCaching, autoContext } = storeToRefs(s)
+const { contextCaching, autoContext, memory } = storeToRefs(s)
 </script>
 
 <template>
@@ -44,6 +44,19 @@ const { contextCaching, autoContext } = storeToRefs(s)
             type="button"
             :aria-pressed="contextCaching.enabled"
             @click="contextCaching.enabled = !contextCaching.enabled"
+          ><span class="model-toggle-thumb" /></button>
+        </label>
+        <label class="settings-item">
+          <div class="settings-item-content">
+            <span class="settings-item-label">Agent memory</span>
+            <span class="settings-item-desc">Reuse global preferences and project history across future chats</span>
+          </div>
+          <button
+            class="model-toggle"
+            :class="{ 'model-toggle--on': memory.enabled }"
+            type="button"
+            :aria-pressed="memory.enabled"
+            @click="memory.enabled = !memory.enabled"
           ><span class="model-toggle-thumb" /></button>
         </label>
       </div>

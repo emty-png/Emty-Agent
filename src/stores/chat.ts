@@ -28,6 +28,7 @@ import {
   dbUpdateConversationTitle,
 } from '@/db/database'
 import { useBrowserStore } from '@/stores/browser'
+import { useProjectStore } from '@/stores/project'
 import { createSendMessage } from './chat/sendMessage'
 import { createEmptyDraft, createEmptyEstimatorState, makeId, newTab } from './chat/utils'
 
@@ -119,12 +120,23 @@ export const useChatStore = defineStore('chat', () => {
     nextTabs.forEach(snapshotConversationState)
   }, { deep: true })
 
+  watch(activeId, id => {
+    const tab = tabs.value.find(item => item.id === id)
+    if (!tab?.workspacePath)
+      return
+
+    const project = useProjectStore()
+    if (project.projectPath !== tab.workspacePath)
+      project.setProject(tab.workspacePath)
+  }, { immediate: true })
+
   // ── tab actions ───────────────────────────────────────────────────────────────
 
   function addTab(): void {
     if (tabs.value.length >= MAX_TABS)
       return
     const tab = newTab()
+    tab.workspacePath = useProjectStore().projectPath
     tabs.value.push(tab)
     activeId.value = tab.id
   }
@@ -172,7 +184,9 @@ export const useChatStore = defineStore('chat', () => {
     if (tabs.value.length === 1) {
       // Always keep at least one tab
       browser.disposeOwner(id)
-      tabs.value = [newTab()]
+      const tab = newTab()
+      tab.workspacePath = useProjectStore().projectPath
+      tabs.value = [tab]
       activeId.value = tabs.value[0]!.id
       return
     }
@@ -187,6 +201,8 @@ export const useChatStore = defineStore('chat', () => {
     conversationId: string
     title: string
     messages: Message[]
+    workspacePath?: string | null
+    workspaceMeta?: ChatTab['workspaceMeta']
   }): void {
     // Don't open the same conversation twice
     const existing = tabs.value.find(t => t.conversationId === payload.conversationId)
@@ -202,6 +218,9 @@ export const useChatStore = defineStore('chat', () => {
       title: payload.title,
       messages: payload.messages,
       conversationId: payload.conversationId,
+      workspacePath: payload.workspacePath ?? null,
+      workspaceMeta: payload.workspaceMeta ?? null,
+      workspaceLocked: payload.messages.length > 0,
       isStreaming: false,
       todos: [],
       modelUid: restoredState.modelUid,
@@ -213,6 +232,8 @@ export const useChatStore = defineStore('chat', () => {
 
     tabs.value.push(tab)
     activeId.value = tab.id
+    if (tab.workspacePath)
+      useProjectStore().setProject(tab.workspacePath)
 
     // Load checkpoints for this conversation
     import('./checkpoints').then(({ useCheckpointStore }) => {
@@ -256,6 +277,25 @@ export const useChatStore = defineStore('chat', () => {
     if (tab) {
       tab.draft = createEmptyDraft()
     }
+  }
+
+  function setTabWorkspace(
+    tabId: string,
+    patch: {
+      workspacePath: string | null
+      workspaceMeta?: ChatTab['workspaceMeta']
+      lock?: boolean
+    },
+  ): void {
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (!tab)
+      return
+
+    tab.workspacePath = patch.workspacePath
+    if ('workspaceMeta' in patch)
+      tab.workspaceMeta = patch.workspaceMeta ?? null
+    if (patch.lock === true)
+      tab.workspaceLocked = true
   }
 
   function setTabModel(tabId: string, modelUid: string | null): void {
@@ -425,6 +465,7 @@ export const useChatStore = defineStore('chat', () => {
     openConversation,
     updateTabDraft,
     clearTabDraft,
+    setTabWorkspace,
     setTabModel,
     setTabEstimatorState,
     submitAnswers,

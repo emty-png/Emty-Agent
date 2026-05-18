@@ -288,7 +288,7 @@ function isAbortError(error: unknown): boolean {
  *   error           → part.error
  *
  * Error handling:
- *   - AbortError  → silently swallowed (user cancelled)
+ *   - AbortError  → logged to console.warn, then returns (user cancelled)
  *   - All others  → calls onError callback then re-throws
  */
 export async function streamChat(opts: StreamChatOptions): Promise<void> {
@@ -306,7 +306,7 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     onFinish,
     onError,
     signal,
-    maxOutputTokens = 4096,
+    maxOutputTokens = 16_384,
     debugRaw = false,
   } = opts
 
@@ -398,8 +398,10 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     })
   }
   catch (error: unknown) {
-    if (isAbortError(error))
+    if (isAbortError(error)) {
+      console.warn('[streamChat] stream aborted:', extractErrorMessage(error))
       return
+    }
 
     const err = error instanceof Error ? error : new Error(extractErrorMessage(error))
     onError?.(err)

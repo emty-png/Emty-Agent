@@ -43,7 +43,7 @@ const displayMessages = computed(() => {
 </script>
 
 <template>
-  <TransitionGroup name="msg">
+  <TransitionGroup name="msg" :css="!isStreaming">
     <template v-for="(msg, msgIdx) in displayMessages" :key="msg.id">
       <RestorePoint
         v-if="!isSubAgent && msg.role === 'user' && checkpointAtIndex(msgIdx)"

@@ -101,6 +101,10 @@ export interface AutoContextConfig {
   enabled: boolean
 }
 
+export interface MemoryConfig {
+  enabled: boolean
+}
+
 export interface AgentConfig {
   permissionMode: ToolPermissionMode
 }

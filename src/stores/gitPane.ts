@@ -1,0 +1,79 @@
+/**
+ * src/stores/gitPane.ts
+ *
+ * Pinia store for the Git GUI pane state.
+ * Mirrors the browser store's panel toggle pattern — each tab (owner)
+ * gets its own open/close + split percent state.
+ *
+ * The git pane and browser pane are mutually exclusive:
+ * opening one closes the other.
+ */
+
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { useBrowserStore } from './browser'
+
+export interface GitPaneOwnerState {
+  isPanelOpen: boolean
+  splitPercent: number
+}
+
+const DEFAULT_SPLIT_PERCENT = 50
+
+function createOwnerState(): GitPaneOwnerState {
+  return {
+    isPanelOpen: false,
+    splitPercent: DEFAULT_SPLIT_PERCENT,
+  }
+}
+
+export const useGitPaneStore = defineStore('gitPane', () => {
+  const owners = ref<Record<string, GitPaneOwnerState>>({})
+
+  function ensureOwner(ownerId: string): GitPaneOwnerState {
+    owners.value[ownerId] ??= createOwnerState()
+    return owners.value[ownerId]!
+  }
+
+  function getOwner(ownerId: string): GitPaneOwnerState {
+    return ensureOwner(ownerId)
+  }
+
+  function openPanel(ownerId: string): void {
+    // Mutual exclusivity: close browser pane first
+    const browser = useBrowserStore()
+    browser.closePanel(ownerId)
+
+    ensureOwner(ownerId).isPanelOpen = true
+  }
+
+  function closePanel(ownerId: string): void {
+    ensureOwner(ownerId).isPanelOpen = false
+  }
+
+  function togglePanel(ownerId: string): void {
+    const owner = ensureOwner(ownerId)
+    if (owner.isPanelOpen)
+      closePanel(ownerId)
+    else
+      openPanel(ownerId)
+  }
+
+  function setSplitPercent(ownerId: string, percent: number): void {
+    ensureOwner(ownerId).splitPercent = percent
+  }
+
+  function disposeOwner(ownerId: string): void {
+    delete owners.value[ownerId]
+  }
+
+  return {
+    owners,
+    getOwner,
+    openPanel,
+    closePanel,
+    togglePanel,
+    setSplitPercent,
+    disposeOwner,
+  }
+})

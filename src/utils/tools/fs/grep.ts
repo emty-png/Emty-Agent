@@ -84,9 +84,7 @@ function buildFuzzyRegex(pattern: string, flags: string): RegExp {
 
 export function createGrepTool(projectPath: string) {
   return tool({
-    description: `Search file contents using a regular expression.
-Returns matching lines with file paths and line numbers.
-Use this to find where a function is defined, locate usages, find config values, etc.`,
+    description: 'Search file contents with a regex. Returns matching lines with file paths and line numbers. Use to find definitions, usages, config values, etc.',
     inputSchema: z.object({
       pattern: z.string().describe('Regular expression. Standard JS regex syntax. Case-insensitive by default.'),
       path: z.string().optional().describe('Directory or file to search, relative to project root. Default: entire project.'),

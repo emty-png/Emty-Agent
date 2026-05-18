@@ -148,10 +148,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               >
                 <div class="item-left">
                   <span class="item-dot" :class="{ 'item-dot--active': skill.enabled }" />
-                  <div class="item-stack">
-                    <span class="item-name">{{ skill.title || skill.name }}</span>
-                    <span v-if="skill.description" class="item-desc">{{ skill.description }}</span>
-                  </div>
+                  <span class="item-name">{{ skill.title || skill.name }}</span>
                 </div>
                 <Check v-if="skill.enabled" :size="14" class="item-check" />
               </button>
@@ -170,7 +167,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .services-dropdown {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  height: 100%;
   -webkit-app-region: no-drag;
 }
 
@@ -179,24 +177,23 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid transparent;
-  border-radius: 7px;
+  width: 46px;
+  height: 100%;
+  border: none;
+  border-radius: 0;
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
   transition:
     background 120ms ease,
-    border-color 120ms ease,
     color 120ms ease;
 }
 
 .trigger-btn:hover,
 .trigger-btn--open {
-  background: var(--color-bg-hover);
-  border-color: var(--color-border-subtle);
-  color: var(--color-text-primary);
+  background: var(--color-accent-muted);
+  border-color: transparent;
+  color: var(--color-accent-text);
 }
 
 .trigger-btn:active {
@@ -229,7 +226,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   transform: translateX(-50%);
   transform-origin: top center;
   width: 300px;
-  max-height: 280px;
+  height: 165px; /* Fixed consistent height */
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
   border-radius: 12px;
@@ -241,54 +238,72 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   flex-direction: column;
   overflow: hidden;
   z-index: 10000;
-  will-change: transform, opacity;
 }
 
 /* ── Tabs ───────────────────────────────────────────────────────────────────── */
 .picker-tabs {
+  position: relative;
   display: flex;
-  padding: 8px 8px 0;
-  gap: 4px;
+  padding: 8px 12px 0;
+  gap: 16px; /* Spacing between inline tabs */
   background: transparent;
-  border-bottom: 1px solid var(--color-border-mid);
+  box-shadow: inset 0 -1px 0 var(--color-border-mid); /* Ensures consistent bottom border */
   flex-shrink: 0;
 }
 
 .picker-tab {
-  flex: 1;
-  height: 30px;
+  position: relative;
+  height: 32px;
   border: none;
-  border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--color-text-tertiary);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: all 150ms ease;
-  padding-bottom: 2px; /* optical balance for the border */
+  transition: color 150ms ease;
+  padding: 0 2px 2px;
+}
+
+.picker-tab::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--color-text-primary);
+  border-radius: 2px 2px 0 0;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .picker-tab:hover {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
 }
 
 .picker-tab--active {
   color: var(--color-text-primary);
-  border-bottom-color: var(--color-accent);
+  font-weight: 600;
+}
+
+.picker-tab--active::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .tab-badge {
   background: var(--color-bg-hover);
   color: var(--color-text-secondary);
-  padding: 1px 6px;
-  border-radius: 10px;
-  font-size: 9.5px;
-  font-weight: 700;
+  padding: 1.5px 7px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
   line-height: 1.4;
   transition: all 150ms ease;
 }
@@ -303,11 +318,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   flex: 1;
   overflow-y: auto;
   padding: 6px 0 8px;
+  display: flex;
+  flex-direction: column;
 }
 
 .picker-list {
   display: flex;
   flex-direction: column;
+  flex: 1;
 }
 
 .group-label {
@@ -364,13 +382,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   flex: 1;
 }
 
-.item-stack {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 2px;
-}
-
 .item-dot {
   width: 6px;
   height: 6px;
@@ -393,14 +404,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   text-overflow: ellipsis;
 }
 
-.item-desc {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .item-meta {
   font-size: 10px;
   color: var(--color-text-tertiary);
@@ -414,23 +417,24 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 /* ── Empty State ────────────────────────────────────────────────────────────── */
 .picker-empty {
-  padding: 32px 20px;
+  margin: auto; /* Centers perfectly in the flex container */
+  padding: 10px 20px;
   text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .picker-empty-title {
   margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .picker-empty-hint {
   margin: 0;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--color-text-tertiary);
   line-height: 1.5;
 }

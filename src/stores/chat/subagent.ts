@@ -68,6 +68,9 @@ interface SettingsSnapshot {
   autoContext: {
     enabled: boolean
   }
+  memory: {
+    enabled: boolean
+  }
   agent: {
     permissionMode: 'ask' | 'auto'
   }
@@ -187,6 +190,14 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
 
   // Tool set scoped by personality
   const projectPath = project.projectPath
+  const [
+    { inspectWorkspace, buildWorkspacePromptContext },
+    { buildMemoryPromptContext },
+  ] = await Promise.all([
+    import('@/utils/worktrees'),
+    import('@/utils/memory'),
+  ])
+  const workspace = await inspectWorkspace(projectPath)
   let tools: Record<string, unknown> = {}
   const browserTools = filterDisabledTools(
     createBrowserTools(subTab.id) as Record<string, unknown>,
@@ -369,6 +380,8 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     autoContext: settings.autoContext,
     disabledSkillIds: settings.disabledSkillIds,
     supportsToolCalls: Object.keys(mergedTools).length > 0,
+    workspaceContext: buildWorkspacePromptContext(workspace),
+    memoryContext: await buildMemoryPromptContext(settings.memory, workspace),
   })
 
   cacheRuntime.promptFingerprint = promptBuild.promptFingerprint

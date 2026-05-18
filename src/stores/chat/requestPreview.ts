@@ -10,6 +10,7 @@ import { buildMcpAliasedTools } from '@/utils/tools/mcpAliases'
 import { buildMentionContext } from './mentions'
 import { normalizeContentParts, normalizeModelMessages } from './requestPreviewParts'
 import { toModelMessages } from './utils'
+import { resolveTabWorkspacePath } from './workspace'
 
 export type EstimatorProviderConfig = {
   type: 'openai'
@@ -87,6 +88,7 @@ export async function buildChatRequestPreview(options: {
   const { tab, content, attachments = [] } = options
   const settings = useSettingsStore()
   const project = useProjectStore()
+  const workspacePath = resolveTabWorkspacePath(tab, project.projectPath)
 
   const activeModel = resolveActiveModel(tab, settings)
   if (!activeModel)
@@ -105,11 +107,19 @@ export async function buildChatRequestPreview(options: {
       buildCachedSystemPrompt,
       buildContextCachingProviderOptions,
     },
+    { inspectWorkspace, buildWorkspacePromptContext },
+    { buildMemoryPromptContext },
+    { buildRecoveryPromptContext },
   ] = await Promise.all([
     import('@/utils/ai'),
     import('@/utils/agentContext'),
     import('@/utils/contextCaching'),
+    import('@/utils/worktrees'),
+    import('@/utils/memory'),
+    import('@/utils/failureRecovery'),
   ])
+
+  const workspace = await inspectWorkspace(workspacePath)
 
   const text = content.trim()
   const maxOutputTokens = activeModel.supportsThinking
@@ -124,18 +134,26 @@ export async function buildChatRequestPreview(options: {
     settings: settings.contextCaching,
     providerId: activeModel.providerId,
     modelId: activeModel.id,
-    projectPath: project.projectPath,
+    projectPath: workspacePath,
     scope: 'chat:build',
     promptFingerprint: '',
   }
 
+  const [memoryContext, recoveryContext] = await Promise.all([
+    buildMemoryPromptContext(settings.memory, workspace),
+    buildRecoveryPromptContext(tab.conversationId),
+  ])
+
   const promptBuild = await buildAgentSystemPrompt({
-    basePrompt: buildSystemPrompt(project.projectPath, 'build', osInfo),
-    projectPath: project.projectPath,
+    basePrompt: buildSystemPrompt(workspacePath, 'build', osInfo),
+    projectPath: workspacePath,
     requestText: text,
     autoContext: settings.autoContext,
     disabledSkillIds: settings.disabledSkillIds,
     supportsToolCalls: activeModel.supportsToolCalls,
+    workspaceContext: buildWorkspacePromptContext(workspace),
+    memoryContext,
+    recoveryContext,
   })
 
   cacheRuntime.promptFingerprint = promptBuild.promptFingerprint
@@ -152,7 +170,7 @@ export async function buildChatRequestPreview(options: {
     },
   ]
 
-  const mentionContext = await buildMentionContext(text, project.projectPath).catch(() => '')
+  const mentionContext = await buildMentionContext(text, workspacePath).catch(() => '')
   const apiMessages = applyMentionContextToMessages(
     toModelMessages(draftMessages),
     mentionContext,
@@ -178,7 +196,8 @@ export async function buildChatRequestPreview(options: {
 
   const toolDefinitions = activeModel.supportsToolCalls
     ? await buildToolDefinitions({
-        projectPath: project.projectPath,
+        projectPath: workspacePath,
+        memoryEnabled: settings.memory.enabled,
         mcpServers: settings.mcpServers,
         disabledToolIds: settings.disabledToolIds,
         ...(osInfo?.shell ? { shell: osInfo.shell } : {}),
@@ -339,14 +358,16 @@ function buildReasoningMessages(messages: Message[]): PreviewPromptMessage[] {
 
 async function buildToolDefinitions(options: {
   projectPath: string | null
+  memoryEnabled: boolean
   mcpServers: McpServerConfig[]
   disabledToolIds: string[]
   shell?: 'sh' | 'powershell'
 }): Promise<PromptToolDefinition[]> {
-  const { projectPath, mcpServers, disabledToolIds, shell } = options
+  const { projectPath, memoryEnabled, mcpServers, disabledToolIds, shell } = options
   const [
     { createFilesystemTools },
     { createQuestionsTool },
+    { createMemoryTools },
     { createShellTools },
     { createSkillTools },
     { createSpawnSubAgentTool },
@@ -356,6 +377,7 @@ async function buildToolDefinitions(options: {
   ] = await Promise.all([
     import('@/utils/tools/filesystem'),
     import('@/utils/tools/questions'),
+    import('@/utils/tools/memory'),
     import('@/utils/tools/shell'),
     import('@/utils/tools/skills'),
     import('@/utils/tools/subagent'),
@@ -375,6 +397,7 @@ async function buildToolDefinitions(options: {
   const toolSet: ToolSet = {
     ask_questions: createQuestionsTool((_questions, resolve) => resolve([])),
     write_todo: createWriteTodoTool(() => {}),
+    ...createMemoryTools(memoryEnabled, null),
     ...createSkillTools(projectPath),
     spawn_subagent: createSpawnSubAgentTool(noopSpawn, () => {}),
     ...createWebTools(),

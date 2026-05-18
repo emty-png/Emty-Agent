@@ -19,9 +19,7 @@ function formatListing(
 
 export function createListDirectoryTool(projectPath: string) {
   return tool({
-    description: `List files and directories inside a folder in the project.
-Skips common build artefacts (node_modules, dist, .git, etc.) unless showHidden is true.
-Call this before assuming anything about project structure.`,
+    description: 'List files and directories in a project folder. Build artifacts (node_modules, dist, .git, etc.) skipped by default. Call this before making assumptions about project structure.',
     inputSchema: z.object({
       path: z.string().describe('Directory path relative to the project root. Use "." for root.'),
       showHidden: z.boolean().optional().describe('Include dotfiles/dotdirs. Default: false.'),

@@ -2,7 +2,9 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
 import { Copy, FolderOpen, Minus, Square, X } from 'lucide-vue-next'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useChatStore } from '@/stores/chat'
+import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useProjectStore } from '@/stores/project'
 import ServicesDropdown from './ServicesDropdown.vue'
 
@@ -14,6 +16,14 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const project = useProjectStore()
+const chat = useChatStore()
+const displayProjectPath = computed(() => resolveTabWorkspacePath(chat.activeTab, project.projectPath))
+const displayProjectName = computed(() => {
+  const path = displayProjectPath.value
+  if (!path)
+    return null
+  return path.replace(/[\\/]+$/, '').split(/[/\\]/).pop() ?? null
+})
 
 // ── window state ──────────────────────────────────────────────────────────────
 const appWindow = getCurrentWindow()
@@ -81,10 +91,10 @@ async function pickProject() {
 
       <span class="titlebar-title">{{ props.title }}</span>
 
-      <template v-if="project.projectName">
+      <template v-if="displayProjectName">
         <div class="title-divider" aria-hidden="true" />
-        <span class="titlebar-project" :title="project.projectPath ?? ''">
-          {{ project.projectName }}
+        <span class="titlebar-project" :title="displayProjectPath ?? ''">
+          {{ displayProjectName }}
         </span>
       </template>
     </div>

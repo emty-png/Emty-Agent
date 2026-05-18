@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { CommandEntry } from '@/composables/useSlashCommand'
 import type { Attachment } from '@/stores/chat/attachment-types'
-import { ArrowUp, ChevronDown, Plus, Shield, Square, WandSparkles } from 'lucide-vue-next'
+import { ArrowUp, ChevronDown, GitBranch, Plus, Shield, Square, WandSparkles } from 'lucide-vue-next'
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import AtMentionDropdown from '@/components/chat/AtMentionDropdown.vue'
 import AttachmentPreview from '@/components/chat/AttachmentPreview.vue'
@@ -9,10 +10,14 @@ import ChatInputEstimator from '@/components/chat/ChatInputEstimator.vue'
 import ModelPicker from '@/components/chat/ModelPicker.vue'
 import PermissionOverlay from '@/components/chat/PermissionOverlay.vue'
 import QuestionOverlay from '@/components/chat/QuestionOverlay.vue'
+import SlashCommandDropdown from '@/components/chat/SlashCommandDropdown.vue'
 import TodoOverlay from '@/components/chat/TodoOverlay.vue'
+import WorktreePicker from '@/components/chat/WorktreePicker.vue'
 import { useAtMention } from '@/composables/useAtMention'
+import { useSlashCommand } from '@/composables/useSlashCommand'
 import { useChatStore } from '@/stores/chat'
 import { isImageMime } from '@/stores/chat/attachment-types'
+import { canChangeWorkspace, resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
 import { openFileDialog, readFileAsAttachment } from '@/utils/attachments'
@@ -44,8 +49,8 @@ function hideTip() {
 
 const project = useProjectStore()
 const settings = useSettingsStore()
-const projectPath = computed(() => project.projectPath)
 const chat = useChatStore()
+const projectPath = computed(() => resolveTabWorkspacePath(chat.activeTab, project.projectPath))
 
 // ── Permission mode dropdown ─────────────────────────────────────────────
 const permOpen = ref(false)
@@ -70,6 +75,106 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const backdropRef = ref<HTMLElement | null>(null)
 
 const mention = useAtMention(textareaRef, text, projectPath)
+const slash = useSlashCommand(textareaRef, text, projectPath)
+
+const workspacePickerOpen = ref(false)
+const showWorkspaceButton = computed(() => canChangeWorkspace(chat.activeTab) && !!projectPath.value && !props.isStreaming)
+const activeWorkspaceLabel = computed(() => {
+  const path = projectPath.value
+  if (!path)
+    return ''
+  return chat.activeTab.workspaceMeta?.label ?? path.replace(/[\\/]+$/, '').split(/[/\\]/).pop() ?? path
+})
+const activeWorkspaceDirty = computed(() => Boolean(chat.activeTab.workspaceMeta && !chat.activeTab.workspaceMeta.isClean))
+
+async function handleWorkspaceSelect(path: string) {
+  const { inspectWorkspace } = await import('@/utils/worktrees')
+  const snapshot = await inspectWorkspace(path)
+  chat.setTabWorkspace(chat.activeTab.id, {
+    workspacePath: path,
+    workspaceMeta: snapshot,
+  })
+  project.setProject(path)
+  workspacePickerOpen.value = false
+}
+
+const INIT_PROMPT = `Analyse this repository and generate or update \`AGENTS.md\` at the project root.
+
+The goal is a compact, high-signal instruction file that helps future AI agent sessions ramp up quickly and avoid common mistakes. Every sentence should answer: "Would an agent likely get this wrong without being told?" If not, leave it out.
+
+## How to investigate
+
+Work through the highest-value sources first:
+- Root README, manifests (package.json, Cargo.toml, pyproject.toml, go.mod, build.gradle, etc.), workspace config, lockfiles
+- Build, test, lint, formatter, typecheck, and codegen config
+- CI workflows (.github/workflows/, .gitlab-ci.yml, Makefile, Taskfile, etc.) and pre-commit / task-runner config
+- Any existing instruction files: AGENTS.md, CLAUDE.md, .cursor/rules/, .cursorrules, .github/copilot-instructions.md
+- A small number of representative source files to understand how the system is wired together — prefer entrypoints, routers, and bootstrap files over random leaf files
+
+Prefer executable sources of truth over prose. If docs conflict with config or scripts, trust the executable source.
+
+## What to extract
+
+Capture only the facts that require reading multiple files to infer:
+
+**Commands**
+- Exact commands for: dev server, build, test (full suite and single test), lint, typecheck, format, codegen, database migrations, deploy
+- Non-obvious flags, required environment variables, or setup steps that must happen first
+- Required ordering when it matters: e.g. "always run lint before typecheck before test"
+
+**Architecture**
+- Monorepo or multi-package structure: which directories own which concerns, real app entrypoints
+- How the major pieces connect: API layer, data layer, background jobs, frontend/backend split
+- Any generated code, build artifacts, or files that must never be edited by hand
+
+**Toolchain & framework quirks**
+- Non-default framework conventions or config that differ from what an agent would assume
+- Special environment loading (dotenv files, secret managers, feature flags)
+- Codegen or migration workflows that must be run after schema/model changes
+
+**Testing**
+- How to run a single test or a single package in isolation
+- Required services, fixtures, or databases before tests can run
+- Expensive, flaky, or integration-only test suites — and how to skip them during dev
+
+**Style & conventions**
+- Linting and formatting rules that differ from the language default (e.g. no semicolons, tabs vs spaces, import order)
+- Naming conventions, file structure expectations, or PR/commit conventions worth preserving
+
+## Questions
+
+Only ask the user questions if the repository genuinely cannot answer something important. Use the questions tool for a single short batch at most.
+
+Good reasons to ask:
+- Undocumented team conventions or branch/PR/release expectations
+- Missing setup steps or test prerequisites that are known but not written anywhere
+
+Do not ask about anything the repository already makes clear.
+
+## Writing rules
+
+- Use short sections and bullet points — keep it scannable
+- Include exact commands, not paraphrases
+- Architecture notes should explain non-obvious wiring, not describe what files exist
+- Omit generic advice, tutorials, exhaustive file trees, and anything speculative
+- If the repo is simple, keep the file simple. If it is large, summarise the few structural facts that actually change how an agent should work
+
+If \`AGENTS.md\` already exists at the root, improve it in place. Preserve verified, useful guidance. Remove fluff, stale claims, and anything contradicted by the current codebase. Reconcile it with what you actually find.\
+`
+
+function handleSlashSelect(entry: CommandEntry) {
+  if (entry.id === 'new') {
+    text.value = ''
+    chat.closeTab(chat.activeId)
+    slash.close()
+  }
+  else if (entry.id === 'init') {
+    slash.replaceWithText(INIT_PROMPT)
+  }
+  else {
+    slash.replaceWithText(`${entry.label} `)
+  }
+}
 
 // ── Mentions syntax highlighting backdrop ─────────────────────────────────
 interface MsgPart { type: 'text' | 'mention'; value: string }
@@ -158,6 +263,8 @@ function submit() {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  if (slash.handleKeydown(e, handleSlashSelect))
+    return
   if (mention.handleKeydown(e))
     return
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -170,6 +277,7 @@ function onInput(e: Event) {
   const el = e.target as HTMLTextAreaElement
   el.style.height = 'auto'
   el.style.height = `${Math.min(el.scrollHeight, 180)}px`
+  slash.handleInput(e)
   mention.handleInput(e)
   syncScroll()
 }
@@ -179,7 +287,7 @@ const canSend = computed(() => (text.value.trim().length > 0 || attachments.valu
 const hasPermissionPrompt = computed(() => chat.activeTab.pendingPermissions.length > 0)
 const hasQuestions = computed(() => !!chat.activeTab.pendingQuestions)
 const hasTodos = computed(() => chat.activeTab.todos.length > 0)
-const showTodos = computed(() => hasTodos.value && !hasPermissionPrompt.value && !hasQuestions.value && !mention.isOpen.value)
+const showTodos = computed(() => hasTodos.value && !hasPermissionPrompt.value && !hasQuestions.value && !mention.isOpen.value && !slash.isOpen.value)
 
 watch(
   () => [chat.activeTab.id, text.value],
@@ -190,6 +298,32 @@ watch(
     textareaRef.value.style.height = 'auto'
     textareaRef.value.style.height = `${Math.min(textareaRef.value.scrollHeight, 180)}px`
     syncScroll()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [chat.activeTab.id, props.isStreaming],
+  () => {
+    if (props.isStreaming)
+      workspacePickerOpen.value = false
+  },
+)
+
+watch(
+  () => [chat.activeTab.id, projectPath.value],
+  async () => {
+    if (!projectPath.value || chat.activeTab.subAgent)
+      return
+    if (chat.activeTab.workspaceLocked && chat.activeTab.workspacePath && chat.activeTab.workspacePath !== projectPath.value)
+      return
+
+    const { inspectWorkspace } = await import('@/utils/worktrees')
+    const snapshot = await inspectWorkspace(projectPath.value)
+    chat.setTabWorkspace(chat.activeTab.id, {
+      workspacePath: projectPath.value,
+      workspaceMeta: snapshot,
+    })
   },
   { immediate: true },
 )
@@ -213,6 +347,18 @@ watch(
         @select="mention.selectEntry($event)"
         @hover="mention.setSelectedIdx($event)"
         @close="mention.close()"
+      />
+    </Transition>
+    <Transition name="overlay">
+      <SlashCommandDropdown
+        v-if="slash.isOpen.value && !hasQuestions && !hasPermissionPrompt"
+        :entries="slash.filteredCommands.value"
+        :selected-idx="slash.selectedIdx.value"
+        :loading="slash.loading.value"
+        :query="slash.slashQuery.value"
+        @select="handleSlashSelect"
+        @hover="slash.setSelectedIdx($event)"
+        @close="slash.close()"
       />
     </Transition>
     <Transition name="overlay">
@@ -276,6 +422,20 @@ watch(
           <Plus :size="14" :stroke-width="2" />
         </button>
 
+        <button
+          v-if="showWorkspaceButton"
+          class="workspace-btn"
+          :class="{ 'workspace-btn--dirty': activeWorkspaceDirty }"
+          aria-label="Choose worktree"
+          :disabled="props.isStreaming"
+          @click="workspacePickerOpen = true"
+          @mouseenter="showTip($event, 'Choose worktree')"
+          @mouseleave="hideTip"
+        >
+          <GitBranch :size="14" :stroke-width="2" />
+          <span v-if="activeWorkspaceLabel" class="workspace-name">{{ activeWorkspaceLabel }}</span>
+        </button>
+
         <!-- Permission mode toggle -->
         <div class="perm-picker-wrap">
           <button
@@ -300,7 +460,7 @@ watch(
           <Transition name="perm-dd">
             <div v-if="permOpen" class="perm-dropdown">
               <button
-                class="perm-option"
+                class="perm-option perm-option--ask"
                 :class="{ 'perm-option--active': settings.agent.permissionMode === 'ask' }"
                 @click="selectPerm('ask')"
               >
@@ -308,7 +468,7 @@ watch(
                 <span>Ask Permission</span>
               </button>
               <button
-                class="perm-option"
+                class="perm-option perm-option--auto"
                 :class="{ 'perm-option--active': settings.agent.permissionMode === 'auto' }"
                 @click="selectPerm('auto')"
               >
@@ -319,6 +479,14 @@ watch(
           </Transition>
           <div v-if="permOpen" class="perm-backdrop" @click="permOpen = false" />
         </div>
+
+        <WorktreePicker
+          v-if="workspacePickerOpen"
+          :project-path="projectPath"
+          :selected-path="chat.activeTab.workspacePath ?? projectPath"
+          @select="handleWorkspaceSelect"
+          @close="workspacePickerOpen = false"
+        />
 
         <div class="tool-spacer" />
 
@@ -581,6 +749,41 @@ watch(
   transform: none;
 }
 
+.workspace-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 120ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.workspace-btn:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-mid);
+  border-radius: 10px;
+  color: var(--color-text-secondary);
+}
+
+.workspace-btn--dirty {
+  color: var(--color-accent-text);
+}
+
+.workspace-name {
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .action-btn {
   display: flex;
   align-items: center;
@@ -741,7 +944,7 @@ watch(
   bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 164px;
+  min-width: 160px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
   border-radius: 12px;
@@ -754,17 +957,16 @@ watch(
   z-index: 10000;
   display: flex;
   flex-direction: column;
-  will-change: transform, opacity;
+  gap: 2px;
 }
 
 .perm-option {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: calc(100% - 12px);
-  margin: 1px 6px;
+  width: 100%;
   height: 34px;
-  padding-inline: 8px;
+  padding-inline: 10px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
@@ -797,6 +999,17 @@ watch(
   border-color: var(--color-accent);
 }
 
+.perm-option--auto.perm-option--active {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  border-color: var(--color-danger);
+  color: var(--color-text-primary);
+}
+
+.perm-option--auto.perm-option--active:hover {
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
+  border-color: var(--color-danger);
+}
+
 .perm-backdrop {
   position: fixed;
   inset: 0;
@@ -825,6 +1038,7 @@ watch(
 
 .perm-dd-enter-to,
 .perm-dd-leave-from {
+  opacity: 1;
   transform: translateX(-50%);
   transform-origin: bottom center;
 }

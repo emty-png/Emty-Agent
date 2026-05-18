@@ -3,6 +3,8 @@ import { join } from '@tauri-apps/api/path'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { nextTick } from 'vue'
 import { useBrowserStore } from '@/stores/browser'
+import { useChatStore } from '@/stores/chat'
+import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useProjectStore } from '@/stores/project'
 import {
   closeSurface,
@@ -68,12 +70,17 @@ function dataUriToBytes(dataUri: string): Uint8Array {
   return bytes
 }
 
-async function saveScreenshotToProject(url: string, dataUri: string): Promise<string | null> {
+async function saveScreenshotToProject(ownerId: string, url: string, dataUri: string): Promise<string | null> {
   const project = useProjectStore()
-  if (!project.projectPath)
+  const chat = useChatStore()
+  const workspacePath = resolveTabWorkspacePath(
+    chat.tabs.find(tab => tab.id === ownerId),
+    project.projectPath,
+  )
+  if (!workspacePath)
     return null
 
-  const filePath = await join(project.projectPath, screenshotFileName(url))
+  const filePath = await join(workspacePath, screenshotFileName(url))
   await writeFile(filePath, dataUriToBytes(dataUri))
   return filePath
 }
@@ -277,7 +284,7 @@ export async function browserAct(
 export async function browserScreenshot(ownerId: string) {
   const page = requireActivePage(ownerId)
   const dataUri = await screenshotSurface(page.sessionId)
-  const savedPath = await saveScreenshotToProject(page.url, dataUri)
+  const savedPath = await saveScreenshotToProject(ownerId, page.url, dataUri)
   return {
     pageId: page.id,
     url: page.url,

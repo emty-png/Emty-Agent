@@ -9,11 +9,13 @@ import {
   dbInsertConversation,
   dbInsertMessage,
   dbTouchConversation,
+  dbUpdateConversationWorkspace,
   dbUpdateMessage,
 } from '@/db/database'
 import { buildMentionContext } from './mentions'
 import { runSubAgentStream } from './subagent'
 import { makeId, toModelMessages } from './utils'
+import { resolveTabWorkspacePath } from './workspace'
 
 // How often (ms) to write partial content to the DB during a text/reasoning stream.
 // Tool-call and tool-result events always flush immediately regardless of this value.
@@ -46,10 +48,15 @@ export function createSendMessage(
       { createBrowserTools, browserToolDisplayLabel },
       { createMcpTools, mcpToolDisplayLabel },
       { createWriteTodoTool, todosToolDisplayLabel },
+      { createMemoryTools, memoryToolDisplayLabel },
       { filterDisabledTools },
       { wrapToolSetWithPermissions },
       { createSpawnSubAgentTool, subAgentDisplayLabel, buildSubAgentSystemPrompt },
       { getOsInfo },
+      { inspectWorkspace, buildWorkspacePromptContext },
+      { buildMemoryPromptContext, saveConversationTurnMemory },
+      { newReplayId, startReplayCapture, finishReplayCapture },
+      { buildRecoveryPromptContext, classifyFailure, recordFailureEvent, resolveConversationFailures },
     ] = await Promise.all([
       import('@/utils/ai'),
       import('@/utils/agentContext'),
@@ -64,14 +71,22 @@ export function createSendMessage(
       import('@/utils/tools/browser'),
       import('@/utils/tools/mcp'),
       import('@/utils/tools/todos'),
+      import('@/utils/tools/memory'),
       import('@/utils/tools/catalog'),
       import('@/utils/tools/permissions'),
       import('@/utils/tools/subagent'),
       import('@/utils/os'),
+      import('@/utils/worktrees'),
+      import('@/utils/memory'),
+      import('@/utils/evals'),
+      import('@/utils/failureRecovery'),
     ])
 
     const settings = useSettingsStore()
     const project = useProjectStore()
+    const requestedWorkspacePath = resolveTabWorkspacePath(tab, project.projectPath)
+    const workspaceSnapshot = await inspectWorkspace(requestedWorkspacePath)
+    const effectiveProjectPath = workspaceSnapshot?.path ?? requestedWorkspacePath ?? null
 
     const resolvedModelUid = tab.modelUid ?? settings.activeModelUid
     const activeModel = settings.enabledModels.find((m: { uid: string }) => m.uid === resolvedModelUid) ?? settings.activeModel
@@ -114,6 +129,9 @@ export function createSendMessage(
       const todoLabel = todosToolDisplayLabel(name, args)
       if (todoLabel !== `Called ${name}`)
         return todoLabel
+      const memoryLabel = memoryToolDisplayLabel(name, args)
+      if (memoryLabel !== `Called ${name}`)
+        return memoryLabel
       return subAgentDisplayLabel(name, args)
     }
 
@@ -128,6 +146,11 @@ export function createSendMessage(
     const text = content.trim()
 
     const tabId = tab.id
+    tab.workspacePath = effectiveProjectPath
+    tab.workspaceMeta = workspaceSnapshot
+    tab.workspaceLocked = true
+    if (effectiveProjectPath && project.projectPath !== effectiveProjectPath)
+      project.setProject(effectiveProjectPath)
 
     tab.todos = []
     tab.draft = {
@@ -152,11 +175,32 @@ export function createSendMessage(
     if (!tab.conversationId) {
       const title = text.slice(0, 60) + (text.length > 60 ? '\u2026' : '')
       const convId = makeId()
-      await dbInsertConversation({ id: convId, title, created_at: now, updated_at: now })
+      await dbInsertConversation({
+        id: convId,
+        title,
+        created_at: now,
+        updated_at: now,
+        workspace_path: effectiveProjectPath,
+        workspace_meta: workspaceSnapshot ? JSON.stringify(workspaceSnapshot) : null,
+      })
       tab.conversationId = convId
       tab.title = title
       const { useHistoryStore } = await import('@/stores/history')
-      useHistoryStore().prepend({ id: convId, title, created_at: now, updated_at: now, msg_count: 0 })
+      useHistoryStore().prepend({
+        id: convId,
+        title,
+        created_at: now,
+        updated_at: now,
+        msg_count: 0,
+        workspace_path: effectiveProjectPath,
+        workspace_meta: workspaceSnapshot ? JSON.stringify(workspaceSnapshot) : null,
+      })
+    }
+    else {
+      await dbUpdateConversationWorkspace(tab.conversationId, {
+        workspace_path: effectiveProjectPath,
+        workspace_meta: workspaceSnapshot ? JSON.stringify(workspaceSnapshot) : null,
+      }).catch(() => { })
     }
 
     const userMsg: Message = {
@@ -168,7 +212,7 @@ export function createSendMessage(
     }
     tab.messages.push(userMsg)
 
-    const mentionContext = await buildMentionContext(text, project.projectPath).catch(() => '')
+    const mentionContext = await buildMentionContext(text, effectiveProjectPath).catch(() => '')
     if (mentionContext.trim())
       userMsg.mentionContext = mentionContext
 
@@ -238,6 +282,19 @@ export function createSendMessage(
     catch (e) {
       assistantMsg.error = `Failed to initialise model: ${e instanceof Error ? e.message : String(e)}`
       tab.isStreaming = false
+      await dbUpdateMessage(assistantId, {
+        content: assistantMsg.error,
+        is_complete: 1,
+      }).catch(() => { })
+      const failure = classifyFailure(new Error(assistantMsg.error))
+      await recordFailureEvent({
+        replayId: null,
+        conversationId: tab.conversationId,
+        category: failure.category,
+        summary: failure.summary,
+        recoveryHint: failure.recoveryHint,
+        severity: failure.severity,
+      }).catch(() => { })
       return
     }
 
@@ -247,24 +304,32 @@ export function createSendMessage(
         : activeModel.thinkingEffort === 'low'
           ? 2048
           : 8000
-      : 4096
+      : 16_384
 
     const cacheRuntime = {
       settings: settings.contextCaching,
       providerId: activeModel.providerId,
       modelId: activeModel.id,
-      projectPath: project.projectPath,
+      projectPath: effectiveProjectPath,
       scope: 'chat:build',
       promptFingerprint: '',
     }
 
+    const [memoryContext, recoveryContext] = await Promise.all([
+      buildMemoryPromptContext(settings.memory, workspaceSnapshot),
+      buildRecoveryPromptContext(tab.conversationId),
+    ])
+
     const promptBuild = await buildAgentSystemPrompt({
-      basePrompt: buildSystemPrompt(project.projectPath, mode, osInfo),
-      projectPath: project.projectPath,
+      basePrompt: buildSystemPrompt(effectiveProjectPath, mode, osInfo),
+      projectPath: effectiveProjectPath,
       requestText: text,
       autoContext: settings.autoContext,
       disabledSkillIds: settings.disabledSkillIds,
       supportsToolCalls: activeModel.supportsToolCalls,
+      workspaceContext: buildWorkspacePromptContext(workspaceSnapshot),
+      memoryContext,
+      recoveryContext,
     })
 
     cacheRuntime.promptFingerprint = promptBuild.promptFingerprint
@@ -376,6 +441,9 @@ export function createSendMessage(
         title: `${meta.label} \u00B7 ${titleMission}`,
         messages: [],
         conversationId: null,
+        workspacePath: effectiveProjectPath,
+        workspaceMeta: workspaceSnapshot,
+        workspaceLocked: true,
         isStreaming: true,
         todos: [],
         modelUid: resolvedModelUid,
@@ -418,7 +486,7 @@ export function createSendMessage(
         streamChat,
         buildSubAgentSystemPrompt,
         settings,
-        project,
+        project: { projectPath: effectiveProjectPath },
         osInfo,
         toolDisplayLabel,
         shellToolDisplayLabel,
@@ -461,15 +529,16 @@ export function createSendMessage(
       ? filterDisabledTools({
           ask_questions: createQuestionsTool(questionCallback),
           write_todo: createWriteTodoTool(todoCallback),
-          ...createSkillTools(project.projectPath),
+          ...createMemoryTools(settings.memory.enabled, workspaceSnapshot),
+          ...createSkillTools(effectiveProjectPath),
           spawn_subagent: createSpawnSubAgentTool(subAgentSpawnCallback, subAgentAbortCallback),
           ...mcpTools,
           ...createWebTools(),
           ...createBrowserTools(tab.id),
-          ...(project.projectPath
+          ...(effectiveProjectPath
             ? {
-                ...createFilesystemTools(project.projectPath, snapshotCallback),
-                ...createShellTools(project.projectPath, osInfo?.shell),
+                ...createFilesystemTools(effectiveProjectPath, snapshotCallback),
+                ...createShellTools(effectiveProjectPath, osInfo?.shell),
               }
             : {}),
         }, settings.disabledToolIds)
@@ -492,6 +561,37 @@ export function createSendMessage(
       }),
       buildContextCachingProviderOptions(cacheRuntime),
     )
+
+    const replayId = tab.conversationId ? newReplayId() : null
+    let replayFinished = false
+
+    if (replayId && tab.conversationId) {
+      await startReplayCapture({
+        id: replayId,
+        conversationId: tab.conversationId,
+        workspace: workspaceSnapshot,
+        modelUid: resolvedModelUid,
+        requestText: text,
+        systemPrompt: promptBuild.prompt,
+        promptFingerprint: promptBuild.promptFingerprint,
+        messages: apiMessages,
+        ...(providerOptions ? { providerOptions } : {}),
+        toolNames: Object.keys(rawTools ?? {}),
+        createdAt: now,
+      }).catch(() => { })
+    }
+
+    async function refreshWorkspaceState() {
+      const next = await inspectWorkspace(effectiveProjectPath).catch(() => workspaceSnapshot)
+      tab.workspaceMeta = next
+      if (tab.conversationId) {
+        await dbUpdateConversationWorkspace(tab.conversationId, {
+          workspace_path: effectiveProjectPath,
+          workspace_meta: next ? JSON.stringify(next) : null,
+        }).catch(() => { })
+      }
+      return next
+    }
 
     const streamOpts: StreamChatOptions = {
       model: languageModel,
@@ -538,6 +638,24 @@ export function createSendMessage(
           })
           await dbTouchConversation(tab.conversationId)
         }
+        const finalWorkspace = await refreshWorkspaceState()
+        replayFinished = true
+        if (replayId) {
+          await finishReplayCapture({
+            id: replayId,
+            startedAt: now,
+            status: 'completed',
+            usage,
+            ...(liveMsg.toolEvents ? { toolEvents: liveMsg.toolEvents } : {}),
+          }).catch(() => { })
+        }
+        await resolveConversationFailures(tab.conversationId).catch(() => { })
+        await saveConversationTurnMemory({
+          settings: settings.memory,
+          workspace: finalWorkspace,
+          userMessage: userMsg,
+          assistantMessage: liveMsg,
+        }).catch(() => { })
         await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => { })
       },
       onError: (error: Error) => {
@@ -548,12 +666,33 @@ export function createSendMessage(
         // is_complete stays 0, signalling the message was interrupted.
         if (tab.conversationId) {
           dbUpdateMessage(assistantId, {
-            content: liveMsg.content,
+            content: liveMsg.content || `Error: ${error.message}`,
             parts: liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null,
             tool_events: liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null,
           }).catch(() => { })
           dbTouchConversation(tab.conversationId).catch(() => { })
         }
+        replayFinished = true
+        const failure = classifyFailure(error)
+        if (replayId) {
+          void finishReplayCapture({
+            id: replayId,
+            startedAt: now,
+            status: 'error',
+            errorCode: failure.category,
+            errorMessage: failure.summary,
+            ...(liveMsg.toolEvents ? { toolEvents: liveMsg.toolEvents } : {}),
+          }).catch(() => { })
+        }
+        void recordFailureEvent({
+          replayId,
+          conversationId: tab.conversationId,
+          category: failure.category,
+          summary: failure.summary,
+          recoveryHint: failure.recoveryHint,
+          severity: failure.severity,
+          details: error.stack ?? null,
+        }).catch(() => { })
         checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => { })
       },
       signal: ac.signal,
@@ -567,6 +706,14 @@ export function createSendMessage(
     catch {
       tab.isStreaming = false
       abortControllers.delete(tabId)
+      if (!replayFinished && replayId) {
+        await finishReplayCapture({
+          id: replayId,
+          startedAt: now,
+          status: ac.signal.aborted ? 'aborted' : 'error',
+          ...(liveMsg.toolEvents ? { toolEvents: liveMsg.toolEvents } : {}),
+        }).catch(() => { })
+      }
       await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => { })
     }
   }

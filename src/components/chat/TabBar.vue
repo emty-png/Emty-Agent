@@ -1,21 +1,32 @@
 <script setup lang="ts">
-import { Globe, Plus, X } from 'lucide-vue-next'
+import { GitBranch, Globe, Plus, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
+import { useGitPaneStore } from '@/stores/gitPane'
 
 const chat = useChatStore()
 const browser = useBrowserStore()
+const gitPane = useGitPaneStore()
 const { tabs, activeId } = storeToRefs(chat)
 
 const activeBrowserOwner = computed(() => browser.getOwner(activeId.value))
+const activeGitOwner = computed(() => gitPane.getOwner(activeId.value))
 
 function toggleBrowser() {
-  if (activeBrowserOwner.value.isPanelOpen)
+  if (activeBrowserOwner.value.isPanelOpen) {
     browser.closePanel(activeId.value)
-  else
+  }
+  else {
+    // Close git pane first (mutual exclusivity)
+    gitPane.closePanel(activeId.value)
     browser.openPanel(activeId.value)
+  }
+}
+
+function toggleGitPane() {
+  gitPane.togglePanel(activeId.value)
 }
 </script>
 
@@ -63,6 +74,16 @@ function toggleBrowser() {
       @click="chat.addTab"
     >
       <Plus :size="14" :stroke-width="1.8" />
+    </button>
+
+    <button
+      class="tab-new"
+      :class="{ 'tab-new--active': activeGitOwner.isPanelOpen }"
+      aria-label="Git Menu"
+      title="Git Menu"
+      @click="toggleGitPane"
+    >
+      <GitBranch :size="14" :stroke-width="1.8" />
     </button>
   </div>
 </template>

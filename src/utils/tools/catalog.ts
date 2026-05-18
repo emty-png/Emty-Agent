@@ -3,6 +3,7 @@ import { buildMcpAliasedTools } from './mcpAliases'
 
 export type BuiltinToolGroupId
   = | 'agent'
+    | 'memory'
     | 'skills'
     | 'browser'
     | 'web'
@@ -55,6 +56,14 @@ const BUILTIN_GROUPS: BuiltinGroupDefinition[] = [
       { id: 'ask_questions', label: 'ask_questions', description: 'Pause to ask the user clarifying questions.' },
       { id: 'write_todo', label: 'write_todo', description: 'Maintain the live todo list in the chat UI.' },
       { id: 'spawn_subagent', label: 'spawn_subagent', description: 'Delegate focused work to a sub-agent tab.' },
+    ],
+  },
+  {
+    id: 'memory',
+    label: 'Memory',
+    description: 'Persist stable preferences and project notes for future chats.',
+    tools: [
+      { id: 'remember_memory', label: 'remember_memory', description: 'Save durable global or project-scoped memory.' },
     ],
   },
   {

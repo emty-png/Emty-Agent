@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import type { CompatibleProvider } from '@/stores/settings'
 import {
-  Check,
   Loader,
   Plus,
   Puzzle,
   Trash2,
-  TriangleAlert,
   Zap,
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
@@ -234,7 +232,7 @@ onUnmounted(() => {
         >
           <Loader v-if="openai.status === 'testing'" :size="14" class="spin" />
           <Zap v-else :size="14" :stroke-width="2" />
-          Test connection
+          Save Provider
         </button>
       </template>
     </ProviderCard>
@@ -276,7 +274,7 @@ onUnmounted(() => {
         <button class="test-btn" :disabled="anthropic.status === 'testing' || !anthropic.apiKey.trim()" @click="s.testAnthropic()">
           <Loader v-if="anthropic.status === 'testing'" :size="14" class="spin" />
           <Zap v-else :size="14" :stroke-width="2" />
-          Test connection
+          Save Provider
         </button>
       </template>
     </ProviderCard>
@@ -320,7 +318,7 @@ onUnmounted(() => {
         <button class="test-btn" :disabled="google.status === 'testing' || !google.apiKey.trim()" @click="s.testGoogle()">
           <Loader v-if="google.status === 'testing'" :size="14" class="spin" />
           <Zap v-else :size="14" :stroke-width="2" />
-          Test connection
+          Save Provider
         </button>
       </template>
     </ProviderCard>
@@ -365,7 +363,7 @@ onUnmounted(() => {
         <button class="test-btn" :disabled="tavily.status === 'testing' || !tavily.apiKey.trim()" @click="s.testTavily()">
           <Loader v-if="tavily.status === 'testing'" :size="14" class="spin" />
           <Zap v-else :size="14" :stroke-width="2" />
-          Test connection
+          Save Provider
         </button>
       </template>
     </ProviderCard>
@@ -454,18 +452,10 @@ onUnmounted(() => {
         <Puzzle v-else :size="20" :stroke-width="1.8" class="compat-logo-fallback" />
       </template>
 
-      <template #header-right>
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div v-if="p.status !== 'idle'" class="status-badge" :class="`status-badge--${p.status}`">
-            <Loader v-if="p.status === 'testing'" :size="13" class="spin" />
-            <Check v-else-if="p.status === 'ok'" :size="13" />
-            <TriangleAlert v-else :size="13" />
-            <span>{{ p.status === 'testing' ? 'Testing...' : p.statusMessage }}</span>
-          </div>
-          <button class="icon-danger-btn" aria-label="Remove provider" @click="s.removeProvider(p.id)">
-            <Trash2 :size="14" :stroke-width="2" />
-          </button>
-        </div>
+      <template #actions>
+        <button class="icon-danger-btn" aria-label="Remove provider" @click="s.removeProvider(p.id)">
+          <Trash2 :size="14" :stroke-width="2" />
+        </button>
       </template>
 
       <template #fields>
@@ -515,7 +505,7 @@ onUnmounted(() => {
         >
           <Loader v-if="p.status === 'testing'" :size="14" class="spin" />
           <Zap v-else :size="14" :stroke-width="2" />
-          Test connection
+          Save Provider
         </button>
       </template>
     </ProviderCard>
@@ -534,7 +524,7 @@ onUnmounted(() => {
 .content-section {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
 .section-title {
@@ -591,7 +581,7 @@ onUnmounted(() => {
 .field-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .field-label {
@@ -608,11 +598,11 @@ onUnmounted(() => {
 }
 
 .field-input {
-  height: 38px;
+  height: 34px;
   padding: 0 12px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--color-text-primary);
   font-size: 13px;
   font-family: inherit;
@@ -682,10 +672,10 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 36px;
+  height: 32px;
   padding: 0 16px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-bg-elevated);
   color: var(--color-text-primary);
   font-size: 13px;
@@ -729,7 +719,7 @@ onUnmounted(() => {
   height: 32px;
   padding: 0 14px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-bg-surface);
   color: var(--color-text-primary);
   font-size: 12.5px;
@@ -759,7 +749,7 @@ onUnmounted(() => {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-bg-surface);
   color: var(--color-text-secondary);
   font-size: 13px;
@@ -789,8 +779,8 @@ onUnmounted(() => {
 .add-form {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: 8px;
+  padding: 16px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
@@ -805,7 +795,7 @@ onUnmounted(() => {
 .add-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: 12px;
 }
 
 .add-error {
@@ -827,7 +817,7 @@ onUnmounted(() => {
   height: 34px;
   padding: 0 16px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 13px;
@@ -845,7 +835,7 @@ onUnmounted(() => {
   height: 34px;
   padding: 0 16px;
   border: 1px solid var(--color-accent);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-accent);
   color: #fff; /* Enforce contrast */
   font-size: 13px;
@@ -866,7 +856,7 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -880,11 +870,11 @@ onUnmounted(() => {
 }
 
 .compat-empty {
-  padding: 32px 24px;
+  padding: 20px 16px;
   text-align: center;
   background: var(--color-bg-surface);
   border: 1px dashed var(--color-border-mid);
-  border-radius: 12px;
+  border-radius: 8px;
   font-size: 14px;
   color: var(--color-text-secondary);
   line-height: 1.6;
@@ -894,44 +884,6 @@ onUnmounted(() => {
   margin-top: 8px;
   font-size: 13px;
   color: var(--color-text-tertiary);
-}
-
-/* Updated Status Badge matching the ProviderCard styles exactly */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  max-width: 260px;
-}
-
-.status-badge span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status-badge--testing {
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border-mid);
-}
-
-.status-badge--ok {
-  background: color-mix(in srgb, var(--color-success-muted) 30%, transparent);
-  color: var(--color-success-text);
-  border: 1px solid var(--color-success-muted);
-}
-
-.status-badge--error {
-  background: color-mix(in srgb, var(--color-danger-muted) 30%, transparent);
-  color: var(--color-danger-text);
-  border: 1px solid var(--color-danger-muted);
 }
 
 .slide-down-enter-active,

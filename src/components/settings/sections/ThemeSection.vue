@@ -8,12 +8,7 @@ import ThemeSwitcher from '../ThemeSwitcher.vue'
       Appearance
     </h2>
 
-    <div class="field-group">
-      <label class="field-label">System Theme</label>
-      <div style="margin-top: 4px;">
-        <ThemeSwitcher />
-      </div>
-    </div>
+    <ThemeSwitcher />
   </section>
 </template>
 
@@ -30,18 +25,5 @@ import ThemeSwitcher from '../ThemeSwitcher.vue'
   color: var(--color-text-primary);
   letter-spacing: -0.01em;
   margin-bottom: 4px;
-}
-
-.field-group {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.field-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.01em;
 }
 </style>

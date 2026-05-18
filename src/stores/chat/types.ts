@@ -5,6 +5,7 @@ import type { ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { PendingBatch } from '@/utils/tools/questions'
 import type { SubAgentInfo, SubAgentPersonality } from '@/utils/tools/subagent'
 import type { TodoItem } from '@/utils/tools/todos'
+import type { WorkspaceSnapshot } from '@/utils/worktrees'
 import { UsageStats } from '@/utils/contextCaching'
 
 export interface ToolEvent {
@@ -77,6 +78,9 @@ export interface ChatTab {
   title: string
   messages: Message[]
   conversationId: string | null
+  workspacePath: string | null
+  workspaceMeta?: WorkspaceSnapshot | null
+  workspaceLocked: boolean
   isStreaming: boolean
   todos: TodoItem[]
   modelUid?: string | null

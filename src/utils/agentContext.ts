@@ -12,6 +12,9 @@ export interface AgentPromptBuilderOptions {
   autoContext: AutoContextSettings
   disabledSkillIds: string[]
   supportsToolCalls: boolean
+  workspaceContext?: string
+  memoryContext?: string
+  recoveryContext?: string
 }
 
 export interface LoadedContextFile {
@@ -33,7 +36,17 @@ const MAX_CONTEXT_CHARS = 18_000
 export async function buildAgentSystemPrompt(
   options: AgentPromptBuilderOptions,
 ): Promise<AgentPromptBuildResult> {
-  const { basePrompt, projectPath, requestText, autoContext, disabledSkillIds, supportsToolCalls } = options
+  const {
+    basePrompt,
+    projectPath,
+    requestText,
+    autoContext,
+    disabledSkillIds,
+    supportsToolCalls,
+    workspaceContext,
+    memoryContext,
+    recoveryContext,
+  } = options
 
   const [contextFiles, enabledSkills] = await Promise.all([
     autoContext.enabled ? loadProjectContextFiles(projectPath) : Promise.resolve([]),
@@ -50,6 +63,9 @@ export async function buildAgentSystemPrompt(
     availableSkills: enabledSkills,
     preloadedSkills,
     supportsToolCalls,
+    ...(workspaceContext ? { workspaceContext } : {}),
+    ...(memoryContext ? { memoryContext } : {}),
+    ...(recoveryContext ? { recoveryContext } : {}),
   })
 
   return {
@@ -63,13 +79,34 @@ export async function buildAgentSystemPrompt(
 
 export function composeAgentPrompt(options: {
   basePrompt: string
+  workspaceContext?: string
+  memoryContext?: string
+  recoveryContext?: string
   contextFiles: LoadedContextFile[]
   availableSkills: SkillMetadata[]
   preloadedSkills: Array<SelectedSkill & { definition: SkillDefinition }>
   supportsToolCalls: boolean
 }): string {
-  const { basePrompt, contextFiles, availableSkills, preloadedSkills, supportsToolCalls } = options
+  const {
+    basePrompt,
+    workspaceContext,
+    memoryContext,
+    recoveryContext,
+    contextFiles,
+    availableSkills,
+    preloadedSkills,
+    supportsToolCalls,
+  } = options
   const sections = [basePrompt]
+
+  if (workspaceContext?.trim())
+    sections.push(workspaceContext.trim())
+
+  if (memoryContext?.trim())
+    sections.push(memoryContext.trim())
+
+  if (recoveryContext?.trim())
+    sections.push(recoveryContext.trim())
 
   if (contextFiles.length > 0) {
     sections.push(`## Auto-Loaded Project Context

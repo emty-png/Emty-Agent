@@ -338,6 +338,16 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
       }
     }
 
+    case 'remember_memory':
+      return {
+        actionTitle: `Save ${String(args.scope ?? 'project')} memory`,
+        actionDetails: [
+          `Kind: ${String(args.kind ?? 'note')}`,
+          `Title: ${truncate(String(args.title ?? ''), 120)}`,
+          `Content: ${truncate(String(args.content ?? ''), 140)}`,
+        ],
+      }
+
     default:
       if (toolName.startsWith('mcp__')) {
         const [, rawServer = '', ...rawTool] = toolName.split('__')

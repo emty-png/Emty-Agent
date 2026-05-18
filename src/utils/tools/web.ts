@@ -100,28 +100,11 @@ interface TavilySearchResponse {
 
 export function createWebSearchTool() {
   return tool({
-    description: `\
-Search the web for current information using Tavily AI Search.
-Use this to look up documentation, library versions, recent news, error messages, API references,
-changelogs, CVE details, or any information that may have changed since the model's training cutoff.
+    description: `Search the web for current information via Tavily. Use for docs, package versions, changelogs, error messages, CVEs, or anything that may have changed since training.
 
-Batching: you may provide up to 5 queries in one call. Each query produces its own result set.
-Group related searches into a single call rather than making multiple tool calls.
-
-The tool returns:
-  • A synthesised answer (when Tavily can produce one)
-  • Per-result: title, URL, content snippet, and publication date (when available)
-
-Good uses:
-  • "Latest changes in Tailwind CSS v4"
-  • "vue 3.5 what's new"
-  • "CVE-2024-XXXX details"
-  • "npm package X latest version changelog"
-  • Error messages you cannot diagnose from the codebase alone
-
-Avoid:
-  • Searching for things you already know from training data
-  • Using this for file/directory lookups — use list_directory or read_files instead`,
+Batch up to 5 queries per call — group related searches rather than making separate calls.
+Returns a synthesised answer plus per-result title, URL, snippet, and date.
+Don't search for things you already know. Use filesystem tools for file/directory lookups.`,
     inputSchema: z.object({
       queries: z
         .array(z.string().min(1))
@@ -224,23 +207,9 @@ Avoid:
 
 export function createWebFetchTool() {
   return tool({
-    description: `\
-Fetch and extract the readable text content of one or more web pages.
-Uses Jina Reader (free, no key required) which strips ads/navigation and returns clean content.
+    description: `Fetch and extract readable text from web pages via Jina Reader (no key required). Returns clean markdown — ads and navigation stripped.
 
-Batching: provide up to 10 URLs in one call. All URLs are fetched concurrently.
-Prefer batching over multiple separate calls.
-
-Good uses:
-  • Read the full content of a search result URL
-  • Fetch official documentation or a changelog page
-  • Read a GitHub issue, PR, README, or release notes
-  • Inspect any specific URL the user provides
-
-Avoid:
-  • Fetching URLs that require authentication or login sessions
-  • Downloading binary files or large media assets
-  • Fetching the same URL multiple times in one response cycle`,
+Batch up to 10 URLs per call; all fetched concurrently. Use to read a search result in full, fetch official docs, or inspect a GitHub issue, PR, or release page. Won't work for pages that require login.`,
     inputSchema: z.object({
       urls: z
         .array(z.string().url())

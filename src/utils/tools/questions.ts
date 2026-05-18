@@ -35,16 +35,9 @@ import { z } from 'zod'
 
 export interface QuestionSpec {
   question: string
-  /**
-   * 2–4 pre-written options. The UI always adds a free-text final option.
-   * FIX 2: was exactly 3; now flexible.
-   */
+
   options: string[]
-  /**
-   * FIX 2: Optional conditional display.
-   * If set, this question is only shown when the answer to question at
-   * `questionIndex` equals `whenAnswer` (case-insensitive prefix match).
-   */
+
   dependsOn?: {
     questionIndex: number
     whenAnswer: string
@@ -91,29 +84,14 @@ export type QuestionsCallback = (
 
 export function createQuestionsTool(onQuestions: QuestionsCallback) {
   return tool({
-    description: `\
-Ask the user one or more clarifying questions before proceeding with a task.
-Use this when the task is ambiguous and the user's answer will produce a significantly better result.
+    description: `Ask the user clarifying questions before proceeding. Use when the answer will meaningfully change your approach — not when you could read the codebase or make a reasonable assumption instead.
 
-Each question presents 2–4 pre-written options; the UI automatically adds a free-text "something else" field.
-Questions may optionally depend on a prior answer — the UI skips them when the condition isn't met.
-
-Group all related questions into a single call — never call this tool multiple times for related questions.
-Maximum 5 questions per call.
-
-Good uses:
-  • Confirming the user's goal before a large refactor or greenfield feature
-  • Choosing between meaningfully different implementation approaches
-  • Clarifying scope when the request could go several directions
-  • Identifying the user's preferred framework, convention, or style when the codebase is ambiguous
-  • Asking a follow-up only when a previous answer makes it relevant (use dependsOn)
-
-Bad uses:
-  • Questions you can answer by reading the codebase — read it first
-  • Yes/no confirmation questions with an obvious answer
-  • Asking when you could safely assume and state your assumption instead
-
-The user may skip any question; treat a "skipped" answer as "no strong preference — use your judgment".`,
+Rules:
+- Batch ALL related questions in one call (max 5). Never call this multiple times for related questions.
+- Each question needs 2–4 distinct options. The UI appends a free-text field automatically.
+- Use dependsOn to skip irrelevant follow-ups based on a prior answer.
+- Treat a "skipped" answer as "no preference — use your judgment".
+- Don't ask yes/no questions with an obvious answer. Don't ask what you can find by reading files.`,
     inputSchema: z.object({
       questions: z
         .array(

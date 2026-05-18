@@ -10,12 +10,9 @@ export function createWriteFilesTool(
   onBeforeFileWrite?: BeforeFileWriteCallback,
 ) {
   return tool({
-    description: `Create new files or fully replace the content of existing ones.
-Pass an array of { path, content } pairs to write multiple files in one call.
-Parent directories are created automatically if they don't exist.
+    description: `Create new files or fully overwrite existing ones. Accepts multiple { path, content } pairs in one call. Parent directories are created automatically.
 
-ONLY use this for new files or when the entire file content must be replaced.
-If the file already exists and you only need to change part of it, use edit_files instead — it is faster, safer, and preferred.`,
+Use edit_files instead when the file already exists and you only need partial changes.`,
     inputSchema: z.object({
       files: z.preprocess(
         val => (Array.isArray(val) ? val : [val]),

@@ -347,24 +347,183 @@ async function blockToHtml(block: Block): Promise<string> {
 
 // ── render pipeline ───────────────────────────────────────────────────────────
 
-async function renderContent(content: string, version: number): Promise<void> {
+/**
+ * Synchronous HTML generator for non-code blocks.
+ * Avoids the async overhead of blockToHtml() for simple blocks.
+ */
+function blockToHtmlSync(block: Block): string | null {
+  switch (block.type) {
+    case 'heading': {
+      const tag = `h${block.level}`
+      return `<${tag} class="md-h md-h${block.level}">${renderInline(block.text)}</${tag}>`
+    }
+    case 'paragraph':
+      return `<p class="md-p">${block.lines.map(l => renderInline(l)).join('<br>')}</p>`
+    case 'ul': {
+      const isTaskList = block.items.some(it => /^\[[ x]\]/i.test(it))
+      const items = block.items.map(it => {
+        const task = it.match(/^\[([ x])\]\s+(\S.*)$/i)
+        if (task) {
+          const checked = task[1]!.toLowerCase() === 'x'
+          return `<li class="md-li md-task-item"><label class="md-task-label"><input type="checkbox" class="md-checkbox" ${checked ? 'checked' : ''} disabled><span>${renderInline(task[2]!)}</span></label></li>`
+        }
+        return `<li class="md-li">${renderInline(it)}</li>`
+      }).join('')
+      return `<ul class="${isTaskList ? 'md-ul md-task-list' : 'md-ul'}">${items}</ul>`
+    }
+    case 'ol': {
+      const items = block.items.map(it => `<li class="md-li">${renderInline(it)}</li>`).join('')
+      return `<ol class="md-ol">${items}</ol>`
+    }
+    case 'blockquote': {
+      const inner = block.lines.map(l => renderInline(l)).join('<br>')
+      return `<blockquote class="md-bq"><p class="md-bq-inner">${inner}</p></blockquote>`
+    }
+    case 'table': {
+      const thead = `<thead><tr>${block.header.map(h => `<th class="md-th">${renderInline(h)}</th>`).join('')}</tr></thead>`
+      const tbody = `<tbody>${block.rows.map(row => `<tr>${row.map(c => `<td class="md-td">${renderInline(c)}</td>`).join('')}</tr>`).join('')}</tbody>`
+      return `<div class="md-table-wrap"><table class="md-table">${thead}${tbody}</table></div>`
+    }
+    case 'hr':
+      return '<hr class="md-hr">'
+    // code blocks must go through the async path
+    default:
+      return null
+  }
+}
+
+/**
+ * Stable prefix cache for incremental rendering.
+ *
+ * During streaming we split the content at the last "stable boundary" —
+ * the end of the last fully-closed non-streaming block. Everything before
+ * that boundary is already rendered into `stableHtml` and never re-processed.
+ * Only the tail (current open block) is re-rendered on each tick.
+ *
+ * This reduces the per-tick render work from O(totalLength) to O(tailLength).
+ */
+let stableHtml = ''
+let stableBoundary = 0 // char index in content where stable HTML ends
+let stableBlockSeq = 0 // blockSeq value at the stable boundary
+
+function resetStableCache(): void {
+  stableHtml = ''
+  stableBoundary = 0
+  stableBlockSeq = 0
+}
+
+/**
+ * Find the char index of the end of the last fully-closed block during streaming.
+ * A block is "closed" if it isn't an unclosed code fence and the next char is a newline.
+ * We look for the last double-newline (paragraph boundary) before the current tail.
+ */
+function findStableBoundary(content: string): number {
+  // Walk backwards from the end looking for a paragraph boundary (double newline)
+  // or a closed code fence boundary.
+  const min = stableBoundary // never go before current stable point
+  let i = content.length - 1
+
+  // Skip trailing partial line
+  while (i > min && content[i] !== '\n') i--
+  // Skip the most recent complete line (it may still be growing)
+  if (i > min)
+    i--
+  while (i > min && content[i] !== '\n') i--
+
+  // Now find the last double-newline before i
+  const doubleNl = content.lastIndexOf('\n\n', i)
+  if (doubleNl > min)
+    return doubleNl + 2 // start of next block after the blank line
+
+  return min
+}
+
+async function renderContent(content: string, version: number, streaming: boolean): Promise<void> {
   if (!content) {
-    if (renderVersion === version)
+    if (renderVersion === version) {
       html.value = ''
+      resetStableCache()
+    }
     return
   }
 
-  // Reset per-render state to prevent unbounded growth across streaming ticks.
-  codeStore.clear()
-  blockSeq = 0
+  if (!streaming) {
+    // Non-streaming (final render or initial load): full render from scratch.
+    resetStableCache()
+    codeStore.clear()
+    blockSeq = 0
 
-  const blocks = tokenise(content)
-  const parts = await Promise.all(blocks.map(blockToHtml))
+    const blocks = tokenise(content)
+    const parts = await Promise.all(blocks.map(blockToHtml))
 
-  // Only commit if no newer render has superseded this one.
-  if (renderVersion === version) {
-    html.value = parts.join('\n')
+    if (renderVersion === version)
+      html.value = parts.join('\n')
+
+    return
   }
+
+  // ── Streaming: incremental render ─────────────────────────────────────────
+
+  // Find how far we can extend the stable prefix.
+  const newBoundary = findStableBoundary(content)
+
+  if (newBoundary > stableBoundary) {
+    // There are newly completed blocks in the stable zone — render them and cache.
+    const stableSlice = content.slice(stableBoundary, newBoundary)
+    codeStore.clear()
+    blockSeq = stableBlockSeq
+
+    const newBlocks = tokenise(stableSlice)
+    const newParts: string[] = []
+
+    for (const block of newBlocks) {
+      // Try sync path first (avoids async overhead for non-code blocks)
+      const syncHtml = blockToHtmlSync(block)
+      if (syncHtml !== null) {
+        newParts.push(syncHtml)
+      }
+      else {
+        // Code block — use async Shiki path
+        newParts.push(await blockToHtml(block))
+      }
+      if (renderVersion !== version)
+        return
+    }
+
+    stableHtml += newParts.join('\n')
+    if (newParts.length > 0)
+      stableHtml += '\n'
+    stableBoundary = newBoundary
+    stableBlockSeq = blockSeq
+  }
+
+  // Render the tail (current open/streaming block)
+  const tail = content.slice(stableBoundary)
+  let tailHtml = ''
+
+  if (tail.trim()) {
+    codeStore.clear()
+    blockSeq = stableBlockSeq
+
+    const tailBlocks = tokenise(tail)
+    const tailParts: string[] = []
+
+    for (const block of tailBlocks) {
+      const syncHtml = blockToHtmlSync(block)
+      if (syncHtml !== null) {
+        tailParts.push(syncHtml)
+      }
+      else {
+        tailParts.push(await blockToHtml(block))
+      }
+      if (renderVersion !== version)
+        return
+    }
+    tailHtml = tailParts.join('\n')
+  }
+
+  if (renderVersion === version)
+    html.value = stableHtml + tailHtml
 }
 
 // ── watchers ──────────────────────────────────────────────────────────────────
@@ -375,28 +534,33 @@ function scheduleRender(): void {
   if (timer)
     clearTimeout(timer)
   const version = ++renderVersion
-  // Debounce during streaming to avoid thrashing Shiki; immediate otherwise.
+  const streaming = props.streaming ?? false
+  // Increase debounce slightly during streaming to batch more deltas per tick.
+  // 80ms is still imperceptible to humans but gives the engine more tokens per render.
   timer = setTimeout(() => {
-    renderContent(props.content, version)
+    renderContent(props.content, version, streaming)
     timer = null
-  }, props.streaming ? 60 : 0)
+  }, streaming ? 80 : 0)
 }
 
 watch(() => props.content, scheduleRender, { immediate: true })
 
 // Force a clean final render when streaming finishes.
+// Reset the incremental cache so the full re-render starts from scratch.
 watch(() => props.streaming, streaming => {
   if (!streaming) {
     if (timer)
       clearTimeout(timer)
+    resetStableCache()
     const version = ++renderVersion
-    renderContent(props.content, version)
+    renderContent(props.content, version, false)
   }
 })
 
 onUnmounted(() => {
   if (timer)
     clearTimeout(timer)
+  resetStableCache()
 })
 
 // ── event delegation (copy + word-wrap) ──────────────────────────────────────

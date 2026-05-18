@@ -9,6 +9,7 @@ import type {
   DiscoveredModel,
   GoogleConfig,
   McpServerConfig,
+  MemoryConfig,
   OpenAIConfig,
   TavilyConfig,
   ThinkingEffort,
@@ -59,6 +60,7 @@ export const useSettingsStore = defineStore(
       googleCachedContent: '',
     })
     const autoContext = ref<AutoContextConfig>({ enabled: true })
+    const memory = ref<MemoryConfig>({ enabled: true })
     const agent = ref<AgentConfig>({ permissionMode: 'ask' })
     const disabledToolIds = ref<string[]>([])
     const disabledSkillIds = ref<string[]>([])
@@ -498,6 +500,7 @@ export const useSettingsStore = defineStore(
       resetTavilyStatus,
       contextCaching,
       autoContext,
+      memory,
       agent,
       disabledToolIds,
       disabledSkillIds,
@@ -545,6 +548,7 @@ export const useSettingsStore = defineStore(
         'tavily.apiKey',
         'contextCaching',
         'autoContext',
+        'memory',
         'agent',
         'disabledToolIds',
         'disabledSkillIds',

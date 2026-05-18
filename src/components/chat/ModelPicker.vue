@@ -12,10 +12,23 @@ const { enabledModels } = storeToRefs(s)
 const pickerOpen = ref(false)
 const pickerSearch = ref('')
 const searchInputRef = ref<HTMLInputElement | null>(null)
+const triggerRef = ref<HTMLElement | null>(null)
+const pickerPos = ref({ x: 0, y: 0 })
+
+function updatePickerPos() {
+  if (!triggerRef.value || !pickerOpen.value)
+    return
+  const rect = triggerRef.value.getBoundingClientRect()
+  pickerPos.value = {
+    x: rect.left + rect.width / 2,
+    y: rect.top - 8,
+  }
+}
 
 function openPicker() {
   pickerOpen.value = true
   pickerSearch.value = ''
+  updatePickerPos()
   // autofocus via nextTick — more reliable than the `autofocus` attr in Tauri
   nextTick(() => searchInputRef.value?.focus())
 }
@@ -60,7 +73,11 @@ function onKeydownGlobal(e: KeyboardEvent) {
     closePicker()
 }
 window.addEventListener('keydown', onKeydownGlobal)
-onUnmounted(() => window.removeEventListener('keydown', onKeydownGlobal))
+window.addEventListener('resize', updatePickerPos)
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydownGlobal)
+  window.removeEventListener('resize', updatePickerPos)
+})
 
 // ── Teleported tooltip ────────────────────────────────────────────────────────
 // Using Teleport because .picker-groups has overflow-y: auto which clips
@@ -99,7 +116,7 @@ function hideTooltip() {
 <template>
   <div class="picker-wrap">
     <!-- ── Trigger ──────────────────────────────────────────────────────────── -->
-    <div class="trigger-tooltip-wrap">
+    <div ref="triggerRef" class="trigger-tooltip-wrap">
       <button
         class="model-btn"
         :class="{ 'model-btn--open': pickerOpen }"
@@ -120,96 +137,102 @@ function hideTooltip() {
     </div>
 
     <!-- ── Dropdown ────────────────────────────────────────────────────────── -->
-    <Transition name="picker">
-      <div v-if="pickerOpen" class="picker-dropdown">
-        <!-- Search toolbar -->
-        <div class="picker-toolbar">
-          <div class="picker-search-wrap">
-            <Search :size="13" :stroke-width="2" class="picker-search-icon" />
-            <input
-              ref="searchInputRef"
-              v-model="pickerSearch"
-              class="picker-search"
-              placeholder="Search models…"
+    <Teleport to="body">
+      <Transition name="picker">
+        <div
+          v-if="pickerOpen"
+          class="picker-dropdown"
+          :style="{ left: `${pickerPos.x}px`, top: `${pickerPos.y}px` }"
+        >
+          <!-- Search toolbar -->
+          <div class="picker-toolbar">
+            <div class="picker-search-wrap">
+              <Search :size="13" :stroke-width="2" class="picker-search-icon" />
+              <input
+                ref="searchInputRef"
+                v-model="pickerSearch"
+                class="picker-search"
+                placeholder="Search models…"
+              >
+            </div>
+          </div>
+
+          <!-- Empty: no providers configured -->
+          <div v-if="enabledModels.length === 0" class="picker-empty">
+            <span class="picker-empty-icon">
+              <Zap :size="22" :stroke-width="1.5" />
+            </span>
+            <p class="picker-empty-title">
+              No models available
+            </p>
+            <p class="picker-empty-hint">
+              Open Settings → Providers and add a provider key.
+            </p>
+          </div>
+
+          <!-- Empty: no search results -->
+          <div v-else-if="groupedModels.length === 0" class="picker-empty">
+            <p class="picker-empty-title">
+              No results for "{{ pickerSearch }}"
+            </p>
+          </div>
+
+          <!-- Model groups -->
+          <div v-else class="picker-groups">
+            <div
+              v-for="group in groupedModels"
+              :key="group.providerId"
+              class="picker-group"
             >
+              <span class="picker-group-header">{{ group.providerName }}</span>
+
+              <button
+                v-for="m in group.models"
+                :key="m.uid"
+                class="picker-model-row"
+                :class="{ 'picker-model-row--active': m.uid === activeModel?.uid }"
+                @click="selectModel(m.uid)"
+              >
+                <!-- Model name -->
+                <span class="picker-model-name">{{ m.name }}</span>
+
+                <!-- Capability badges -->
+                <div class="picker-caps">
+                  <span v-if="(m as any).free" class="cap-badge cap-badge--free">Free</span>
+
+                  <span
+                    v-if="m.supportsThinking"
+                    class="cap-icon-wrap"
+                    @mouseenter="showTooltip($event, 'Extended thinking')"
+                    @mouseleave="hideTooltip"
+                  >
+                    <Brain :size="11" :stroke-width="2" class="cap-icon cap-icon--thinking" />
+                  </span>
+
+                  <span
+                    v-if="m.supportsToolCalls"
+                    class="cap-icon-wrap"
+                    @mouseenter="showTooltip($event, 'Tool use')"
+                    @mouseleave="hideTooltip"
+                  >
+                    <Wrench :size="11" :stroke-width="2" class="cap-icon cap-icon--tools" />
+                  </span>
+
+                  <span
+                    v-if="m.supportsAttachments"
+                    class="cap-icon-wrap"
+                    @mouseenter="showTooltip($event, 'Vision & files')"
+                    @mouseleave="hideTooltip"
+                  >
+                    <Eye :size="11" :stroke-width="2" class="cap-icon cap-icon--vision" />
+                  </span>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
-
-        <!-- Empty: no providers configured -->
-        <div v-if="enabledModels.length === 0" class="picker-empty">
-          <span class="picker-empty-icon">
-            <Zap :size="22" :stroke-width="1.5" />
-          </span>
-          <p class="picker-empty-title">
-            No models available
-          </p>
-          <p class="picker-empty-hint">
-            Open Settings → Providers and add a provider key.
-          </p>
-        </div>
-
-        <!-- Empty: no search results -->
-        <div v-else-if="groupedModels.length === 0" class="picker-empty">
-          <p class="picker-empty-title">
-            No results for "{{ pickerSearch }}"
-          </p>
-        </div>
-
-        <!-- Model groups -->
-        <div v-else class="picker-groups">
-          <div
-            v-for="group in groupedModels"
-            :key="group.providerId"
-            class="picker-group"
-          >
-            <span class="picker-group-header">{{ group.providerName }}</span>
-
-            <button
-              v-for="m in group.models"
-              :key="m.uid"
-              class="picker-model-row"
-              :class="{ 'picker-model-row--active': m.uid === activeModel?.uid }"
-              @click="selectModel(m.uid)"
-            >
-              <!-- Model name -->
-              <span class="picker-model-name">{{ m.name }}</span>
-
-              <!-- Capability badges -->
-              <div class="picker-caps">
-                <span v-if="(m as any).free" class="cap-badge cap-badge--free">Free</span>
-
-                <span
-                  v-if="m.supportsThinking"
-                  class="cap-icon-wrap"
-                  @mouseenter="showTooltip($event, 'Extended thinking')"
-                  @mouseleave="hideTooltip"
-                >
-                  <Brain :size="11" :stroke-width="2" class="cap-icon cap-icon--thinking" />
-                </span>
-
-                <span
-                  v-if="m.supportsToolCalls"
-                  class="cap-icon-wrap"
-                  @mouseenter="showTooltip($event, 'Tool use')"
-                  @mouseleave="hideTooltip"
-                >
-                  <Wrench :size="11" :stroke-width="2" class="cap-icon cap-icon--tools" />
-                </span>
-
-                <span
-                  v-if="m.supportsAttachments"
-                  class="cap-icon-wrap"
-                  @mouseenter="showTooltip($event, 'Vision & files')"
-                  @mouseleave="hideTooltip"
-                >
-                  <Eye :size="11" :stroke-width="2" class="cap-icon cap-icon--vision" />
-                </span>
-              </div>
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
+      </Transition>
+    </Teleport>
 
     <!-- Backdrop -->
     <div v-if="pickerOpen" class="global-backdrop" @click="closePicker" />
@@ -310,10 +333,8 @@ function hideTooltip() {
 
 /* ── Dropdown shell ───────────────────────────────────────────────────────── */
 .picker-dropdown {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  position: fixed;
+  transform: translate(-50%, -100%);
   width: 300px;
   max-height: 300px;
   background: var(--color-bg-elevated);
@@ -627,17 +648,17 @@ function hideTooltip() {
     transform 160ms cubic-bezier(0.7, 0, 0.84, 0);
 }
 
-/* translateX(-50%) must be preserved — it's the centering transform */
+/* translate(-50%, -100%) must be preserved — it's the centering/anchoring transform */
 .picker-enter-from,
 .picker-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(8px) scale(0.96);
+  transform: translate(-50%, calc(-100% + 8px)) scale(0.96);
   transform-origin: bottom center;
 }
 
 .picker-enter-to,
 .picker-leave-from {
-  transform: translateX(-50%);
+  transform: translate(-50%, -100%);
   transform-origin: bottom center;
 }
 </style>

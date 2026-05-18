@@ -16,13 +16,10 @@ const DEFAULT_LINE_LIMIT = 500
 
 export function createReadFilesTool(projectPath: string) {
   return tool({
-    description: `Read the contents of one or more project files.
-Batch multiple paths in a single call. Use offset/limit for large files (0-indexed lines).
-Always read files before making claims about their contents.
+    description: `Read one or more project files. Batch multiple paths in one call. Use offset/limit to page through large files (0-indexed lines).
 
-IMPORTANT: By default only the first ${DEFAULT_LINE_LIMIT} lines of each file are returned to protect
-context size. If the file is larger and you need more, use offset/limit to page through it.
-A "truncated" flag in the result tells you when the default cap was applied.`,
+Always read files before making claims about their contents.
+Default cap: ${DEFAULT_LINE_LIMIT} lines per file. A "truncated" flag signals when more lines exist.`,
     inputSchema: z.object({
       paths: z
         .array(z.string())

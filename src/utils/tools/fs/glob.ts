@@ -90,10 +90,7 @@ async function globWalk(
 
 export function createGlobTool(projectPath: string) {
   return tool({
-    description: `Find files in the project matching a glob pattern.
-Supports * (any chars in segment), ** (any path depth), ?, {a,b}, [abc].
-Build artefacts (node_modules, dist, .git, etc.) are always excluded.
-Use this to locate files without knowing their exact path.`,
+    description: 'Find files by glob pattern. Supports *, **, ?, {a,b}, [abc]. Build artifacts (node_modules, dist, .git, etc.) always excluded. Use when you need to locate files without knowing their exact path.',
     inputSchema: z.object({
       pattern: z.string().describe('Glob pattern relative to project root. E.g. "**/*.ts", "src/**/*.vue"'),
       maxResults: z.number().int().min(1).max(500).optional().describe('Max results. Default: 100.'),

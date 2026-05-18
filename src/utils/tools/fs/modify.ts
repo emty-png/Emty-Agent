@@ -17,16 +17,12 @@ export function createModifyFilesTool(
   onBeforeFileWrite?: BeforeFileWriteCallback,
 ) {
   return tool({
-    description: `Perform file-system operations on files and directories in the project.
-Supports: move, rename, delete, copy, mkdir.
-Multiple operations are applied in order — batch them in one call.
+    description: `File-system operations: move, rename, delete, copy, mkdir. Multiple ops applied in order — batch in one call.
 
-Operations:
-  move   — move a file or directory to a new location (creates destination parent dirs)
-  rename — rename a file or directory in the same location (alias for move)
-  delete — permanently delete a file or directory (use recursive:true for directories)
-  copy   — copy a file to a new location (creates destination parent dirs)
-  mkdir  — create a directory (and all parents)`,
+- move/rename — moves to new location; creates parent dirs automatically
+- delete — set recursive:true for directories
+- copy — copies file; creates parent dirs automatically
+- mkdir — creates directory and all parents`,
     inputSchema: z.object({
       operations: z.array(
         z.discriminatedUnion('op', [

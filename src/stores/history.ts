@@ -9,6 +9,7 @@ import {
   dbUpdateConversationTitle,
 } from '@/db/database'
 import { useChatStore } from './chat'
+import { useProjectStore } from './project'
 
 const PAGE_SIZE = 50
 
@@ -84,20 +85,33 @@ export const useHistoryStore = defineStore('history', () => {
   // ── open in tab ──────────────────────────────────────────────────────────────
   async function openInTab(conv: ConversationRow): Promise<void> {
     const chat = useChatStore()
+    const project = useProjectStore()
 
     // if already open in a tab, just switch to it
     const existing = chat.tabs.find(t => t.conversationId === conv.id)
     if (existing) {
       chat.activeId = existing.id
+      if (existing.workspacePath)
+        project.setProject(existing.workspacePath)
       return
     }
 
     // load messages from DB
     const rows = await dbLoadMessages(conv.id)
 
+    let workspaceMeta
+    if (conv.workspace_meta) {
+      try {
+        workspaceMeta = JSON.parse(conv.workspace_meta)
+      }
+      catch { }
+    }
+
     chat.openConversation({
       conversationId: conv.id,
       title: conv.title,
+      workspacePath: conv.workspace_path ?? null,
+      ...(workspaceMeta ? { workspaceMeta } : {}),
       messages: rows.map(r => {
         let toolEvents
         if (r.tool_events) {
@@ -146,6 +160,9 @@ export const useHistoryStore = defineStore('history', () => {
         }
       }),
     })
+
+    if (conv.workspace_path)
+      project.setProject(conv.workspace_path)
   }
 
   // ── push a newly-created conversation into the top of the list ────────────────
