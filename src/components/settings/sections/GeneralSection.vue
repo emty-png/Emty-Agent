@@ -139,7 +139,7 @@ const { contextCaching, autoContext, memory } = storeToRefs(s)
 .settings-card {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -176,7 +176,7 @@ const { contextCaching, autoContext, memory } = storeToRefs(s)
 }
 
 .settings-item:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 .settings-item--field {
@@ -213,7 +213,7 @@ const { contextCaching, autoContext, memory } = storeToRefs(s)
   padding-inline: 12px 8px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   color: var(--color-text-primary);
   font-size: 13px;
   font-family: inherit;
@@ -233,7 +233,7 @@ const { contextCaching, autoContext, memory } = storeToRefs(s)
   padding-inline: 12px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   color: var(--color-text-primary);
   font-size: 13px;
   font-family: inherit;
@@ -259,7 +259,7 @@ const { contextCaching, autoContext, memory } = storeToRefs(s)
   height: 20px;
   border-radius: 99px;
   border: 1px solid var(--color-border-mid);
-  background: var(--color-bg-elevated);
+  background: var(--color-toggle-track-off);
   cursor: pointer;
   transition:
     background 140ms ease,
@@ -268,7 +268,7 @@ const { contextCaching, autoContext, memory } = storeToRefs(s)
 }
 
 .model-toggle--on {
-  background: var(--color-accent-dim);
+  background: var(--color-toggle-track-on);
   border-color: var(--color-accent);
 }
 
@@ -278,7 +278,7 @@ const { contextCaching, autoContext, memory } = storeToRefs(s)
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--color-text-tertiary);
+  background: var(--color-toggle-thumb-off);
   transition:
     transform 140ms cubic-bezier(0.4, 0, 0.2, 1),
     background 140ms ease;
@@ -286,6 +286,6 @@ const { contextCaching, autoContext, memory } = storeToRefs(s)
 
 .model-toggle--on .model-toggle-thumb {
   transform: translateX(14px);
-  background: #fff;
+  background: var(--color-text-primary);
 }
 </style>

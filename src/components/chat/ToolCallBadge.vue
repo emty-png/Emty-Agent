@@ -282,13 +282,13 @@ function openSubAgentTab() {
   line-height: 1.6;
   letter-spacing: 0.01em;
   text-shadow:
-    0 0 1px rgba(255, 255, 255, 0.06),
-    0 0 10px rgba(224, 120, 48, 0.08);
+    0 0 1px color-mix(in srgb, var(--color-bg-base) 6%, transparent),
+    0 0 10px color-mix(in srgb, var(--color-accent) 8%, transparent);
   background: linear-gradient(
     110deg,
     var(--color-text-tertiary) 0%,
     var(--color-text-tertiary) 65%,
-    rgba(255, 255, 255, 0.95) 75%,
+    color-mix(in srgb, var(--color-bg-base) 95%, transparent) 75%,
     var(--color-text-tertiary) 85%,
     var(--color-text-tertiary) 100%
   );
@@ -374,7 +374,7 @@ function openSubAgentTab() {
   gap: 7px;
   height: 26px;
   padding-inline: 6px 8px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border-mid);
   background: var(--color-bg-elevated);
   cursor: default;
@@ -393,7 +393,7 @@ function openSubAgentTab() {
   cursor: pointer;
 }
 .subagent-badge--clickable:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-bright);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
 }
@@ -435,7 +435,7 @@ function openSubAgentTab() {
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   flex-shrink: 0;
 }
 .sa-icon-wrap--info {

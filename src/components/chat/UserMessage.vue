@@ -154,7 +154,7 @@ async function copyMessage(text: string) {
   width: 22px;
   height: 22px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -165,7 +165,7 @@ async function copyMessage(text: string) {
 }
 
 .user-copy-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-mid);
   color: var(--color-text-secondary);
 }
@@ -179,12 +179,11 @@ async function copyMessage(text: string) {
   background: var(--color-accent-muted-plus);
   color: var(--color-text-primary);
   border: 1px solid var(--color-accent-dim);
-  border-radius: 12px 12px 3px 12px;
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-xs) var(--radius-lg);
   font-size: 13.5px;
   line-height: 1.55;
   white-space: pre-wrap;
   word-wrap: break-word;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 .mention-chip {
   display: inline-flex;
@@ -194,7 +193,7 @@ async function copyMessage(text: string) {
   color: var(--color-accent-text);
   background: var(--color-accent-muted-plus);
   border: 1px solid var(--color-accent-dim);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 0 4px;
   margin: 0 2px;
   vertical-align: baseline;
@@ -211,7 +210,7 @@ async function copyMessage(text: string) {
 }
 .user-att-chip {
   position: relative;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--color-bg-base);
   border: 1px solid var(--color-accent-dim);

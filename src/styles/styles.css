@@ -18,61 +18,69 @@ body {
 }
 
 @theme {
-  /* Backgrounds */
-  --color-bg-base: #0c0a08;
-  --color-bg-surface: #111009;
-  --color-bg-card: #181410;
-  --color-bg-hover: #201a13;
-  --color-bg-elevated: #27211a;
+  /* Backgrounds (Default: Ocean Theme) */
+  --color-bg-base: #121358;
+  --color-bg-surface: #1b2066;
+  --color-bg-card: #232f72;
+  --color-bg-hover: #293881;
+  --color-bg-elevated: #2f578a;
 
   /* Accent — primary brand */
-  --color-accent-dim: #7a3d12;
-  --color-accent: #c8651f;
-  --color-accent-bright: #e07830;
-  --color-accent-text: #f0a060;
-  --color-accent-muted: #e078301f;
-  --color-accent-muted-plus: #e0783030;
+  --color-accent-dim: #2a8e85;
+  --color-accent: #36ada3;
+  --color-accent-bright: #4dd5c9;
+  --color-accent-text: #8ce3dc;
+  --color-accent-muted: #36ada31a;
+  --color-accent-muted-plus: #36ada32a;
 
   /* Info — neutrals and secondary actions */
-  --color-info: #6aaec8;
-  --color-info-text: #90cce0;
-  --color-info-muted: #6aaec810;
-  --color-info-muted-plus: #6aaec820;
+  --color-info: #3b82f6;
+  --color-info-text: #93c5fd;
+  --color-info-muted: #3b82f61a;
+  --color-info-muted-plus: #3b82f62a;
 
   /* Success — positive feedback */
-  --color-success: #5e9468;
-  --color-success-text: #88be94;
-  --color-success-muted: #5e946818;
+  --color-success: #22c55e;
+  --color-success-text: #86efac;
+  --color-success-muted: #22c55e1a;
 
   /* Warning — attention required */
-  --color-warning: #a8843a;
-  --color-warning-text: #d4aa68;
+  --color-warning: #eab308;
+  --color-warning-text: #fde047;
 
   /* Danger — errors and destructive actions */
-  --color-danger: #a85050;
-  --color-danger-hover: #c06060;
-  --color-danger-text: #d88080;
-  --color-danger-muted: #a8505018;
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+  --color-danger-text: #fca5a5;
+  --color-danger-muted: #ef44441a;
 
   /* Provider Brand Colors */
   --color-openai: #10a37f;
   --color-openai-glow: #10a37f18;
+  --color-openai-muted: #10a37f18;
   --color-anthropic: #cc7852;
   --color-anthropic-glow: #cc785218;
+  --color-anthropic-muted: #cc785218;
   --color-google: #4285f4;
   --color-google-glow: #4285f418;
+  --color-google-muted: #4285f418;
+  --color-google-blue: #4285f4;
+  --color-google-green: #34a853;
+  --color-google-yellow: #fbbc05;
+  --color-google-red: #ea4335;
 
   /* Text Typography */
-  --color-text-primary: #ede5d8;
-  --color-text-secondary: #a59688;
-  --color-text-tertiary: #8a7868;
-  --color-text-dim: #504438;
-  --color-code: #88c0d8;
+  --color-text-primary: #e0ecfc;
+  --color-text-secondary: #9ab2d4;
+  --color-text-tertiary: #6a82a4;
+  --color-text-dim: #4a6284;
+  --color-code: #8ce3dc;
+  --color-text-code: var(--color-code);
 
   /* Borders & Dividers */
-  --color-border-subtle: #1e1812;
-  --color-border-mid: #2e2618;
-  --color-border-bright: #443a28;
+  --color-border-subtle: #1c276a;
+  --color-border-mid: #2f578a;
+  --color-border-bright: #3c6c9a;
 
   /* Syntax Highlighting */
   --color-syntax-base: var(--color-text-primary);
@@ -89,21 +97,74 @@ body {
   --color-syntax-punct: var(--color-text-tertiary);
 
   /* Border radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-pill: 99px;
+
+  /* Shadows (Dark Theme Defaults) */
+  --color-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --color-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --color-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --color-shadow-floating:
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 4px 12px rgba(0, 0, 0, 0.3),
+    0 12px 28px rgba(0, 0, 0, 0.35);
+
+  /* File type icon colors */
+  --file-color-ts: #90cce0;
+  --file-color-js: #d4aa68;
+  --file-color-vue: #88be94;
+  --file-color-css: #6aaec8;
+  --file-color-rust: #e07830;
+  --file-color-data: #f0a060;
+  --file-color-doc: #ede5d8;
+  --file-color-image: #b8a0d8;
+  --file-color-image-alt: #d8b880;
+  --file-color-media: #a0b8d8;
+  --file-color-archive: #b8b8a0;
+  --file-color-config: #d88080;
+  --file-color-lock: #504438;
+  --file-color-default: #8a7868;
+  --file-color-folder: #d4aa68;
+  --file-color-folder-build: #a59688;
+
+  /* Semantic state tokens */
+  --color-state-hover: var(--color-bg-hover);
+  --color-state-active: var(--color-accent-muted-plus);
+  --color-state-disabled: var(--color-bg-surface);
+  --color-state-selected: var(--color-accent-muted);
+
+  /* Component role tokens — buttons */
+  --color-btn-primary-bg: var(--color-accent);
+  --color-btn-primary-text: #051a18;
+  /* Dark contrasting text */
+  --color-btn-ghost-bg: transparent;
+  --color-btn-ghost-text: var(--color-text-secondary);
+  --color-btn-ghost-hover: var(--color-bg-hover);
+  --color-btn-danger-bg: var(--color-danger);
+  --color-btn-danger-text: var(--color-text-primary);
+
+  /* Component role tokens — surfaces */
+  --color-surface-input: var(--color-bg-elevated);
+  --color-surface-card: var(--color-bg-surface);
+  --color-surface-overlay: var(--color-bg-card);
+  --color-surface-tooltip: var(--color-bg-elevated);
+
+  /* Component role tokens — toggles */
+  --color-toggle-track-off: var(--color-bg-elevated);
+  --color-toggle-track-on: var(--color-accent-dim);
+  --color-toggle-thumb-off: var(--color-text-tertiary);
+  --color-toggle-thumb-on: var(--color-text-primary);
 }
 
 /* ── Global custom scrollbar ───────────────────────────────────────────── */
 
-/* Firefox */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-mid) transparent;
 }
 
-/* Chromium / WebKit (Tauri webview) */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -126,20 +187,17 @@ body {
   background: transparent;
 }
 
-/* ── Text selection ───────────────────────────────────────────────────── */
 ::selection {
   background-color: var(--color-selection-bg);
   color: var(--color-text-primary);
 }
 
-/* ── Focus styles ─────────────────────────────────────────────────────── */
 button:focus,
 input:focus,
 textarea:focus {
   outline: none;
 }
 
-/* ── Global keyframes ─────────────────────────────────────────────────── */
 @keyframes bounce {
   0%,
   60%,

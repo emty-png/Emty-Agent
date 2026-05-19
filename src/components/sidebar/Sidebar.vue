@@ -182,7 +182,7 @@ const { toggle } = sidebar
 }
 
 .sidebar-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 
@@ -203,7 +203,7 @@ const { toggle } = sidebar
 }
 
 .sidebar-btn--active:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-accent-bright);
 }
 
@@ -276,13 +276,13 @@ const { toggle } = sidebar
   transform: translateY(-50%) translateX(-4px);
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   padding: 3px 8px;
   font-size: 11px;
   font-weight: 500;
   color: var(--color-text-primary);
   white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--color-shadow-floating);
   opacity: 0;
   pointer-events: none;
   z-index: 10001;

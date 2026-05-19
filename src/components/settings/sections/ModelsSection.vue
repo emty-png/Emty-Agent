@@ -286,7 +286,7 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   flex-direction: column;
   gap: 16px;
   -webkit-font-smoothing: antialiased;
-  color: var(--color-text-primary, #f4f4f5);
+  color: var(--color-text-primary, #f2f2f2);
 }
 
 .section-title {
@@ -308,10 +308,10 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   gap: 6px;
   height: 28px;
   padding-inline: 10px;
-  border: 1px solid var(--color-border-mid, #3f3f46);
-  border-radius: 6px;
+  border: 1px solid var(--color-border-mid, #2e2e2e);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--color-text-secondary, #a1a1aa);
+  color: var(--color-text-secondary, #cccccc);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -319,8 +319,8 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 }
 
 .ghost-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--color-text-primary, #f4f4f5);
+  background: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  color: var(--color-text-primary, #f2f2f2);
 }
 
 /* Search */
@@ -333,7 +333,7 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   left: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: var(--color-text-tertiary, #71717a);
+  color: var(--color-text-tertiary, #8a8a8a);
   pointer-events: none;
 }
 
@@ -342,10 +342,10 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   height: 36px;
   padding-left: 36px;
   padding-right: 12px;
-  background: var(--color-bg-elevated, #09090b);
-  border: 1px solid var(--color-border-subtle, #27272a);
-  border-radius: 7px;
-  color: var(--color-text-primary, #f4f4f5);
+  background: var(--color-bg-elevated, #262626);
+  border: 1px solid var(--color-border-subtle, #1a1a1a);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary, #f2f2f2);
   font-size: 13px;
   outline: none;
   transition:
@@ -354,12 +354,12 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 }
 
 .search-input::placeholder {
-  color: var(--color-text-tertiary, #71717a);
+  color: var(--color-text-tertiary, #8a8a8a);
 }
 
 .search-input:focus {
-  border-color: var(--color-accent, #10b981);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent, #10b981) 15%, transparent);
+  border-color: var(--color-accent, #00e5ff);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent, #00e5ff) 15%, transparent);
 }
 
 /* Empty States */
@@ -369,9 +369,9 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   flex-direction: column;
   align-items: center;
   text-align: center;
-  background: var(--color-bg-surface, #09090b);
-  border: 1px dashed var(--color-border-mid, #3f3f46);
-  border-radius: 10px;
+  background: var(--color-bg-surface, #0a0a0a);
+  border: 1px dashed var(--color-border-mid, #2e2e2e);
+  border-radius: var(--radius-lg);
 }
 
 .empty-icon-wrap {
@@ -381,8 +381,8 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--color-text-tertiary, #71717a);
+  background: color-mix(in srgb, var(--color-text-primary) 3%, transparent);
+  color: var(--color-text-tertiary, #8a8a8a);
   margin-bottom: 12px;
 }
 
@@ -390,12 +390,12 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   margin: 0 0 6px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--color-text-primary, #f4f4f5);
+  color: var(--color-text-primary, #f2f2f2);
 }
 .empty-sub {
   margin: 0;
   font-size: 12.5px;
-  color: var(--color-text-secondary, #a1a1aa);
+  color: var(--color-text-secondary, #cccccc);
   max-width: 380px;
   line-height: 1.5;
 }
@@ -408,9 +408,9 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 }
 
 .model-group {
-  background: var(--color-bg-surface, #09090b);
-  border: 1px solid var(--color-border-subtle, #27272a);
-  border-radius: 9px;
+  background: var(--color-bg-surface, #0a0a0a);
+  border: 1px solid var(--color-border-subtle, #1a1a1a);
+  border-radius: var(--radius-lg);
   /* Removed overflow: hidden so tooltips don't clip */
 }
 
@@ -419,9 +419,9 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--color-border-subtle, #27272a);
-  background: rgba(255, 255, 255, 0.012);
-  border-radius: 9px 9px 0 0;
+  border-bottom: 1px solid var(--color-border-subtle, #1a1a1a);
+  background: color-mix(in srgb, var(--color-text-primary) 1.2%, transparent);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
 .group-name {
@@ -429,12 +429,12 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--color-text-tertiary, #71717a);
+  color: var(--color-text-tertiary, #8a8a8a);
 }
 
 .group-stats {
   font-size: 11px;
-  color: var(--color-text-dim, #52525b);
+  color: var(--color-text-dim, #595959);
 }
 
 .model-list {
@@ -449,17 +449,17 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
-  border-bottom: 1px solid var(--color-border-subtle, #27272a);
+  border-bottom: 1px solid var(--color-border-subtle, #1a1a1a);
   transition: background 0.12s ease;
 }
 
 .model-card:last-child {
   border-bottom: none;
-  border-radius: 0 0 9px 9px;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 
 .model-card:hover {
-  background: rgba(255, 255, 255, 0.015);
+  background: color-mix(in srgb, var(--color-text-primary) 1.5%, transparent);
 }
 .model-card--disabled {
   opacity: 0.55;
@@ -483,12 +483,12 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 }
 
 .info-icon {
-  color: var(--color-text-tertiary, #71717a);
+  color: var(--color-text-tertiary, #8a8a8a);
   transition: color 0.15s;
 }
 
 .tt-trigger:hover .info-icon {
-  color: var(--color-text-primary, #fff);
+  color: var(--color-text-primary, #f2f2f2);
 }
 
 .tt-panel {
@@ -497,11 +497,11 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   left: -4px;
   width: max-content;
   max-width: 300px;
-  background: #1c1917; /* Warm dark gray/brown */
-  border: 1px solid #292524;
-  border-radius: 6px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
   padding: 10px 14px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--color-shadow-lg);
   opacity: 0;
   pointer-events: none;
   transform: translateY(-4px);
@@ -520,19 +520,19 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 .tt-header {
   font-size: 13.5px;
   font-weight: 600;
-  color: #f5f5f5;
+  color: var(--color-text-primary);
   margin-bottom: 2px;
 }
 
 .tt-line {
   font-size: 12.5px;
-  color: #d6d3d1;
+  color: var(--color-text-secondary);
   line-height: 1.4;
 }
 
 .tt-meta-divider {
   height: 1px;
-  background: #292524;
+  background: var(--color-border-subtle);
   margin: 4px 0;
 }
 
@@ -546,10 +546,10 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 }
 
 .tt-meta-label {
-  color: #78716c;
+  color: var(--color-text-dim);
 }
 .tt-meta-value {
-  color: #a8a29e;
+  color: var(--color-text-tertiary);
 }
 
 /* Title & ID */
@@ -557,7 +557,7 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   margin: 0;
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--color-text-primary, #ffffff);
+  color: var(--color-text-primary, #f2f2f2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -567,7 +567,7 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 .model-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
-  color: var(--color-text-dim, #52525b);
+  color: var(--color-text-dim, #595959);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -588,7 +588,7 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   font-weight: 600;
   letter-spacing: 0.03em;
   padding: 2px 6px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   line-height: 1.4;
   white-space: nowrap;
   color: var(--color-text-tertiary);
@@ -602,13 +602,13 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   cursor: default;
   transition: background 0.1s ease;
 }
 
 .cap-icon-wrap:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
 }
 
 /* Picker-like CSS tooltips for icons */
@@ -619,14 +619,14 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   left: 50%;
   transform: translateX(-50%) translateY(4px);
   white-space: nowrap;
-  background: var(--color-bg-elevated, #18181b);
-  border: 1px solid var(--color-border-mid, #3f3f46);
-  color: var(--color-text-primary, #fff);
+  background: var(--color-bg-elevated, #262626);
+  border: 1px solid var(--color-border-mid, #2e2e2e);
+  color: var(--color-text-primary, #f2f2f2);
   font-size: 11px;
   font-weight: 500;
   padding: 4px 8px;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-md);
+  box-shadow: var(--color-shadow-md);
   pointer-events: none;
   opacity: 0;
   transition:
@@ -644,17 +644,17 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   display: block;
 }
 .cap-icon--thinking {
-  color: #c084fc;
-} /* Purple */
+  color: color-mix(in srgb, var(--color-accent) 70%, var(--color-text-primary));
+}
 .cap-icon--tools {
-  color: #34d399;
-} /* Green */
+  color: color-mix(in srgb, var(--color-success) 70%, var(--color-text-primary));
+}
 .cap-icon--vision {
-  color: #38bdf8;
-} /* Blue */
+  color: color-mix(in srgb, var(--color-info) 70%, var(--color-text-primary));
+}
 .cap-icon--structured {
-  color: #f472b6;
-} /* Pink */
+  color: color-mix(in srgb, var(--color-warning) 70%, var(--color-text-primary));
+}
 
 /* Controls (Right) */
 .model-controls {
@@ -666,8 +666,8 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 
 .effort-seg {
   display: flex;
-  border: 1px solid var(--color-border-mid, #3f3f46);
-  border-radius: 5px;
+  border: 1px solid var(--color-border-mid, #2e2e2e);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
@@ -679,7 +679,7 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   height: 22px;
   border: none;
   background: transparent;
-  color: var(--color-text-tertiary, #71717a);
+  color: var(--color-text-tertiary, #8a8a8a);
   font-size: 10.5px;
   font-weight: 500;
   cursor: pointer;
@@ -687,15 +687,15 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 }
 
 .effort-btn:not(:last-child) {
-  border-right: 1px solid var(--color-border-mid, #3f3f46);
+  border-right: 1px solid var(--color-border-mid, #2e2e2e);
 }
 .effort-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--color-text-secondary, #a1a1aa);
+  background: color-mix(in srgb, var(--color-text-primary) 5%, transparent);
+  color: var(--color-text-secondary, #cccccc);
 }
 .effort-btn--active {
-  background: #4c1d95;
-  color: #e9d5ff;
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 
@@ -706,8 +706,8 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   width: 38px;
   height: 22px;
   border-radius: 99px;
-  border: 1px solid var(--color-border-mid, #3f3f46);
-  background: var(--color-bg-elevated, #18181b);
+  border: 1px solid var(--color-border-mid, #2e2e2e);
+  background: var(--color-bg-elevated, #262626);
   cursor: pointer;
   transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0;
@@ -715,8 +715,8 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 }
 
 .custom-toggle--on {
-  background: #10b981;
-  border-color: #10b981;
+  background: var(--color-success);
+  border-color: var(--color-success);
 }
 
 .custom-toggle-thumb {
@@ -725,16 +725,16 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #71717a;
+  background: var(--color-text-dim);
   transition:
     transform 0.18s cubic-bezier(0.4, 0, 0.2, 1),
     background 0.18s;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--color-shadow-sm);
 }
 
 .custom-toggle--on .custom-toggle-thumb {
   transform: translateX(16px);
-  background: #ffffff;
+  background: var(--color-text-primary);
 }
 
 @media (max-width: 640px) {

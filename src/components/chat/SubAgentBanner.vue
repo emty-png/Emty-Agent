@@ -35,7 +35,7 @@ defineProps<{
 .sa-banner-body {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 16px 20px;
 }
 .sa-banner-header {

@@ -82,14 +82,14 @@ const queueCount = computed(() => chat.activeTab.pendingPermissions.length)
 <style scoped>
 .perm-overlay {
   width: 100%;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   margin-bottom: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .perm-header {
@@ -170,8 +170,8 @@ const queueCount = computed(() => chat.activeTab.pendingPermissions.length)
 .perm-args {
   margin: 0 16px;
   padding: 12px 14px;
-  border-radius: 10px;
-  background: var(--color-bg-elevated);
+  border-radius: var(--radius-md);
+  background: var(--color-state-hover);
   border: 1px solid var(--color-border-subtle);
   color: var(--color-text-secondary);
   font-size: 12px;
@@ -200,7 +200,7 @@ const queueCount = computed(() => chat.activeTab.pendingPermissions.length)
   min-height: 34px;
   padding-inline: 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 12px;
@@ -213,7 +213,7 @@ const queueCount = computed(() => chat.activeTab.pendingPermissions.length)
 }
 
 .perm-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 
@@ -224,7 +224,7 @@ const queueCount = computed(() => chat.activeTab.pendingPermissions.length)
 }
 
 .perm-btn--primary:hover {
-  background: color-mix(in srgb, var(--color-accent-muted) 90%, white 10%);
+  background: color-mix(in srgb, var(--color-accent-muted) 90%, var(--color-bg-base) 10%);
 }
 
 .perm-btn--deny {

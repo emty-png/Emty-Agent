@@ -740,7 +740,7 @@ function getOptionChoices(optionId: string) {
   position: fixed;
   inset: 0;
   z-index: 99999;
-  background: rgba(0, 0, 0, 0.65);
+  background: color-mix(in srgb, var(--color-bg-base) 65%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -755,10 +755,10 @@ function getOptionChoices(optionId: string) {
   max-width: 100%;
   height: 620px;
   max-height: calc(100vh - 48px);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-mid);
-  border-radius: 12px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-bright);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   overflow: hidden;
   animation: modal-in 160ms cubic-bezier(0.2, 0, 0, 1) both;
 }
@@ -800,7 +800,7 @@ function getOptionChoices(optionId: string) {
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -810,7 +810,7 @@ function getOptionChoices(optionId: string) {
 }
 
 .modal-close:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 
@@ -840,7 +840,7 @@ function getOptionChoices(optionId: string) {
   height: 34px;
   padding-inline: 10px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 13px;
@@ -912,7 +912,7 @@ function getOptionChoices(optionId: string) {
   height: 34px;
   padding: 0 12px 0 32px;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--color-text-primary);
   font-size: 13px;
@@ -937,7 +937,7 @@ function getOptionChoices(optionId: string) {
   padding: 14px;
   background: var(--color-bg-base);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   text-align: left;
   transition:
@@ -946,7 +946,7 @@ function getOptionChoices(optionId: string) {
 }
 
 .template-card:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-mid);
 }
 
@@ -996,7 +996,7 @@ function getOptionChoices(optionId: string) {
   color: var(--color-text-tertiary);
   font-size: 13px;
   border: 1px dashed var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 /* --- Configure Step --- */
@@ -1011,7 +1011,7 @@ function getOptionChoices(optionId: string) {
   padding: 6px 12px 6px 6px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--color-text-secondary);
   font-size: 13px;
   font-weight: 500;
@@ -1020,7 +1020,7 @@ function getOptionChoices(optionId: string) {
 }
 
 .btn-back:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 
@@ -1032,7 +1032,7 @@ function getOptionChoices(optionId: string) {
   padding: 16px;
   background: var(--color-bg-base);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 
 .configure-hero-icon {
@@ -1043,8 +1043,8 @@ function getOptionChoices(optionId: string) {
   padding: 0;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
-  border-radius: 14px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow);
   color: var(--color-text-primary);
   flex-shrink: 0;
 }
@@ -1128,7 +1128,7 @@ function getOptionChoices(optionId: string) {
   padding: 0 12px;
   background: var(--color-bg-base);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   color: var(--color-text-primary);
   font-family: inherit;
   font-size: 13px;
@@ -1153,7 +1153,7 @@ function getOptionChoices(optionId: string) {
   justify-content: center;
   height: 36px;
   padding: 0 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -1167,7 +1167,7 @@ function getOptionChoices(optionId: string) {
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-mid);
 }
 
@@ -1195,7 +1195,7 @@ function getOptionChoices(optionId: string) {
   justify-content: center;
   height: 36px;
   padding: 0 20px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1228,7 +1228,7 @@ function getOptionChoices(optionId: string) {
   padding: 12px 16px;
   background: var(--color-bg-base);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   color: var(--color-text-secondary);
   font-family:
     ui-monospace,
@@ -1281,7 +1281,7 @@ function getOptionChoices(optionId: string) {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   border: 1.5px solid var(--color-border-mid);
   background: var(--color-bg-base);
   color: transparent;
@@ -1293,7 +1293,7 @@ function getOptionChoices(optionId: string) {
 
 .toggle-checkbox:hover:not(:disabled) {
   border-color: var(--color-border-bright);
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 .toggle-checkbox--checked {
@@ -1344,7 +1344,7 @@ function getOptionChoices(optionId: string) {
 }
 
 .status-icon.error {
-  color: #ff6b6b;
+  color: var(--color-danger);
 }
 
 .spinner {
@@ -1376,7 +1376,7 @@ function getOptionChoices(optionId: string) {
   padding: 16px;
   background: var(--color-bg-base);
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-family:
     ui-monospace,
     SFMono-Regular,

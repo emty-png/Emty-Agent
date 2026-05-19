@@ -78,11 +78,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   min-width: 320px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 8px 24px rgba(0, 0, 0, 0.5),
-    0 24px 56px rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   overflow: hidden;
   animation: preview-slide-up 200ms ease;
 }
@@ -136,7 +133,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   width: 28px;
   height: 28px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -148,7 +145,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .preview-close:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
   border-color: var(--color-border-bright);
 }
@@ -166,7 +163,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   max-width: 100%;
   max-height: calc(85vh - 80px);
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
 }
 
@@ -178,7 +175,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   padding: 16px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 12.5px;

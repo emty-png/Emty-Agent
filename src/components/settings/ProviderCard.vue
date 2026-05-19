@@ -63,7 +63,7 @@ const isExpanded = ref(false)
   box-sizing: border-box;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
@@ -91,12 +91,10 @@ const isExpanded = ref(false)
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-elevated, color-mix(in srgb, var(--color-bg-surface) 60%, transparent));
   border: 1px solid var(--color-border-mid);
-  box-shadow:
-    inset 0 1px 2px rgba(255, 255, 255, 0.02),
-    0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--color-shadow-sm);
   flex-shrink: 0;
 }
 
@@ -157,7 +155,7 @@ const isExpanded = ref(false)
   height: 32px;
   padding: 0 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-elevated);
   color: var(--color-text-primary);
   font-size: 13px;
@@ -167,7 +165,7 @@ const isExpanded = ref(false)
 }
 
 .configure-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-strong);
 }
 

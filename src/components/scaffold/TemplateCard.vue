@@ -38,7 +38,7 @@ const emit = defineEmits<{
   width: 100%;
   text-align: left;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: var(--color-bg-surface);
   color: inherit;
   overflow: hidden;
@@ -49,14 +49,14 @@ const emit = defineEmits<{
     border-color 140ms ease,
     background 140ms ease,
     box-shadow 140ms ease;
-  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  box-shadow: none;
 }
 
 .template-card:hover {
   transform: translateY(-1px) scale(1.01);
   background: var(--color-bg-hover);
   border-color: var(--color-accent-muted);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--color-shadow);
 }
 
 .template-card-accent {

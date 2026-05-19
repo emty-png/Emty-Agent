@@ -114,7 +114,7 @@ async function refreshSkills() {
   width: 32px;
   height: 32px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -125,7 +125,7 @@ async function refreshSkills() {
 }
 
 .icon-btn:hover:not(:disabled) {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 
@@ -147,7 +147,7 @@ async function refreshSkills() {
 .skills-status {
   padding: 10px 14px;
   background: var(--color-bg-elevated);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-size: 12px;
   color: var(--color-text-secondary);
   margin-bottom: 16px;
@@ -163,7 +163,7 @@ async function refreshSkills() {
   flex-direction: column;
   gap: 1px;
   background: var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
 }
@@ -180,7 +180,7 @@ async function refreshSkills() {
 }
 
 .skill-item:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 .skill-item--disabled {
@@ -220,7 +220,7 @@ async function refreshSkills() {
   height: 20px;
   border-radius: 99px;
   border: 1px solid var(--color-border-mid);
-  background: var(--color-bg-elevated);
+  background: var(--color-toggle-track-off);
   cursor: pointer;
   transition:
     background 140ms ease,
@@ -229,7 +229,7 @@ async function refreshSkills() {
 }
 
 .model-toggle--on {
-  background: var(--color-accent-dim);
+  background: var(--color-toggle-track-on);
   border-color: var(--color-accent);
 }
 
@@ -239,7 +239,7 @@ async function refreshSkills() {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--color-text-tertiary);
+  background: var(--color-toggle-thumb-off);
   transition:
     transform 140ms cubic-bezier(0.4, 0, 0.2, 1),
     background 140ms ease;
@@ -247,7 +247,7 @@ async function refreshSkills() {
 
 .model-toggle--on .model-toggle-thumb {
   transform: translateX(14px);
-  background: #fff;
+  background: var(--color-text-primary);
 }
 
 .skills-empty {
@@ -257,7 +257,7 @@ async function refreshSkills() {
   color: var(--color-text-tertiary);
   background: var(--color-bg-surface);
   border: 1px dashed var(--color-border-mid);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   margin-top: 16px;
 }
 </style>

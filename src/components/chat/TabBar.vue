@@ -161,7 +161,7 @@ function toggleGitPane() {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--color-text-tertiary);
   opacity: 0;
   transition:

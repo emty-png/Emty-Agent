@@ -289,10 +289,10 @@ onUnmounted(() => {
     >
       <template #logo>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05" />
-          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="var(--color-google-blue)" />
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="var(--color-google-green)" />
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="var(--color-google-yellow)" />
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="var(--color-google-red)" />
         </svg>
       </template>
       <template #fields>
@@ -561,9 +561,9 @@ onUnmounted(() => {
 
 /* Universal safe box for 3rd party brand logos */
 .compat-logo {
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: var(--color-bg-base);
+  border: 1px solid color-mix(in srgb, var(--color-bg-base) 10%, transparent);
+  box-shadow: var(--color-shadow-sm);
 }
 
 .provider-mdev-icon {
@@ -575,7 +575,7 @@ onUnmounted(() => {
 }
 
 .compat-logo-fallback {
-  color: #666666; /* Contrast against the white background box */
+  color: var(--color-text-dim);
 }
 
 .field-group {
@@ -602,13 +602,13 @@ onUnmounted(() => {
   padding: 0 12px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: all 150ms ease;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-bg-base) 2%, transparent);
 }
 
 .field-input:focus {
@@ -637,7 +637,7 @@ onUnmounted(() => {
   height: 26px;
   padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-elevated);
   color: var(--color-text-secondary);
   font-size: 12px;
@@ -675,7 +675,7 @@ onUnmounted(() => {
   height: 32px;
   padding: 0 16px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-elevated);
   color: var(--color-text-primary);
   font-size: 13px;
@@ -683,7 +683,7 @@ onUnmounted(() => {
   cursor: pointer;
   white-space: nowrap;
   transition: all 150ms ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--color-shadow-sm);
 }
 
 .test-btn:hover:not(:disabled) {
@@ -719,7 +719,7 @@ onUnmounted(() => {
   height: 32px;
   padding: 0 14px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-surface);
   color: var(--color-text-primary);
   font-size: 12.5px;
@@ -727,11 +727,11 @@ onUnmounted(() => {
   white-space: nowrap;
   cursor: pointer;
   transition: all 150ms ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--color-shadow-sm);
 }
 
 .add-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-strong);
 }
 
@@ -749,7 +749,7 @@ onUnmounted(() => {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-surface);
   color: var(--color-text-secondary);
   font-size: 13px;
@@ -759,7 +759,7 @@ onUnmounted(() => {
 }
 
 .preset-chip:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
   border-color: var(--color-border-bright);
 }
@@ -772,16 +772,16 @@ onUnmounted(() => {
   color: var(--color-success-text);
   background: color-mix(in srgb, var(--color-success-muted) 30%, transparent);
   border: 1px solid var(--color-success-muted);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 2px 6px;
 }
 
 .add-form {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--color-shadow-md);
 }
 
 .add-form-title {
@@ -817,7 +817,7 @@ onUnmounted(() => {
   height: 34px;
   padding: 0 16px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 13px;
@@ -827,7 +827,7 @@ onUnmounted(() => {
 }
 
 .ghost-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 
@@ -835,14 +835,14 @@ onUnmounted(() => {
   height: 34px;
   padding: 0 16px;
   border: 1px solid var(--color-accent);
-  border-radius: 6px;
-  background: var(--color-accent);
-  color: #fff; /* Enforce contrast */
+  border-radius: var(--radius-md);
+  background: var(--color-btn-primary-bg);
+  color: var(--color-btn-primary-text);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 150ms ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--color-shadow-sm);
 }
 
 .primary-btn:hover {
@@ -856,7 +856,7 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -874,7 +874,7 @@ onUnmounted(() => {
   text-align: center;
   background: var(--color-bg-surface);
   border: 1px dashed var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-size: 14px;
   color: var(--color-text-secondary);
   line-height: 1.6;

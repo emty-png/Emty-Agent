@@ -59,9 +59,9 @@ const emit = defineEmits<{
   align-items: center;
   gap: 8px;
   padding: 5px 8px 5px 5px;
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border: 1px solid var(--color-border-bright);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   max-width: 220px;
   transition:
@@ -78,7 +78,7 @@ const emit = defineEmits<{
   width: 36px;
   height: 36px;
   object-fit: cover;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 
@@ -88,7 +88,7 @@ const emit = defineEmits<{
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--color-bg-card);
   color: var(--color-text-tertiary);
   flex-shrink: 0;
@@ -123,7 +123,7 @@ const emit = defineEmits<{
   width: 18px;
   height: 18px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;

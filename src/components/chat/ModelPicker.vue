@@ -261,13 +261,13 @@ function hideTooltip() {
 /*
   Design system (matches component library + ServicesDropdown):
   ─────────────────────────────────────────────────────────────
-  Border radius  → xs=4  sm=6  md=8  lg=12  xl=16  pill=9999
+  Border radius  → xs=3  sm=4  md=6  lg=8  xl=12  pill=9999
   Ease out expo  → cubic-bezier(0.16, 1, 0.3, 1)    snappy open
   Ease in expo   → cubic-bezier(0.7,  0, 0.84, 0)   fast close
   Ease smooth    → cubic-bezier(0.4,  0, 0.2,  1)   state change
   Ease spring    → cubic-bezier(0.34, 1.56, 0.64, 1) pop/bounce
 
-  Durations → instant 80ms  micro 150ms  fast 220ms  normal 280ms
+  Durations → instant 80ms  micro 100ms  fast 150ms  normal 220ms
 */
 
 /* ── Wrapper ──────────────────────────────────────────────────────────────── */
@@ -283,7 +283,7 @@ function hideTooltip() {
   height: 30px;
   padding-inline: 10px 8px;
   border: 1px solid transparent;
-  border-radius: 8px; /* md */
+  border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
   max-width: 260px;
@@ -295,9 +295,9 @@ function hideTooltip() {
 
 .model-btn:hover,
 .model-btn--open {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-mid);
-  border-radius: 10px; /* φ-step up */
+  border-radius: var(--radius-lg);
 }
 
 .model-btn:active {
@@ -339,12 +339,8 @@ function hideTooltip() {
   max-height: 300px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px; /* lg */
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 8px 24px rgba(0, 0, 0, 0.45),
-    0 24px 56px rgba(0, 0, 0, 0.55),
-    0 0 48px var(--color-accent-muted);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -383,7 +379,7 @@ function hideTooltip() {
   padding-right: 10px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-bright);
-  border-radius: 8px; /* md */
+  border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: 12.5px;
   outline: none;
@@ -432,7 +428,7 @@ function hideTooltip() {
 .picker-group-header {
   display: block;
   padding: 10px 16px 5px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -450,7 +446,7 @@ function hideTooltip() {
   height: 34px;
   padding-inline: 8px;
   border: 1px solid transparent;
-  border-radius: 8px; /* md */
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -463,7 +459,7 @@ function hideTooltip() {
 }
 
 .picker-model-row:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-subtle);
   color: var(--color-text-primary);
 }
@@ -504,7 +500,7 @@ function hideTooltip() {
   font-weight: 600;
   letter-spacing: 0.03em;
   padding: 2px 7px;
-  border-radius: 4px; /* xs */
+  border-radius: var(--radius-xs);
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -523,13 +519,13 @@ function hideTooltip() {
   justify-content: center;
   width: 20px;
   height: 20px;
-  border-radius: 4px; /* xs */
+  border-radius: var(--radius-xs);
   cursor: default;
   transition: background 100ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .cap-icon-wrap:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 .cap-icon {
@@ -557,7 +553,7 @@ function hideTooltip() {
   font-weight: 500;
   letter-spacing: 0.01em;
   padding: 5px 10px;
-  border-radius: 6px; /* sm */
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   pointer-events: none;
   z-index: 99999;
@@ -638,14 +634,14 @@ function hideTooltip() {
 */
 .picker-enter-active {
   transition:
-    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .picker-leave-active {
   transition:
-    opacity 160ms cubic-bezier(0.7, 0, 0.84, 0),
-    transform 160ms cubic-bezier(0.7, 0, 0.84, 0);
+    opacity 100ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 100ms cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 /* translate(-50%, -100%) must be preserved — it's the centering/anchoring transform */

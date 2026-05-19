@@ -226,7 +226,7 @@ function clearSessionApprovals() {
 .settings-card {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
@@ -291,11 +291,11 @@ function clearSessionApprovals() {
  ========================================= */
 .segmented-control {
   display: flex;
-  background: var(--color-bg-elevated, #f3f4f6);
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border-mid, #d1d5db);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  background: var(--color-bg-elevated, #262626);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-mid, #2e2e2e);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-bg-base) 4%, transparent);
 }
 
 .mode-btn {
@@ -304,9 +304,9 @@ function clearSessionApprovals() {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: 34px;
+  height: 30px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   font-size: 13px;
   font-weight: 500;
@@ -322,22 +322,22 @@ function clearSessionApprovals() {
 }
 
 .mode-btn:first-child[aria-checked='true'] {
-  background: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--color-text-primary) 15%, transparent);
   color: var(--color-text-primary);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--color-shadow-sm);
 }
 
 /* Specific styling for Auto button */
 .mode-btn:last-child {
-  color: var(--color-accent, #10b981);
+  color: var(--color-accent, #00e5ff);
 }
 
 .mode-btn:last-child[aria-checked='true'] {
-  background: var(--color-accent, #10b981);
-  color: var(--color-bg-surface, #ffffff);
+  background: var(--color-accent, #00e5ff);
+  color: var(--color-bg-surface, #0a0a0a);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--color-shadow-sm);
 }
 
 /* =========================================
@@ -349,10 +349,10 @@ function clearSessionApprovals() {
   gap: 6px;
   height: 32px;
   padding: 0 12px;
-  border: 1px solid var(--color-border-mid, #d1d5db);
-  border-radius: 6px;
+  border: 1px solid var(--color-border-mid, #2e2e2e);
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--color-text-secondary, #374151);
+  color: var(--color-text-secondary, #cccccc);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -361,9 +361,9 @@ function clearSessionApprovals() {
 }
 
 .ghost-btn:hover:not(:disabled) {
-  background: var(--color-bg-hover, #f9fafb);
-  color: var(--color-text-primary, #111827);
-  border-color: var(--color-text-tertiary, #6b7280);
+  background: var(--color-state-hover, #1c1c1c);
+  color: var(--color-text-primary, #f2f2f2);
+  border-color: var(--color-text-tertiary, #8a8a8a);
 }
 
 .ghost-btn:disabled {
@@ -401,7 +401,7 @@ function clearSessionApprovals() {
 }
 
 .group-toggle-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 .group-title-row {
@@ -426,7 +426,7 @@ function clearSessionApprovals() {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border-mid);
   background: var(--color-bg-elevated);
   color: transparent;
@@ -437,15 +437,15 @@ function clearSessionApprovals() {
 
 button[aria-checked='true'] .checkbox-indicator,
 button[aria-checked='mixed'] .checkbox-indicator {
-  background: var(--color-accent-muted, #eff6ff);
-  border-color: var(--color-accent-dim, #bfdbfe);
-  color: var(--color-accent-text, #1d4ed8);
+  background: var(--color-accent-muted, #00e5ff1a);
+  border-color: var(--color-accent-dim, #008099);
+  color: var(--color-accent-text, #80f4ff);
 }
 
 .checkbox-indicator--small {
   width: 16px;
   height: 16px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .checkbox-indicator .icon {
@@ -477,7 +477,7 @@ button[aria-checked='mixed'] .checkbox-indicator .icon {
   width: 100%;
   padding: 8px 12px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -490,14 +490,14 @@ button[aria-checked='mixed'] .checkbox-indicator .icon {
 
 .tool-item:hover {
   opacity: 1;
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 .tool-item:focus-visible {
   outline: none;
   opacity: 1;
   border-color: var(--color-accent-dim);
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 .tool-name {

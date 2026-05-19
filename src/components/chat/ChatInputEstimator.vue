@@ -356,7 +356,7 @@ async function refreshEstimate() {
   height: 30px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
   flex-shrink: 0;
@@ -368,9 +368,9 @@ async function refreshEstimate() {
 
 .context-ring:hover,
 .context-ring:focus-visible {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-mid);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   outline: none;
 }
 
@@ -423,15 +423,12 @@ async function refreshEstimate() {
   bottom: calc(100% + 10px);
   width: 260px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 
   background: var(--color-bg-elevated);
 
   border: 1px solid var(--color-border-bright);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 8px 24px rgba(0, 0, 0, 0.5),
-    0 24px 56px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--color-shadow-floating);
 
   opacity: 0;
   visibility: hidden;
@@ -466,7 +463,7 @@ async function refreshEstimate() {
 }
 
 .estimator-title {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--color-text-tertiary);
   letter-spacing: 0.05em;
@@ -563,7 +560,7 @@ async function refreshEstimate() {
   color: var(--color-text-secondary);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition:
     background 100ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -573,7 +570,7 @@ async function refreshEstimate() {
 
 .estimator-compact-btn:hover {
   color: var(--color-text-primary);
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-subtle);
 }
 
@@ -602,7 +599,7 @@ async function refreshEstimate() {
   font-weight: 500;
   letter-spacing: 0.01em;
   padding: 5px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   pointer-events: none;
   z-index: 99999;

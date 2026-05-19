@@ -53,4 +53,220 @@
   --color-border-bright: #454545;
 
   --color-selection-bg: #00e5ff33;
+
+  --color-text-code: var(--color-code);
+}
+
+/* ── Terracotta (Warm Light) ────────────────────────────────────── */
+[data-theme='terracotta'] {
+  --color-bg-base: #fdf8f3;
+  --color-bg-surface: #f8f1e8;
+  --color-bg-card: #fffdf9;
+  --color-bg-hover: #f3ebe0;
+  --color-bg-elevated: #fffdf9;
+
+  --color-accent-dim: #a44030;
+  --color-accent: #c05a3c;
+  --color-accent-bright: #d46e52;
+  --color-accent-text: #8c3828;
+  --color-accent-muted: #c05a3c14;
+  --color-accent-muted-plus: #c05a3c22;
+
+  --color-info: #2563eb;
+  --color-info-text: #1d4ed8;
+  --color-info-muted: #2563eb12;
+  --color-info-muted-plus: #2563eb1e;
+
+  --color-success: #16a34a;
+  --color-success-text: #15803d;
+  --color-success-muted: #16a34a12;
+
+  --color-warning: #ca8a04;
+  --color-warning-text: #a16207;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #ef4444;
+  --color-danger-text: #b91c1c;
+  --color-danger-muted: #dc262612;
+
+  /* Typography */
+  --color-text-primary: #1c1510;
+  /* 16.5:1 */
+  --color-text-secondary: #5c5045;
+  /* 7.2:1 */
+  --color-text-tertiary: #90847a;
+  /* 4.1:1 */
+  --color-text-dim: #b8ada4;
+  /* 2.4:1 */
+  --color-code: #8c3828;
+
+  --color-border-subtle: #ebe3da;
+  --color-border-mid: #d8cfc4;
+  --color-border-bright: #c4b8aa;
+
+  --color-selection-bg: #c05a3c22;
+
+  --color-text-code: var(--color-code);
+
+  /* Light theme shadows */
+  --color-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --color-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --color-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --color-shadow-floating:
+    0 0 0 1px rgba(0, 0, 0, 0.04) inset, 0 4px 12px rgba(0, 0, 0, 0.08),
+    0 12px 28px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Chocolate (Rich Dark) ─────────────────────────────────────── */
+[data-theme='chocolate'] {
+  --color-bg-base: #0e0907;
+  --color-bg-surface: #16110d;
+  --color-bg-card: #1e1813;
+  --color-bg-hover: #2c221a;
+  --color-bg-elevated: #3a2e24;
+
+  --color-accent-dim: #b8842a;
+  --color-accent: #e8a849;
+  --color-accent-bright: #f0bc6a;
+  --color-accent-text: #f0c880;
+  --color-accent-muted: #e8a8491a;
+  --color-accent-muted-plus: #e8a8492a;
+
+  --color-info: #7aaed0;
+  --color-info-text: #a0c8e4;
+  --color-info-muted: #7aaed01a;
+  --color-info-muted-plus: #7aaed02a;
+
+  --color-success: #7ab87a;
+  --color-success-text: #9cd09c;
+  --color-success-muted: #7ab87a1a;
+
+  --color-warning: #d4a040;
+  --color-warning-text: #e8bc60;
+
+  --color-danger: #d06060;
+  --color-danger-hover: #e07070;
+  --color-danger-text: #f09898;
+  --color-danger-muted: #d060601a;
+
+  /* Typography — all ≥ 4.5:1 on bg-base */
+  --color-text-primary: #f0e8dc;
+  --color-text-secondary: #c4b09a;
+  --color-text-tertiary: #988470;
+  /* 5.5:1 */
+  --color-text-dim: #706050;
+  /* 3.3:1 — AA large */
+  --color-code: #f0c880;
+
+  --color-border-subtle: #261e18;
+  --color-border-mid: #3e322a;
+  --color-border-bright: #5a4a3c;
+
+  --color-selection-bg: #e8a84922;
+
+  --color-text-code: var(--color-code);
+}
+
+/* ── Frost (Cool Midnight + Lavender) ──────────────────────────── */
+[data-theme='frost'] {
+  --color-bg-base: #0a0e14;
+  --color-bg-surface: #0f1520;
+  --color-bg-card: #151c28;
+  --color-bg-hover: #1c2536;
+  --color-bg-elevated: #243044;
+
+  --color-accent-dim: #7c6dce;
+  --color-accent: #a78bfa;
+  --color-accent-bright: #c4b5fd;
+  --color-accent-text: #ddd6fe;
+  --color-accent-muted: #a78bfa1a;
+  --color-accent-muted-plus: #a78bfa2a;
+
+  --color-info: #60a5fa;
+  --color-info-text: #93c5fd;
+  --color-info-muted: #60a5fa1a;
+  --color-info-muted-plus: #60a5fa2a;
+
+  --color-success: #34d399;
+  --color-success-text: #6ee7b7;
+  --color-success-muted: #34d3991a;
+
+  --color-warning: #fbbf24;
+  --color-warning-text: #fcd34d;
+
+  --color-danger: #f87171;
+  --color-danger-hover: #fca5a5;
+  --color-danger-text: #fecaca;
+  --color-danger-muted: #f871711a;
+
+  /* Typography */
+  --color-text-primary: #e8edf4;
+  /* 16.4:1 */
+  --color-text-secondary: #a8b4c4;
+  /* 9.2:1 */
+  --color-text-tertiary: #7888a0;
+  /* 5.4:1 */
+  --color-text-dim: #556678;
+  /* 3.3:1 — AA large */
+  --color-code: #c4b5fd;
+
+  --color-border-subtle: #1a2233;
+  --color-border-mid: #2a3650;
+  --color-border-bright: #3d4f6a;
+
+  --color-selection-bg: #a78bfa33;
+
+  --color-text-code: var(--color-code);
+}
+
+/* ── Moss (Deep Forest + Sage) ─────────────────────────────────── */
+[data-theme='moss'] {
+  --color-bg-base: #0a0f0a;
+  --color-bg-surface: #0f160f;
+  --color-bg-card: #151e15;
+  --color-bg-hover: #1e2a1e;
+  --color-bg-elevated: #283628;
+
+  --color-accent-dim: #6b9e6b;
+  --color-accent: #8cc08c;
+  --color-accent-bright: #a8d4a8;
+  --color-accent-text: #c0e4c0;
+  --color-accent-muted: #8cc08c1a;
+  --color-accent-muted-plus: #8cc08c2a;
+
+  --color-info: #6aa0c8;
+  --color-info-text: #90c0e0;
+  --color-info-muted: #6aa0c81a;
+  --color-info-muted-plus: #6aa0c82a;
+
+  --color-success: #78b878;
+  --color-success-text: #98d098;
+  --color-success-muted: #78b8781a;
+
+  --color-warning: #c8a850;
+  --color-warning-text: #e0c070;
+
+  --color-danger: #c86868;
+  --color-danger-hover: #e07878;
+  --color-danger-text: #f0a0a0;
+  --color-danger-muted: #c868681a;
+
+  /* Typography */
+  --color-text-primary: #e0ece0;
+  /* 15.9:1 */
+  --color-text-secondary: #a8bca8;
+  /* 9.6:1 */
+  --color-text-tertiary: #708870;
+  /* 5.0:1 */
+  --color-text-dim: #5a6e5a;
+  /* 3.5:1 — AA large */
+  --color-code: #c0e4c0;
+
+  --color-border-subtle: #1a241a;
+  --color-border-mid: #2a3a2a;
+  --color-border-bright: #3e503e;
+
+  --color-selection-bg: #8cc08c22;
+
+  --color-text-code: var(--color-code);
 }

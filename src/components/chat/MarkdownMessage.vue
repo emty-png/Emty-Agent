@@ -665,9 +665,9 @@ function handleClick(e: MouseEvent): void {
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
   font-size: 0.875em;
   background: var(--color-bg-elevated);
-  color: var(--color-text-code);
+  color: var(--color-code);
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border-mid);
 }
 
@@ -744,7 +744,7 @@ function handleClick(e: MouseEvent): void {
   margin: 0 0 14px;
   padding: 8px 16px;
   background: color-mix(in srgb, var(--color-accent-muted) 40%, transparent);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   color: var(--color-text-secondary);
   font-style: italic;
 }
@@ -804,7 +804,7 @@ function handleClick(e: MouseEvent): void {
   padding: 2px 8px;
   height: 22px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;

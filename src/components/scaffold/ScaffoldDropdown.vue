@@ -111,7 +111,7 @@ onUnmounted(() => {
   padding-inline: 12px;
   background: var(--color-bg-base);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all 120ms ease;
   user-select: none;
@@ -163,10 +163,10 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   z-index: 1000;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-mid);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-bright);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   padding: 5px;
   overflow: hidden;
 }
@@ -178,7 +178,7 @@ onUnmounted(() => {
   width: 100%;
   padding: 8px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 13px;
@@ -188,7 +188,7 @@ onUnmounted(() => {
 }
 
 .dropdown-item:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 

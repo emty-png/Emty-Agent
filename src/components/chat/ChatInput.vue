@@ -556,7 +556,7 @@ watch(
   width: 100%;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
   transition: border-color 120ms ease;
@@ -657,7 +657,7 @@ watch(
 .backdrop-mention {
   color: var(--color-accent-text);
   background: var(--color-accent-muted-plus);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   /*
     We use box-shadow instead of padding/border to style the pill so it doesn't
     push text outwards and misalign the caret in the invisible textarea!
@@ -679,7 +679,7 @@ watch(
   resize: none;
 }
 .input-field::selection {
-  color: #fff;
+  color: var(--color-text-primary);
   background: var(--color-accent);
 }
 .input-field::placeholder {
@@ -722,7 +722,7 @@ watch(
   width: 30px;
   height: 30px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -734,9 +734,9 @@ watch(
     border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .upload-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-mid);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   color: var(--color-text-secondary);
 }
 .upload-btn:active {
@@ -756,7 +756,7 @@ watch(
   height: 30px;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -765,9 +765,9 @@ watch(
 }
 
 .workspace-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-mid);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   color: var(--color-text-secondary);
 }
 
@@ -791,7 +791,7 @@ watch(
   width: 30px;
   height: 30px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   flex-shrink: 0;
   transition:
@@ -801,7 +801,7 @@ watch(
     border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .action-btn:hover {
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
 }
 .action-btn:active {
   transform: scale(0.97);
@@ -847,7 +847,7 @@ watch(
   font-weight: 500;
   letter-spacing: 0.01em;
   padding: 5px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   pointer-events: none;
   z-index: 99999;
@@ -888,7 +888,7 @@ watch(
   height: 30px;
   padding-inline: 10px 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-primary);
   font-size: 13px;
@@ -904,9 +904,9 @@ watch(
 
 .perm-btn:hover,
 .perm-btn--open {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-mid);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
 }
 
 .perm-btn:active {
@@ -944,16 +944,15 @@ watch(
   bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 160px;
+  min-width: 148px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 8px 24px rgba(0, 0, 0, 0.45),
-    0 24px 56px rgba(0, 0, 0, 0.55),
-    0 0 48px var(--color-accent-muted);
-  padding: 6px;
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 12px 28px rgba(0, 0, 0, 0.35);
+  padding: 4px;
   z-index: 10000;
   display: flex;
   flex-direction: column;
@@ -965,10 +964,10 @@ watch(
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 34px;
-  padding-inline: 10px;
+  height: 30px;
+  padding-inline: 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 13px;
@@ -983,7 +982,7 @@ watch(
 }
 
 .perm-option:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-subtle);
   color: var(--color-text-primary);
 }
@@ -1019,14 +1018,14 @@ watch(
 
 .perm-dd-enter-active {
   transition:
-    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .perm-dd-leave-active {
   transition:
-    opacity 160ms cubic-bezier(0.7, 0, 0.84, 0),
-    transform 160ms cubic-bezier(0.7, 0, 0.84, 0);
+    opacity 100ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 100ms cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 .perm-dd-enter-from,

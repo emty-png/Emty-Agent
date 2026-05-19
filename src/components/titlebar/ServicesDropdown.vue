@@ -229,11 +229,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   height: 165px; /* Fixed consistent height */
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 8px 24px rgba(0, 0, 0, 0.5),
-    0 24px 56px rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -298,10 +295,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .tab-badge {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-secondary);
   padding: 1.5px 7px;
-  border-radius: 12px;
+  border-radius: var(--radius-pill);
   font-size: 10px;
   font-weight: 600;
   line-height: 1.4;
@@ -331,7 +328,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .group-label {
   display: block;
   padding: 12px 14px 6px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -353,7 +350,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   min-height: 34px;
   padding: 7px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
@@ -365,7 +362,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .list-item:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-subtle);
   color: var(--color-text-primary);
 }
@@ -442,14 +439,14 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 /* ── Transitions & Backdrop ─────────────────────────────────────────────────── */
 .picker-enter-active {
   transition:
-    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .picker-leave-active {
   transition:
-    opacity 160ms cubic-bezier(0.7, 0, 0.84, 0),
-    transform 160ms cubic-bezier(0.7, 0, 0.84, 0);
+    opacity 100ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 100ms cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 .picker-enter-from,

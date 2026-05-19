@@ -600,7 +600,7 @@ watch(() => props.cwd, refresh)
   width: 26px;
   height: 26px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-dim);
   cursor: pointer;
@@ -610,7 +610,7 @@ watch(() => props.cwd, refresh)
   flex-shrink: 0;
 }
 .icon-btn:hover:not(:disabled) {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 .icon-btn:active:not(:disabled) {
@@ -656,13 +656,13 @@ watch(() => props.cwd, refresh)
 }
 .filter-tab.active {
   color: var(--color-text-primary);
-  border-bottom-color: var(--color-accent, #58a6ff);
+  border-bottom-color: var(--color-accent);
 }
 .tab-count {
   font-size: 10.5px;
   font-weight: 600;
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: var(--color-bg-elevated);
   color: var(--color-text-dim);
   transition:
@@ -671,8 +671,8 @@ watch(() => props.cwd, refresh)
   letter-spacing: 0;
 }
 .tab-count--active {
-  background: color-mix(in srgb, var(--color-accent, #58a6ff) 15%, transparent);
-  color: var(--color-accent, #58a6ff);
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
 }
 
 /* ── File List ───────────────────────────────────────────────── */
@@ -701,7 +701,7 @@ watch(() => props.cwd, refresh)
   transition: background 80ms ease;
 }
 .file-row:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 /* Status badge */
@@ -710,7 +710,7 @@ watch(() => props.cwd, refresh)
   font-weight: 700;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -718,16 +718,16 @@ watch(() => props.cwd, refresh)
   letter-spacing: 0;
 }
 .dot-added {
-  background: color-mix(in srgb, #4ade80 18%, transparent);
-  color: #4ade80;
+  background: color-mix(in srgb, var(--color-success) 18%, transparent);
+  color: var(--color-success);
 }
 .dot-modified {
-  background: color-mix(in srgb, #60a5fa 18%, transparent);
-  color: #60a5fa;
+  background: color-mix(in srgb, var(--color-info) 18%, transparent);
+  color: var(--color-info);
 }
 .dot-deleted {
-  background: color-mix(in srgb, #f87171 18%, transparent);
-  color: #f87171;
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
+  color: var(--color-danger);
 }
 
 /* File name */
@@ -771,7 +771,7 @@ watch(() => props.cwd, refresh)
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
   transition:
@@ -782,22 +782,22 @@ watch(() => props.cwd, refresh)
   color: var(--color-text-dim);
 }
 .file-action-btn--discard:hover {
-  background: color-mix(in srgb, #f87171 15%, transparent);
-  color: #f87171;
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
 }
 .file-action-btn--stage {
   color: var(--color-text-dim);
 }
 .file-action-btn--stage:hover {
-  background: color-mix(in srgb, #4ade80 15%, transparent);
-  color: #4ade80;
+  background: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
 }
 .file-action-btn--unstage {
   color: var(--color-text-dim);
 }
 .file-action-btn--unstage:hover {
-  background: color-mix(in srgb, #60a5fa 15%, transparent);
-  color: #60a5fa;
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info);
 }
 .chevron {
   color: var(--color-text-dim);
@@ -856,7 +856,7 @@ watch(() => props.cwd, refresh)
   transition: background 80ms ease;
 }
 .ctx-header:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 .ctx-gutter {
   width: 72px;
@@ -916,30 +916,30 @@ watch(() => props.cwd, refresh)
 
 /* Add */
 .diff-add {
-  background: color-mix(in srgb, #238636 12%, transparent);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
 }
 .diff-add .line-sign {
-  color: #3fb950;
+  color: var(--color-success);
 }
 .diff-add .line-text {
-  color: #aff5b4;
+  color: color-mix(in srgb, var(--color-success) 60%, var(--color-text-primary));
 }
 .diff-add .line-gutter {
-  background: color-mix(in srgb, #238636 8%, transparent);
+  background: color-mix(in srgb, var(--color-success) 8%, transparent);
 }
 
 /* Delete */
 .diff-del {
-  background: color-mix(in srgb, #da3633 12%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
 }
 .diff-del .line-sign {
-  color: #f85149;
+  color: var(--color-danger);
 }
 .diff-del .line-text {
-  color: #ffa198;
+  color: color-mix(in srgb, var(--color-danger) 60%, var(--color-text-primary));
 }
 .diff-del .line-gutter {
-  background: color-mix(in srgb, #da3633 8%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
 }
 
 /* Context */
@@ -968,7 +968,7 @@ watch(() => props.cwd, refresh)
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -988,7 +988,7 @@ watch(() => props.cwd, refresh)
   color: var(--color-text-secondary);
 }
 .bottom-btn--ghost:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
   border-color: var(--color-border-bright);
 }
@@ -1014,7 +1014,7 @@ watch(() => props.cwd, refresh)
 .git-empty-icon-wrap {
   width: 38px;
   height: 38px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1024,9 +1024,9 @@ watch(() => props.cwd, refresh)
   margin-bottom: 4px;
 }
 .git-empty-icon-wrap--ok {
-  background: color-mix(in srgb, #238636 12%, transparent);
-  color: #3fb950;
-  border-color: color-mix(in srgb, #238636 25%, transparent);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 25%, transparent);
 }
 .git-empty-spinner {
   color: var(--color-text-dim);
@@ -1057,16 +1057,14 @@ watch(() => props.cwd, refresh)
   padding: 16px;
 }
 .commit-modal {
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-bright);
+  border-radius: var(--radius-lg);
   width: 100%;
   max-width: 320px;
   display: flex;
   flex-direction: column;
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
-    0 16px 48px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--color-shadow-floating);
 }
 .modal-header {
   display: flex;
@@ -1096,7 +1094,7 @@ watch(() => props.cwd, refresh)
   gap: 6px;
   padding: 10px 12px;
   background: var(--color-bg-base);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   border: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
 }
 .modal-meta-row {
@@ -1139,7 +1137,7 @@ watch(() => props.cwd, refresh)
   display: block;
   width: 30px;
   height: 17px;
-  background: var(--color-bg-elevated);
+  background: var(--color-toggle-track-off);
   border: 1px solid var(--color-border-bright);
   border-radius: 17px;
   position: relative;
@@ -1153,19 +1151,19 @@ watch(() => props.cwd, refresh)
   left: 2px;
   width: 11px;
   height: 11px;
-  background: var(--color-text-dim);
+  background: var(--color-toggle-thumb-off);
   border-radius: 50%;
   transition:
     transform 150ms ease,
     background 150ms ease;
 }
 .toggle-switch input:checked + .toggle-track {
-  background: color-mix(in srgb, var(--color-accent, #58a6ff) 25%, transparent);
-  border-color: var(--color-accent, #58a6ff);
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  border-color: var(--color-accent);
 }
 .toggle-switch input:checked + .toggle-track .toggle-thumb {
   transform: translateX(13px);
-  background: var(--color-accent, #58a6ff);
+  background: var(--color-accent);
 }
 .toggle-label {
   font-size: 12px;
@@ -1193,7 +1191,7 @@ watch(() => props.cwd, refresh)
   width: 100%;
   background: var(--color-bg-base);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   color: var(--color-text-primary);
   font-family: inherit;
@@ -1205,7 +1203,7 @@ watch(() => props.cwd, refresh)
 }
 .commit-textarea:focus {
   outline: none;
-  border-color: var(--color-accent, #58a6ff);
+  border-color: var(--color-accent);
 }
 .commit-textarea::placeholder {
   color: var(--color-text-dim);
@@ -1225,7 +1223,7 @@ watch(() => props.cwd, refresh)
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
@@ -1243,7 +1241,7 @@ watch(() => props.cwd, refresh)
   color: var(--color-text-secondary);
 }
 .footer-btn--cancel:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 .footer-btn--commit {
@@ -1264,23 +1262,23 @@ watch(() => props.cwd, refresh)
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   font-weight: 500;
   z-index: 200;
   pointer-events: none;
   white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--color-shadow-md);
 }
 .git-toast--ok {
-  background: color-mix(in srgb, #238636 18%, var(--color-bg-elevated));
-  color: #3fb950;
-  border: 1px solid color-mix(in srgb, #238636 30%, transparent);
+  background: color-mix(in srgb, var(--color-success) 18%, var(--color-bg-elevated));
+  color: var(--color-success);
+  border: 1px solid color-mix(in srgb, var(--color-success) 30%, transparent);
 }
 .git-toast--err {
-  background: color-mix(in srgb, #da3633 18%, var(--color-bg-elevated));
-  color: #f85149;
-  border: 1px solid color-mix(in srgb, #da3633 30%, transparent);
+  background: color-mix(in srgb, var(--color-danger) 18%, var(--color-bg-elevated));
+  color: var(--color-danger);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
 }
 
 /* ── Transitions ─────────────────────────────────────────────── */

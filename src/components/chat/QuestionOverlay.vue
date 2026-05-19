@@ -310,14 +310,14 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 .q-overlay {
   width: 100%;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
-  margin-bottom: 8px; /* Adds space above the chat input */
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
+  margin-bottom: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Subtle floating shadow */
 }
 
 /* ── header ────────────────────────────────────────────────────────────────── */
@@ -374,14 +374,14 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   background: transparent;
   color: inherit;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   transition:
     background 150ms ease,
     color 150ms ease;
 }
 
 .q-page-btn:hover:not(:disabled) {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-secondary);
 }
 
@@ -403,13 +403,13 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   background: transparent;
   color: var(--color-text-dim);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   transition:
     background 150ms ease,
     color 150ms ease;
 }
 .q-dismiss-btn:hover {
-  background: var(--color-bg-elevated);
+  background: var(--color-state-hover);
   color: var(--color-text-secondary);
 }
 
@@ -432,7 +432,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   padding: 6px 8px;
   min-height: 36px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
   width: 100%;
@@ -442,7 +442,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 .q-option:hover:not(.q-option--free),
 .q-option--sel:not(.q-option--free) {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 /* Number badge */
@@ -453,8 +453,8 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   width: 24px;
   height: 24px;
   flex-shrink: 0;
-  border-radius: 6px;
-  background: var(--color-bg-elevated); /* Solid dark rounded rect */
+  border-radius: var(--radius-sm);
+  background: var(--color-state-hover);
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-secondary);
@@ -499,13 +499,12 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
 .q-option--free {
   cursor: default;
-  background: var(--color-bg-elevated); /* Distinct raised background block */
+  background: var(--color-state-hover);
   margin-top: 4px; /* Separation from rest of items */
   padding-right: 12px;
 }
 .q-option--sel.q-option--free {
-  /* Subtle highlight when using keyboard to focus the input block */
-  background: color-mix(in srgb, var(--color-bg-elevated) 80%, var(--color-accent-muted));
+  background: color-mix(in srgb, var(--color-state-hover) 80%, var(--color-accent-muted));
 }
 
 .q-num--pencil {
@@ -537,7 +536,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   height: 24px;
   padding-inline: 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-primary);
   font-size: 11px;
@@ -548,7 +547,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
   transition: all 150ms ease;
 }
 .q-skip-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-bright);
 }
 

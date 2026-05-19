@@ -191,7 +191,7 @@ function onInput(id: string, key: string, e: Event) {
 .content-section::-webkit-scrollbar-thumb,
 .field-textarea::-webkit-scrollbar-thumb {
   background: var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
 }
 
 .content-section::-webkit-scrollbar-thumb:hover,
@@ -222,7 +222,7 @@ function onInput(id: string, key: string, e: Event) {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--color-bg-surface);
   color: var(--color-text-primary);
   font-size: 12.5px;
@@ -230,11 +230,11 @@ function onInput(id: string, key: string, e: Event) {
   white-space: nowrap;
   cursor: pointer;
   transition: all 150ms ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--color-shadow-sm);
 }
 
 .add-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-strong);
 }
 
@@ -242,7 +242,7 @@ function onInput(id: string, key: string, e: Event) {
 .provider-card {
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   padding: 14px 16px;
   display: flex;
   flex-direction: column;
@@ -272,7 +272,7 @@ function onInput(id: string, key: string, e: Event) {
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   flex-shrink: 0;
   background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   color: var(--color-accent);
@@ -354,14 +354,14 @@ function onInput(id: string, key: string, e: Event) {
   height: 19px;
   border-radius: 99px;
   border: 1px solid var(--color-border-mid);
-  background: var(--color-bg-elevated);
+  background: var(--color-toggle-track-off);
   cursor: pointer;
   transition: all 150ms ease;
   flex-shrink: 0;
 }
 
 .model-toggle--on {
-  background: var(--color-accent);
+  background: var(--color-toggle-track-on);
   border-color: var(--color-accent);
 }
 
@@ -371,7 +371,7 @@ function onInput(id: string, key: string, e: Event) {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: var(--color-text-secondary);
+  background: var(--color-toggle-thumb-off);
   transition:
     transform 150ms cubic-bezier(0.4, 0, 0.2, 1),
     background 150ms ease;
@@ -379,7 +379,7 @@ function onInput(id: string, key: string, e: Event) {
 
 .model-toggle--on .model-toggle-thumb {
   transform: translateX(15px);
-  background: #fff;
+  background: var(--color-text-primary);
 }
 
 .icon-danger-btn {
@@ -388,7 +388,7 @@ function onInput(id: string, key: string, e: Event) {
   width: 26px;
   height: 26px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -433,7 +433,7 @@ function onInput(id: string, key: string, e: Event) {
   padding: 0 10px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: 12.5px;
   font-family: inherit;
@@ -461,7 +461,7 @@ function onInput(id: string, key: string, e: Event) {
   padding: 8px 10px;
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-mid);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: 12.5px;
   line-height: 1.5;
@@ -510,7 +510,7 @@ function onInput(id: string, key: string, e: Event) {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--color-border-mid);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-elevated);
   color: var(--color-text-primary);
   font-size: 12.5px;
@@ -518,7 +518,7 @@ function onInput(id: string, key: string, e: Event) {
   cursor: pointer;
   white-space: nowrap;
   transition: all 150ms ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--color-shadow-sm);
 }
 
 .test-btn:hover:not(:disabled) {
@@ -544,7 +544,7 @@ function onInput(id: string, key: string, e: Event) {
 
 .mcp-tool-item {
   padding: 11px 12px;
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   border: 1px solid var(--color-border-subtle);
   background: color-mix(in srgb, var(--color-bg-base) 40%, transparent);
 }
@@ -569,7 +569,7 @@ function onInput(id: string, key: string, e: Event) {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   background: var(--color-bg-elevated);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 
@@ -590,7 +590,7 @@ function onInput(id: string, key: string, e: Event) {
   padding: 36px 24px;
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   gap: 10px;
 }
 
@@ -599,7 +599,7 @@ function onInput(id: string, key: string, e: Event) {
   place-items: center;
   width: 36px;
   height: 36px;
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   background: var(--color-bg-elevated);
   color: var(--color-text-tertiary);
 }

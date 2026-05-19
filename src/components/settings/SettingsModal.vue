@@ -103,7 +103,7 @@ function onKeydown(e: KeyboardEvent) {
   position: fixed;
   inset: 0;
   z-index: 99999;
-  background: rgba(0, 0, 0, 0.65);
+  background: color-mix(in srgb, var(--color-bg-base) 65%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -119,9 +119,9 @@ function onKeydown(e: KeyboardEvent) {
   height: 560px;
   max-height: calc(100vh - 48px);
   background: var(--color-bg-card);
-  border: 1px solid var(--color-border-mid);
-  border-radius: 12px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--color-border-bright);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   overflow: hidden;
   animation: modal-in 160ms cubic-bezier(0.2, 0, 0, 1) both;
 }
@@ -163,7 +163,7 @@ function onKeydown(e: KeyboardEvent) {
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -173,7 +173,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .modal-close:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 
@@ -203,7 +203,7 @@ function onKeydown(e: KeyboardEvent) {
   height: 34px;
   padding-inline: 10px 8px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   font-size: 13px;
@@ -217,7 +217,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 .nav-item:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 

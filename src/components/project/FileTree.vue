@@ -35,85 +35,85 @@ interface FileStyle {
 
 const EXT_STYLE: Record<string, FileStyle> = {
   // typescript / javascript
-  ts: { icon: FileCode, color: '#90cce0' },
-  tsx: { icon: FileCode, color: '#90cce0' },
-  js: { icon: FileCode, color: '#d4aa68' },
-  jsx: { icon: FileCode, color: '#d4aa68' },
+  ts: { icon: FileCode, color: 'var(--file-color-ts)' },
+  tsx: { icon: FileCode, color: 'var(--file-color-ts)' },
+  js: { icon: FileCode, color: 'var(--file-color-js)' },
+  jsx: { icon: FileCode, color: 'var(--file-color-js)' },
   // vue
-  vue: { icon: FileCode, color: '#88be94' },
+  vue: { icon: FileCode, color: 'var(--file-color-vue)' },
   // styles
-  css: { icon: FileCode, color: '#6aaec8' },
-  scss: { icon: FileCode, color: '#6aaec8' },
+  css: { icon: FileCode, color: 'var(--file-color-css)' },
+  scss: { icon: FileCode, color: 'var(--file-color-css)' },
   // data
-  json: { icon: FileJson, color: '#d4aa68' },
-  jsonc: { icon: FileJson, color: '#d4aa68' },
-  yaml: { icon: FileJson, color: '#f0a060' },
-  yml: { icon: FileJson, color: '#f0a060' },
-  toml: { icon: FileJson, color: '#f0a060' },
+  json: { icon: FileJson, color: 'var(--file-color-js)' },
+  jsonc: { icon: FileJson, color: 'var(--file-color-js)' },
+  yaml: { icon: FileJson, color: 'var(--file-color-data)' },
+  yml: { icon: FileJson, color: 'var(--file-color-data)' },
+  toml: { icon: FileJson, color: 'var(--file-color-data)' },
   // markup
-  html: { icon: FileCode, color: '#f0a060' },
-  md: { icon: FileText, color: '#ede5d8' },
-  mdx: { icon: FileText, color: '#ede5d8' },
+  html: { icon: FileCode, color: 'var(--file-color-data)' },
+  md: { icon: FileText, color: 'var(--file-color-doc)' },
+  mdx: { icon: FileText, color: 'var(--file-color-doc)' },
   // rust
-  rs: { icon: FileCode, color: '#e07830' },
+  rs: { icon: FileCode, color: 'var(--file-color-rust)' },
   // python
-  py: { icon: FileCode, color: '#88be94' },
+  py: { icon: FileCode, color: 'var(--file-color-vue)' },
   // config
-  env: { icon: Settings, color: '#d88080' },
-  lock: { icon: Settings, color: '#504438' },
+  env: { icon: Settings, color: 'var(--file-color-config)' },
+  lock: { icon: Settings, color: 'var(--file-color-lock)' },
   // images
-  png: { icon: FileImage, color: '#b8a0d8' },
-  jpg: { icon: FileImage, color: '#b8a0d8' },
-  jpeg: { icon: FileImage, color: '#b8a0d8' },
-  gif: { icon: FileImage, color: '#b8a0d8' },
-  webp: { icon: FileImage, color: '#b8a0d8' },
-  svg: { icon: FileImage, color: '#d8b880' },
-  ico: { icon: FileImage, color: '#d8b880' },
+  png: { icon: FileImage, color: 'var(--file-color-image)' },
+  jpg: { icon: FileImage, color: 'var(--file-color-image)' },
+  jpeg: { icon: FileImage, color: 'var(--file-color-image)' },
+  gif: { icon: FileImage, color: 'var(--file-color-image)' },
+  webp: { icon: FileImage, color: 'var(--file-color-image)' },
+  svg: { icon: FileImage, color: 'var(--file-color-image-alt)' },
+  ico: { icon: FileImage, color: 'var(--file-color-image-alt)' },
   // media
-  mp4: { icon: FileVideo, color: '#a0b8d8' },
-  mov: { icon: FileVideo, color: '#a0b8d8' },
-  mp3: { icon: FileVideo, color: '#a0b8d8' },
-  wav: { icon: FileVideo, color: '#a0b8d8' },
+  mp4: { icon: FileVideo, color: 'var(--file-color-media)' },
+  mov: { icon: FileVideo, color: 'var(--file-color-media)' },
+  mp3: { icon: FileVideo, color: 'var(--file-color-media)' },
+  wav: { icon: FileVideo, color: 'var(--file-color-media)' },
   // archives
-  zip: { icon: FileArchive, color: '#b8b8a0' },
-  gz: { icon: FileArchive, color: '#b8b8a0' },
-  tar: { icon: FileArchive, color: '#b8b8a0' },
-  rar: { icon: FileArchive, color: '#b8b8a0' },
-  '7z': { icon: FileArchive, color: '#b8b8a0' },
+  zip: { icon: FileArchive, color: 'var(--file-color-archive)' },
+  gz: { icon: FileArchive, color: 'var(--file-color-archive)' },
+  tar: { icon: FileArchive, color: 'var(--file-color-archive)' },
+  rar: { icon: FileArchive, color: 'var(--file-color-archive)' },
+  '7z': { icon: FileArchive, color: 'var(--file-color-archive)' },
 }
 
 function folderStyle(name: string, expanded: boolean): { icon: typeof Folder | typeof FolderOpen; color: string } {
   const n = name.toLowerCase()
   let icon = expanded ? FolderOpen : Folder
-  let color = '#d4aa68' // default folder yellow
+  let color = 'var(--file-color-folder)'
 
   if (n === 'src' || n === 'lib' || n === 'source') {
     icon = FolderCode
-    color = '#88be94'
+    color = 'var(--file-color-vue)'
   }
   else if (n === 'public' || n === 'static' || n === 'assets' || n === 'images' || n === 'img') {
     icon = FolderSearch
-    color = '#90cce0'
+    color = 'var(--file-color-ts)'
   }
   else if (n === 'node_modules' || n === 'vendor' || n === 'deps') {
     icon = FolderArchive
-    color = '#d88080'
+    color = 'var(--file-color-config)'
   }
   else if (n === 'dist' || n === 'build' || n === 'out' || n === 'target' || n === 'bin') {
     icon = FolderArchive
-    color = '#a59688'
+    color = 'var(--file-color-folder-build)'
   }
   else if (n === '.git' || n === '.github' || n === '.gitlab') {
     icon = FolderGit2
-    color = '#f0a060'
+    color = 'var(--file-color-data)'
   }
   else if (n === '.vscode' || n === '.idea' || n === '.config' || n === 'config') {
     icon = Settings
-    color = '#ede5d8'
+    color = 'var(--file-color-doc)'
   }
   else if (n === 'tests' || n === 'test' || n === '__tests__' || n === 'spec') {
     icon = FolderSearch
-    color = '#88be94'
+    color = 'var(--file-color-vue)'
   }
 
   return { icon, color }
@@ -121,7 +121,7 @@ function folderStyle(name: string, expanded: boolean): { icon: typeof Folder | t
 
 function fileStyle(name: string): FileStyle {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  return EXT_STYLE[ext] ?? { icon: File, color: '#8a7868' }
+  return EXT_STYLE[ext] ?? { icon: File, color: 'var(--file-color-default)' }
 }
 
 const FileTreeNode = defineComponent({
@@ -180,7 +180,7 @@ const FileTreeNode = defineComponent({
                 size: 13,
                 strokeWidth: 1.6,
                 class: 'spin node-file-icon',
-                style: { color: '#504438' },
+                style: { color: 'var(--file-color-lock)' },
               })
             : getDeviconForFile(node.name)
               ? h('i', {
@@ -299,7 +299,7 @@ const FileTreeNode = defineComponent({
 }
 
 :deep(.node-row:hover) {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
 }
 

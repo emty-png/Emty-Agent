@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
   height: 22px;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-dim);
   font-size: 11px;
@@ -245,7 +245,7 @@ onBeforeUnmount(() => {
   height: 22px;
   padding: 0 10px;
   border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--color-accent-muted);
   color: var(--color-accent-text);
   font-size: 11px;
@@ -274,7 +274,7 @@ onBeforeUnmount(() => {
   height: 22px;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   font-size: 11px;
@@ -289,6 +289,6 @@ onBeforeUnmount(() => {
 
 .restore-confirm-no:hover:not(:disabled) {
   color: var(--color-text-secondary);
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 </style>

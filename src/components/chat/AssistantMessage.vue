@@ -527,7 +527,7 @@ async function copyThinking(key: string, text: string) {
   background: var(--color-danger-muted);
   color: var(--color-danger-text);
   border-left: 3px solid var(--color-danger);
-  border-radius: 4px 8px 8px 4px;
+  border-radius: var(--radius-xs) var(--radius-md) var(--radius-md) var(--radius-xs);
   font-size: 13px;
   font-family: var(--font-mono);
   max-width: 100%;
@@ -651,7 +651,7 @@ async function copyThinking(key: string, text: string) {
   margin-left: -10px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   gap: 8px;
   color: var(--color-text-dim);
@@ -661,7 +661,7 @@ async function copyThinking(key: string, text: string) {
 
 .thinking-header:hover {
   color: var(--color-text-secondary);
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   border-color: var(--color-border-subtle);
 }
 
@@ -809,7 +809,7 @@ async function copyThinking(key: string, text: string) {
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: currentColor;
   cursor: pointer;
@@ -853,7 +853,7 @@ async function copyThinking(key: string, text: string) {
   color: var(--color-text-tertiary);
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px; /* Pill shape */
+  border-radius: var(--radius-lg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
   transition: border-color 0.2s ease;
 }

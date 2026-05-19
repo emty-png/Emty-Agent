@@ -16,6 +16,7 @@ import { useChatStore } from '@/stores/chat'
 import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
+import { useThemeStore } from '@/stores/themes'
 
 const SPLIT_MIN = 35
 const SPLIT_MAX = 70
@@ -25,6 +26,7 @@ const chat = useChatStore()
 const browser = useBrowserStore()
 const gitPane = useGitPaneStore()
 const project = useProjectStore()
+const theme = useThemeStore()
 const { activeId, activeTab } = storeToRefs(chat)
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -176,7 +178,7 @@ const parentTabExists = computed(() => {
             :key="`landing-${activeTab.id}`"
             class="landing"
           >
-            <WeatherBackground />
+            <WeatherBackground v-if="theme.showLandingArt" />
             <div class="center-col">
               <ChatInput
                 :is-streaming="activeTab.isStreaming"
@@ -506,7 +508,7 @@ const parentTabExists = computed(() => {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--color-bg-base);
   border: 1px solid var(--color-border-mid);
   color: var(--color-text-tertiary);
@@ -562,7 +564,7 @@ const parentTabExists = computed(() => {
   color: var(--color-text-secondary);
   background: var(--color-bg-surface);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 8px 14px;
   cursor: pointer;
   transition: all 150ms ease;
@@ -593,7 +595,7 @@ const parentTabExists = computed(() => {
   height: 34px;
   padding-inline: 16px;
   border: 1px solid color-mix(in srgb, var(--color-danger) 35%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--color-danger) 10%, transparent);
   color: var(--color-danger-text);
   font-size: 13px;
@@ -614,7 +616,7 @@ const parentTabExists = computed(() => {
   font-size: 13px;
   font-weight: 600;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   gap: 6px;

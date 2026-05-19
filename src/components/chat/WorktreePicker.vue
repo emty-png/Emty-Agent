@@ -155,20 +155,12 @@ watch(() => props.projectPath, loadWorktrees, { immediate: true })
             v-for="entry in filteredEntries"
             :key="entry.path"
             class="worktree-item"
+            :class="{ 'worktree-item--active': entry.path.toLowerCase() === selectedKey }"
             type="button"
             @click="selectEntry(entry.path)"
           >
             <GitBranch :size="15" :stroke-width="1.5" class="worktree-item-icon" />
-
-            <div class="worktree-item-content">
-              <div class="worktree-item-name">
-                {{ entry.label }}
-              </div>
-              <div v-if="entry.status && !entry.status.isClean" class="worktree-item-subtitle">
-                {{ entry.status.caution || 'Uncommitted changes' }}
-              </div>
-            </div>
-
+            <span class="worktree-item-name">{{ entry.label }}</span>
             <Check v-if="entry.path.toLowerCase() === selectedKey" :size="15" :stroke-width="1.5" class="worktree-item-check" />
           </button>
         </div>
@@ -195,12 +187,8 @@ watch(() => props.projectPath, loadWorktrees, { immediate: true })
   flex-direction: column;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px; /* lg */
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 8px 24px rgba(0, 0, 0, 0.45),
-    0 24px 56px rgba(0, 0, 0, 0.55),
-    0 0 48px var(--color-accent-muted);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   overflow: hidden;
   z-index: 9999;
   transform-origin: bottom left;
@@ -236,7 +224,7 @@ watch(() => props.projectPath, loadWorktrees, { immediate: true })
 /* ── Section Header ──────────────────────────────────────────────────────── */
 .worktree-section {
   padding: 4px 14px 8px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--color-text-tertiary);
   flex-shrink: 0;
@@ -273,7 +261,7 @@ watch(() => props.projectPath, loadWorktrees, { immediate: true })
   margin: 1px 6px;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 6px; /* md */
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
   text-align: left;
@@ -285,41 +273,43 @@ watch(() => props.projectPath, loadWorktrees, { immediate: true })
 }
 
 .worktree-item:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-primary);
+}
+
+.worktree-item--active {
+  background: var(--color-accent-muted-plus);
+  border-color: var(--color-accent-dim);
+  color: var(--color-text-primary);
+}
+
+.worktree-item--active:hover {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  border-color: var(--color-accent);
 }
 
 .worktree-item-icon {
   color: var(--color-text-tertiary);
-  margin-top: 2px;
   flex-shrink: 0;
 }
 
-.worktree-item-content {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.worktree-item--active .worktree-item-icon {
+  color: var(--color-accent-text);
 }
 
 .worktree-item-name {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 500;
-  color: var(--color-text-primary);
+  color: inherit;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.worktree-item-subtitle {
-  font-size: 11.5px;
-  color: var(--color-text-tertiary);
-}
-
 .worktree-item-check {
-  color: var(--color-text-primary);
-  margin-top: 2px;
+  color: var(--color-accent-text);
   flex-shrink: 0;
 }
 
@@ -376,14 +366,14 @@ watch(() => props.projectPath, loadWorktrees, { immediate: true })
 /* ── Transitions ─────────────────────────────────────────────────────────── */
 .picker-enter-active {
   transition:
-    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .picker-leave-active {
   transition:
-    opacity 160ms cubic-bezier(0.7, 0, 0.84, 0),
-    transform 160ms cubic-bezier(0.7, 0, 0.84, 0);
+    opacity 100ms cubic-bezier(0.7, 0, 0.84, 0),
+    transform 100ms cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 .picker-enter-from,
@@ -399,11 +389,11 @@ watch(() => props.projectPath, loadWorktrees, { immediate: true })
 }
 
 .fade-enter-active {
-  transition: opacity 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .fade-leave-active {
-  transition: opacity 160ms cubic-bezier(0.7, 0, 0.84, 0);
+  transition: opacity 100ms cubic-bezier(0.7, 0, 0.84, 0);
 }
 
 .fade-enter-from,

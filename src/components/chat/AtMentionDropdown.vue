@@ -46,74 +46,74 @@ const emit = defineEmits<{
 interface FileStyle { icon: Component; color: string }
 
 const EXT_STYLE: Record<string, FileStyle> = {
-  ts: { icon: FileCode, color: '#90cce0' },
-  tsx: { icon: FileCode, color: '#90cce0' },
-  js: { icon: FileCode, color: '#d4aa68' },
-  jsx: { icon: FileCode, color: '#d4aa68' },
-  vue: { icon: FileCode, color: '#88be94' },
-  css: { icon: FileCode, color: '#6aaec8' },
-  scss: { icon: FileCode, color: '#6aaec8' },
-  json: { icon: FileJson, color: '#d4aa68' },
-  jsonc: { icon: FileJson, color: '#d4aa68' },
-  yaml: { icon: FileJson, color: '#f0a060' },
-  yml: { icon: FileJson, color: '#f0a060' },
-  toml: { icon: FileJson, color: '#f0a060' },
-  html: { icon: FileCode, color: '#f0a060' },
-  md: { icon: FileText, color: '#ede5d8' },
-  mdx: { icon: FileText, color: '#ede5d8' },
-  rs: { icon: FileCode, color: '#e07830' },
-  py: { icon: FileCode, color: '#88be94' },
-  env: { icon: Settings, color: '#d88080' },
-  lock: { icon: Settings, color: '#504438' },
-  png: { icon: FileImage, color: '#b8a0d8' },
-  jpg: { icon: FileImage, color: '#b8a0d8' },
-  jpeg: { icon: FileImage, color: '#b8a0d8' },
-  gif: { icon: FileImage, color: '#b8a0d8' },
-  webp: { icon: FileImage, color: '#b8a0d8' },
-  svg: { icon: FileImage, color: '#d8b880' },
-  ico: { icon: FileImage, color: '#d8b880' },
-  mp4: { icon: FileVideo, color: '#a0b8d8' },
-  mov: { icon: FileVideo, color: '#a0b8d8' },
-  mp3: { icon: FileVideo, color: '#a0b8d8' },
-  wav: { icon: FileVideo, color: '#a0b8d8' },
-  zip: { icon: FileArchive, color: '#b8b8a0' },
-  gz: { icon: FileArchive, color: '#b8b8a0' },
-  tar: { icon: FileArchive, color: '#b8b8a0' },
-  rar: { icon: FileArchive, color: '#b8b8a0' },
-  '7z': { icon: FileArchive, color: '#b8b8a0' },
+  ts: { icon: FileCode, color: 'var(--color-info-text)' },
+  tsx: { icon: FileCode, color: 'var(--color-info-text)' },
+  js: { icon: FileCode, color: 'var(--color-warning-text)' },
+  jsx: { icon: FileCode, color: 'var(--color-warning-text)' },
+  vue: { icon: FileCode, color: 'var(--color-success-text)' },
+  css: { icon: FileCode, color: 'var(--color-info)' },
+  scss: { icon: FileCode, color: 'var(--color-info)' },
+  json: { icon: FileJson, color: 'var(--color-warning-text)' },
+  jsonc: { icon: FileJson, color: 'var(--color-warning-text)' },
+  yaml: { icon: FileJson, color: 'var(--color-accent-bright)' },
+  yml: { icon: FileJson, color: 'var(--color-accent-bright)' },
+  toml: { icon: FileJson, color: 'var(--color-accent-bright)' },
+  html: { icon: FileCode, color: 'var(--color-accent-bright)' },
+  md: { icon: FileText, color: 'var(--color-text-primary)' },
+  mdx: { icon: FileText, color: 'var(--color-text-primary)' },
+  rs: { icon: FileCode, color: 'var(--color-accent)' },
+  py: { icon: FileCode, color: 'var(--color-success-text)' },
+  env: { icon: Settings, color: 'var(--color-danger-text)' },
+  lock: { icon: Settings, color: 'var(--color-text-dim)' },
+  png: { icon: FileImage, color: 'var(--color-accent-text)' },
+  jpg: { icon: FileImage, color: 'var(--color-accent-text)' },
+  jpeg: { icon: FileImage, color: 'var(--color-accent-text)' },
+  gif: { icon: FileImage, color: 'var(--color-accent-text)' },
+  webp: { icon: FileImage, color: 'var(--color-accent-text)' },
+  svg: { icon: FileImage, color: 'var(--color-warning)' },
+  ico: { icon: FileImage, color: 'var(--color-warning)' },
+  mp4: { icon: FileVideo, color: 'var(--color-info)' },
+  mov: { icon: FileVideo, color: 'var(--color-info)' },
+  mp3: { icon: FileVideo, color: 'var(--color-info)' },
+  wav: { icon: FileVideo, color: 'var(--color-info)' },
+  zip: { icon: FileArchive, color: 'var(--color-text-tertiary)' },
+  gz: { icon: FileArchive, color: 'var(--color-text-tertiary)' },
+  tar: { icon: FileArchive, color: 'var(--color-text-tertiary)' },
+  rar: { icon: FileArchive, color: 'var(--color-text-tertiary)' },
+  '7z': { icon: FileArchive, color: 'var(--color-text-tertiary)' },
 }
 
 function folderStyle(name: string, expanded: boolean): { icon: Component; color: string } {
   const n = name.toLowerCase()
   let icon = expanded ? FolderOpen : Folder
-  let color = '#d4aa68'
+  let color = 'var(--color-warning-text)'
   if (['src', 'lib', 'source'].includes(n)) {
-    icon = FolderCode; color = '#88be94'
+    icon = FolderCode; color = 'var(--color-success-text)'
   }
   else if (['public', 'static', 'assets', 'images', 'img'].includes(n)) {
-    icon = FolderSearch; color = '#90cce0'
+    icon = FolderSearch; color = 'var(--color-info-text)'
   }
   else if (['node_modules', 'vendor', 'deps'].includes(n)) {
-    icon = FolderArchive; color = '#d88080'
+    icon = FolderArchive; color = 'var(--color-danger-text)'
   }
   else if (['dist', 'build', 'out', 'target', 'bin'].includes(n)) {
-    icon = FolderArchive; color = '#a59688'
+    icon = FolderArchive; color = 'var(--color-text-tertiary)'
   }
   else if (['.git', '.github', '.gitlab'].includes(n)) {
-    icon = FolderGit2; color = '#f0a060'
+    icon = FolderGit2; color = 'var(--color-accent-bright)'
   }
   else if (['.vscode', '.idea', '.config', 'config'].includes(n)) {
-    icon = Settings; color = '#ede5d8'
+    icon = Settings; color = 'var(--color-text-primary)'
   }
   else if (['tests', 'test', '__tests__', 'spec'].includes(n)) {
-    icon = FolderSearch; color = '#88be94'
+    icon = FolderSearch; color = 'var(--color-success-text)'
   }
   return { icon, color }
 }
 
 function fileStyle(name: string): FileStyle {
   const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  return EXT_STYLE[ext] ?? { icon: File, color: '#8a7868' }
+  return EXT_STYLE[ext] ?? { icon: File, color: 'var(--color-text-tertiary)' }
 }
 
 function getFilename(path: string) {
@@ -228,14 +228,14 @@ watchEffect(() => {
 
 .at-overlay {
   width: 100%;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   margin-bottom: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   max-height: 320px;
 }
 
@@ -249,7 +249,7 @@ watchEffect(() => {
 }
 
 .at-header-title {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -264,7 +264,7 @@ watchEffect(() => {
   color: var(--color-accent-text);
   background: var(--color-accent-muted-plus);
   border: 1px solid var(--color-accent-dim);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 1px 6px;
   max-width: 200px;
   overflow: hidden;
@@ -278,7 +278,7 @@ watchEffect(() => {
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -288,7 +288,7 @@ watchEffect(() => {
     color 100ms ease;
 }
 .at-close-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-secondary);
 }
 
@@ -309,7 +309,6 @@ watchEffect(() => {
 }
 
 .at-list {
-  flex: 1;
   overflow-y: auto;
   padding: 6px;
   min-height: 0;
@@ -323,10 +322,11 @@ watchEffect(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 36px;
+  height: 34px;
+  min-height: 34px;
   padding-inline: 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -335,7 +335,7 @@ watchEffect(() => {
 
 .at-entry:hover,
 .at-entry--sel {
-  background: var(--color-bg-elevated);
+  background: var(--color-state-hover);
 }
 
 .at-icon {
@@ -372,7 +372,7 @@ watchEffect(() => {
   color: var(--color-warning-text);
   background: color-mix(in srgb, var(--color-warning) 12%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   padding: 1px 4px;
   flex-shrink: 0;
 }

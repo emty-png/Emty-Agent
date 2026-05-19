@@ -73,9 +73,9 @@ watchEffect(() => {
         @click="emit('select', entry)"
         @mouseenter="emit('hover', idx)"
       >
-        <FilePlus v-if="entry.id === 'new'" class="cmd-icon" :size="13" :stroke-width="1.6" color="#a0b8d8" aria-hidden="true" />
-        <FileCode v-else-if="entry.id === 'init'" class="cmd-icon" :size="13" :stroke-width="1.6" color="#a8d8b8" aria-hidden="true" />
-        <WandSparkles v-else class="cmd-icon" :size="13" :stroke-width="1.6" color="#d4aa68" aria-hidden="true" />
+        <FilePlus v-if="entry.id === 'new'" class="cmd-icon cmd-icon--info" :size="13" :stroke-width="1.6" aria-hidden="true" />
+        <FileCode v-else-if="entry.id === 'init'" class="cmd-icon cmd-icon--success" :size="13" :stroke-width="1.6" aria-hidden="true" />
+        <WandSparkles v-else class="cmd-icon cmd-icon--accent" :size="13" :stroke-width="1.6" aria-hidden="true" />
 
         <span class="cmd-label">
           <template v-for="(part, pi) in highlightParts(entry.label, query)" :key="pi">
@@ -85,8 +85,6 @@ watchEffect(() => {
         </span>
 
         <span class="cmd-desc">{{ entry.description }}</span>
-
-        <span class="cmd-key-hint" aria-hidden="true">↵</span>
       </button>
     </div>
   </div>
@@ -97,14 +95,14 @@ watchEffect(() => {
 
 .cmd-overlay {
   width: 100%;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   margin-bottom: 8px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   max-height: 320px;
 }
 
@@ -118,7 +116,7 @@ watchEffect(() => {
 }
 
 .cmd-header-title {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -133,7 +131,7 @@ watchEffect(() => {
   color: var(--color-accent-text);
   background: var(--color-accent-muted-plus);
   border: 1px solid var(--color-accent-dim);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 1px 6px;
   max-width: 200px;
   overflow: hidden;
@@ -147,7 +145,7 @@ watchEffect(() => {
   width: 22px;
   height: 22px;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
@@ -157,7 +155,7 @@ watchEffect(() => {
     color 100ms ease;
 }
 .cmd-close-btn:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
   color: var(--color-text-secondary);
 }
 
@@ -178,7 +176,6 @@ watchEffect(() => {
 }
 
 .cmd-list {
-  flex: 1;
   overflow-y: auto;
   padding: 6px;
   min-height: 0;
@@ -192,10 +189,11 @@ watchEffect(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 36px;
+  height: 34px;
+  min-height: 34px;
   padding-inline: 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -204,7 +202,7 @@ watchEffect(() => {
 
 .cmd-entry:hover,
 .cmd-entry--sel {
-  background: var(--color-bg-elevated);
+  background: var(--color-state-hover);
 }
 
 .cmd-icon {
@@ -212,6 +210,15 @@ watchEffect(() => {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+.cmd-icon--info {
+  color: var(--color-info-text);
+}
+.cmd-icon--success {
+  color: var(--color-success-text);
+}
+.cmd-icon--accent {
+  color: var(--color-warning-text);
 }
 
 .cmd-label {
@@ -238,22 +245,5 @@ watchEffect(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
-}
-
-.cmd-key-hint {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--color-text-dim);
-  opacity: 0;
-  transform: translateX(4px);
-  transition:
-    opacity 150ms ease,
-    transform 150ms ease,
-    color 150ms ease;
-}
-.cmd-entry--sel .cmd-key-hint {
-  opacity: 1;
-  transform: translateX(0);
-  color: var(--color-accent-dim);
 }
 </style>

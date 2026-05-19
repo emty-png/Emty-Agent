@@ -509,8 +509,8 @@ watch(viewportRef, node => {
   flex-direction: column;
   height: 100%;
   min-width: 0;
-  background: var(--color-bg-base, #121212);
-  color: var(--color-text-primary, #ededed);
+  background: var(--color-bg-base, #000000);
+  color: var(--color-text-primary, #f2f2f2);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -521,8 +521,8 @@ watch(viewportRef, node => {
   gap: 4px;
   height: 40px;
   padding: 0 10px;
-  background: color-mix(in srgb, var(--color-bg-base, #121212) 80%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle, #333) 40%, transparent);
+  background: color-mix(in srgb, var(--color-bg-base, #000000) 80%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle, #1a1a1a) 40%, transparent);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -539,9 +539,9 @@ watch(viewportRef, node => {
   height: 30px;
   padding: 0 8px 0 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: transparent;
-  color: var(--color-text-dim, #888);
+  color: var(--color-text-dim, #595959);
   cursor: pointer;
   user-select: none;
   transition:
@@ -551,19 +551,19 @@ watch(viewportRef, node => {
 }
 
 .browser-tab:hover:not(.browser-tab--active) {
-  background: color-mix(in srgb, var(--color-bg-surface, #222) 50%, transparent);
-  color: var(--color-text-secondary, #ccc);
+  background: color-mix(in srgb, var(--color-bg-surface, #0a0a0a) 50%, transparent);
+  color: var(--color-text-secondary, #cccccc);
 }
 
 .browser-tab--active {
-  background: var(--color-bg-surface, #222);
-  color: var(--color-text-primary, #fff);
-  border-color: color-mix(in srgb, var(--color-border-subtle, #444) 60%, transparent);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  background: var(--color-bg-surface, #0a0a0a);
+  color: var(--color-text-primary, #f2f2f2);
+  border-color: color-mix(in srgb, var(--color-border-subtle, #1a1a1a) 60%, transparent);
+  box-shadow: var(--color-shadow-sm);
 }
 
 .browser-tab:focus-visible {
-  outline: 2px solid var(--color-accent, #4f9cf9);
+  outline: 2px solid var(--color-accent, #00e5ff);
   outline-offset: -1px;
 }
 
@@ -579,7 +579,7 @@ watch(viewportRef, node => {
 .browser-tab-favicon-img {
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   object-fit: contain;
   transition: opacity 150ms ease;
 }
@@ -609,7 +609,7 @@ watch(viewportRef, node => {
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: transparent;
   flex-shrink: 0;
   transition:
@@ -620,13 +620,13 @@ watch(viewportRef, node => {
 
 .browser-tab:hover .browser-tab-close,
 .browser-tab--active .browser-tab-close {
-  color: var(--color-text-dim, #888);
+  color: var(--color-text-dim, #595959);
 }
 
 .browser-tab-close:hover,
 .browser-tab-close:focus-visible {
-  background: color-mix(in srgb, var(--color-danger, #f56565) 15%, transparent);
-  color: var(--color-danger, #f56565) !important;
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent);
+  color: var(--color-danger, #ef4444) !important;
 }
 
 /* ── New-tab + Toolbar buttons ──────────────────────────────── */
@@ -637,9 +637,9 @@ watch(viewportRef, node => {
   justify-content: center;
   height: 28px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--color-text-dim, #888);
+  color: var(--color-text-dim, #595959);
   flex-shrink: 0;
   cursor: pointer;
   transition:
@@ -654,13 +654,13 @@ watch(viewportRef, node => {
 
 .browser-tab-new:hover,
 .toolbar-btn:hover:not(:disabled) {
-  background: var(--color-bg-hover, #333);
-  color: var(--color-text-primary, #fff);
+  background: var(--color-state-hover, #1c1c1c);
+  color: var(--color-text-primary, #f2f2f2);
 }
 
 .browser-tab-new:focus-visible,
 .toolbar-btn:focus-visible {
-  outline: 2px solid var(--color-accent, #4f9cf9);
+  outline: 2px solid var(--color-accent, #00e5ff);
 }
 
 .toolbar-btn {
@@ -678,8 +678,8 @@ watch(viewportRef, node => {
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  background: var(--color-bg-base, #121212);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle, #333) 40%, transparent);
+  background: var(--color-bg-base, #000000);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle, #1a1a1a) 40%, transparent);
 }
 
 .address-form {
@@ -693,9 +693,9 @@ watch(viewportRef, node => {
   gap: 8px;
   height: 34px;
   padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--color-border-subtle, #444) 60%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-bg-surface, #222) 50%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle, #1a1a1a) 60%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-bg-surface, #0a0a0a) 50%, transparent);
   transition:
     border-color 150ms ease,
     background 150ms ease,
@@ -703,20 +703,20 @@ watch(viewportRef, node => {
 }
 
 .address-shell:focus-within {
-  border-color: color-mix(in srgb, var(--color-accent, #4f9cf9) 80%, transparent);
-  background: var(--color-bg-surface, #222);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent, #4f9cf9) 15%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent, #00e5ff) 80%, transparent);
+  background: var(--color-bg-surface, #0a0a0a);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent, #00e5ff) 15%, transparent);
 }
 
 .address-icon,
 .address-spinner {
-  color: var(--color-text-dim, #888);
+  color: var(--color-text-dim, #595959);
   flex-shrink: 0;
 }
 
 .address-spinner {
   animation: spin 1s linear infinite;
-  color: var(--color-accent, #4f9cf9);
+  color: var(--color-accent, #00e5ff);
 }
 
 .address-input {
@@ -725,13 +725,13 @@ watch(viewportRef, node => {
   background: transparent;
   border: none;
   outline: none;
-  color: var(--color-text-primary, #fff);
+  color: var(--color-text-primary, #f2f2f2);
   font-size: 13px;
   letter-spacing: 0.01em;
 }
 
 .address-input::placeholder {
-  color: color-mix(in srgb, var(--color-text-dim, #888) 70%, transparent);
+  color: color-mix(in srgb, var(--color-text-dim, #595959) 70%, transparent);
   font-size: 12.5px;
 }
 
@@ -740,7 +740,7 @@ watch(viewportRef, node => {
   position: relative;
   flex: 1;
   min-height: 0;
-  background: var(--color-bg-base, #121212);
+  background: var(--color-bg-base, #000000);
 }
 
 .browser-viewport {
@@ -759,7 +759,7 @@ watch(viewportRef, node => {
   gap: 12px;
   padding: 28px;
   text-align: center;
-  background: var(--color-bg-base, #121212);
+  background: var(--color-bg-base, #000000);
 }
 
 .browser-empty-mark {
@@ -767,15 +767,15 @@ watch(viewportRef, node => {
   place-items: center;
   width: 48px;
   height: 48px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--color-accent, #4f9cf9) 15%, transparent);
-  color: var(--color-accent, #4f9cf9);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-accent, #00e5ff) 15%, transparent);
+  color: var(--color-accent, #00e5ff);
 }
 
 .browser-empty-title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--color-text-primary, #fff);
+  color: var(--color-text-primary, #f2f2f2);
   margin: 0;
 }
 
@@ -783,7 +783,7 @@ watch(viewportRef, node => {
   max-width: 280px;
   font-size: 13px;
   line-height: 1.6;
-  color: var(--color-text-dim, #aaa);
+  color: var(--color-text-dim, #595959);
   margin: 0;
 }
 
@@ -794,12 +794,12 @@ watch(viewportRef, node => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg-base, #121212);
+  background: var(--color-bg-base, #000000);
   pointer-events: none;
 }
 
 .browser-loading-spinner {
-  color: var(--color-text-dim, #666);
+  color: var(--color-text-dim, #595959);
   animation: spin 1s linear infinite;
 }
 
@@ -820,13 +820,13 @@ watch(viewportRef, node => {
   gap: 8px;
   max-width: min(420px, calc(100% - 32px));
   padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--color-danger, #f56565) 40%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-danger, #f56565) 12%, var(--color-bg-base, #121212));
+  border: 1px solid color-mix(in srgb, var(--color-danger, #ef4444) 40%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, var(--color-bg-base, #000000));
   color: var(--color-danger-text, #fca5a5);
   font-size: 13px;
   line-height: 1.5;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--color-shadow-md);
 }
 
 .browser-error-icon {

@@ -143,20 +143,16 @@ watch(activeIdx, async newIdx => {
   /* Make the width slightly smaller than the chat input so it feels nested */
   width: calc(100% - 24px);
   margin: 0 auto 10px auto;
-  background: var(--color-bg-card);
+  background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--color-shadow-floating);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* Subtle floating shadow */
   transition:
     border-color 400ms cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 400ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.todo-overlay--done {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 /* ── header ────────────────────────────────────────────────────────────────── */
@@ -221,8 +217,8 @@ watch(activeIdx, async newIdx => {
   justify-content: center;
   height: 20px; /* Shorter pill to fit the slim header */
   padding: 0 8px;
-  border-radius: 10px;
-  background: var(--color-bg-elevated);
+  border-radius: var(--radius-lg);
+  background: var(--color-state-hover);
   font-size: 10.5px;
   font-weight: 600;
   color: var(--color-text-secondary);
@@ -268,7 +264,7 @@ watch(activeIdx, async newIdx => {
 }
 .todo-body::-webkit-scrollbar-thumb {
   background: var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 .todo-body::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-tertiary);
@@ -314,12 +310,12 @@ watch(activeIdx, async newIdx => {
   gap: 12px;
   padding: 7px 10px; /* Slimmer inner padding */
   border: none;
-  border-radius: 8px; /* Gives interior items rounded pill styling */
+  border-radius: var(--radius-md);
   transition: background 150ms ease;
 }
 
 .todo-item:hover {
-  background: var(--color-bg-hover);
+  background: var(--color-state-hover);
 }
 
 /* Left accent sliver — shown when active */
@@ -331,15 +327,15 @@ watch(activeIdx, async newIdx => {
   transform-origin: center;
   width: 3px;
   height: 14px;
-  border-radius: 4px;
-  background: var(--color-accent); /* Usually maps to the cyan color in screenshot */
+  border-radius: var(--radius-xs);
+  background: var(--color-accent);
   transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .todo-item--active .todo-option-accent {
   transform: translateY(-50%) scaleY(1);
 }
 .todo-item--active {
-  background: var(--color-bg-elevated);
+  background: var(--color-state-hover);
 }
 
 /* Status icon */
