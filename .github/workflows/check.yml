@@ -31,8 +31,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Lint
-        run: pnpm lint
+      - name: Lint & Fix
+        run: pnpm lint:fix
 
   typecheck:
     name: Type Check
