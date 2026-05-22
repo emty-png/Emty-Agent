@@ -28,7 +28,9 @@ import {
   dbUpdateConversationTitle,
 } from '@/db/database'
 import { useBrowserStore } from '@/stores/browser'
+import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
+import { useTerminalStore } from '@/stores/terminal'
 import { createSendMessage } from './chat/sendMessage'
 import { createEmptyDraft, createEmptyEstimatorState, makeId, newTab } from './chat/utils'
 
@@ -147,6 +149,8 @@ export const useChatStore = defineStore('chat', () => {
       snapshotConversationState(tab)
 
     const browser = useBrowserStore()
+    const gitPane = useGitPaneStore()
+    const terminal = useTerminalStore()
 
     // Cancel any in-flight request
     abortControllers.get(id)?.abort()
@@ -184,6 +188,8 @@ export const useChatStore = defineStore('chat', () => {
     if (tabs.value.length === 1) {
       // Always keep at least one tab
       browser.disposeOwner(id)
+      gitPane.disposeOwner(id)
+      void terminal.disposeOwner(id)
       const tab = newTab()
       tab.workspacePath = useProjectStore().projectPath
       tabs.value = [tab]
@@ -192,6 +198,8 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     browser.disposeOwner(id)
+    gitPane.disposeOwner(id)
+    void terminal.disposeOwner(id)
     tabs.value.splice(idx, 1)
     if (activeId.value === id)
       activeId.value = tabs.value[Math.max(0, idx - 1)]!.id

@@ -11,30 +11,41 @@ import MessageThread from '@/components/chat/MessageThread.vue'
 import SubAgentBanner from '@/components/chat/SubAgentBanner.vue'
 import TabBar from '@/components/chat/TabBar.vue'
 import GitPane from '@/components/git/GitPane.vue'
+import TerminalPane from '@/components/terminal/TerminalPane.vue'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
 import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
+import { useTerminalStore } from '@/stores/terminal'
 import { useThemeStore } from '@/stores/themes'
 
 const SPLIT_MIN = 35
 const SPLIT_MAX = 70
 const SPLIT_DEFAULT = 35
+const TERMINAL_SPLIT_MIN = 18
+const TERMINAL_SPLIT_MAX = 50
 
 const chat = useChatStore()
 const browser = useBrowserStore()
 const gitPane = useGitPaneStore()
 const project = useProjectStore()
+const terminal = useTerminalStore()
 const theme = useThemeStore()
 const { activeId, activeTab } = storeToRefs(chat)
 
 const containerRef = ref<HTMLElement | null>(null)
-const dragging = ref(false)
+const mainPanelRef = ref<HTMLElement | null>(null)
+const horizontalDragging = ref(false)
+const terminalDragging = ref(false)
 
 const activeBrowserOwner = computed(() => browser.getOwner(activeId.value))
 const activeGitOwner = computed(() => gitPane.getOwner(activeId.value))
+const activeTerminalOwner = computed(() => terminal.getOwner(activeId.value))
 const hasRightPane = computed(() => activeBrowserOwner.value.isPanelOpen || activeGitOwner.value.isPanelOpen)
+const hasTerminalPane = computed(() =>
+  activeTerminalOwner.value.isPanelOpen && activeTerminalOwner.value.sessions.length > 0,
+)
 
 const resolvedWorkspacePath = computed(() => resolveTabWorkspacePath(activeTab.value, project.projectPath))
 
@@ -55,30 +66,70 @@ const mainPaneStyle = computed(() => {
     maxWidth: `${splitPercent.value}%`,
   }
 })
+const terminalHeightPercent = computed(() =>
+  Math.min(
+    TERMINAL_SPLIT_MAX,
+    Math.max(TERMINAL_SPLIT_MIN, activeTerminalOwner.value.heightPercent || TERMINAL_SPLIT_MIN),
+  ),
+)
+const mainContentStyle = computed(() => {
+  if (!hasTerminalPane.value)
+    return undefined
+
+  return {
+    height: `${100 - terminalHeightPercent.value}%`,
+  }
+})
+const terminalPanelStyle = computed(() => {
+  if (!hasTerminalPane.value)
+    return undefined
+
+  return {
+    height: `${terminalHeightPercent.value}%`,
+  }
+})
 
 function onDragStart(event: MouseEvent) {
   if (!hasRightPane.value)
     return
 
   event.preventDefault()
-  dragging.value = true
+  horizontalDragging.value = true
+}
+
+function onTerminalDragStart(event: MouseEvent) {
+  if (!hasTerminalPane.value)
+    return
+
+  event.preventDefault()
+  terminalDragging.value = true
 }
 
 function onMouseMove(event: MouseEvent) {
-  if (!dragging.value || !containerRef.value)
+  if (horizontalDragging.value && containerRef.value) {
+    const rect = containerRef.value.getBoundingClientRect()
+    const raw = ((event.clientX - rect.left) / rect.width) * 100
+    const next = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, raw))
+    if (activeGitOwner.value.isPanelOpen)
+      gitPane.setSplitPercent(activeId.value, next)
+    else
+      browser.setSplitPercent(activeId.value, next)
     return
+  }
 
-  const rect = containerRef.value.getBoundingClientRect()
-  const raw = ((event.clientX - rect.left) / rect.width) * 100
-  const next = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, raw))
-  if (activeGitOwner.value.isPanelOpen)
-    gitPane.setSplitPercent(activeId.value, next)
-  else
-    browser.setSplitPercent(activeId.value, next)
+  if (terminalDragging.value && mainPanelRef.value) {
+    const rect = mainPanelRef.value.getBoundingClientRect()
+    const raw = ((rect.bottom - event.clientY) / rect.height) * 100
+    terminal.setHeightPercent(
+      activeId.value,
+      Math.min(TERMINAL_SPLIT_MAX, Math.max(TERMINAL_SPLIT_MIN, raw)),
+    )
+  }
 }
 
 function onMouseUp() {
-  dragging.value = false
+  horizontalDragging.value = false
+  terminalDragging.value = false
 }
 
 onMounted(() => {
@@ -169,129 +220,22 @@ const parentTabExists = computed(() => {
     <div
       ref="containerRef"
       class="chat-body"
-      :class="{ 'chat-body--dragging': dragging }"
+      :class="{ 'chat-body--dragging': horizontalDragging }"
     >
-      <div class="chat-main-panel" :style="mainPaneStyle">
-        <Transition name="fade" mode="out-in">
-          <div
-            v-if="activeTab.messages.length === 0 && !isSubAgentTab"
-            :key="`landing-${activeTab.id}`"
-            class="landing"
-          >
-            <WeatherBackground v-if="theme.showLandingArt" />
-            <div class="center-col">
-              <ChatInput
-                :is-streaming="activeTab.isStreaming"
-                @send="send"
-                @stop="stop"
-              />
-            </div>
-          </div>
-
-          <div
-            v-else-if="isSubAgentTab"
-            :key="`subagent-${activeTab.id}`"
-            class="conversation"
-          >
-            <SubAgentBanner :sub-agent="activeTab.subAgent!" />
-
-            <div class="thread-container">
-              <div class="scroll-blur-top" />
-
-              <div ref="threadRef" class="thread" @scroll="onScroll">
-                <div class="thread-inner">
-                  <MessageThread
-                    :messages="activeTab.messages"
-                    :is-streaming="activeTab.isStreaming"
-                    :is-sub-agent="true"
-                    @preview-attachment="previewAttachment = $event"
-                  />
-                </div>
-              </div>
-
-              <div class="scroll-blur-bottom" />
-
-              <Transition name="btn-pop">
-                <button
-                  v-if="showScrollButton"
-                  class="scroll-down-btn sa-scroll-down-btn"
-                  aria-label="Scroll to bottom"
-                  @click="scrollToBottom"
-                >
-                  <ArrowDown :size="16" :stroke-width="2.5" />
-                </button>
-              </Transition>
-            </div>
-
-            <div class="sa-footer">
-              <div class="sa-footer-inner">
-                <button
-                  v-if="parentTabExists"
-                  class="sa-footer-parent-btn"
-                  title="Go to the tab that spawned this agent"
-                  @click="goToParent"
-                >
-                  Back to parent
-                </button>
-                <span v-else class="sa-footer-orphan">Spawned by a closed tab</span>
-
-                <div class="sa-footer-spacer" />
-
-                <button
-                  v-if="activeTab.isStreaming"
-                  class="sa-footer-stop"
-                  aria-label="Stop sub-agent"
-                  @click="chat.stopGeneration(activeTab.id)"
-                >
-                  <Square :size="12" :stroke-width="0" style="fill: currentColor; margin-right: 6px;" />
-                  Stop
-                </button>
-
-                <span
-                  v-else
-                  class="sa-footer-done"
-                  :class="`sa-footer-done--${activeTab.subAgent!.status}`"
-                >
-                  {{ activeTab.subAgent!.status === 'done' ? 'Completed' : 'Stopped' }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div
-            v-else
-            :key="`conversation-${activeTab.id}`"
-            class="conversation"
-          >
-            <div class="thread-container">
-              <div class="scroll-blur-top" />
-
-              <div ref="threadRef" class="thread" @scroll="onScroll">
-                <div class="thread-inner">
-                  <MessageThread
-                    :messages="activeTab.messages"
-                    :is-streaming="activeTab.isStreaming"
-                    :is-sub-agent="false"
-                    @preview-attachment="previewAttachment = $event"
-                  />
-                </div>
-              </div>
-
-              <div class="scroll-blur-bottom" />
-            </div>
-
-            <div class="convo-input-wrap">
-              <Transition name="btn-pop">
-                <button
-                  v-if="showScrollButton"
-                  class="scroll-down-btn"
-                  aria-label="Scroll to bottom"
-                  @click="scrollToBottom"
-                >
-                  <ArrowDown :size="16" :stroke-width="2.5" />
-                </button>
-              </Transition>
-
+      <div
+        ref="mainPanelRef"
+        class="chat-main-panel"
+        :class="{ 'chat-main-panel--dragging': terminalDragging }"
+        :style="mainPaneStyle"
+      >
+        <div class="chat-main-content" :style="mainContentStyle">
+          <Transition name="fade" mode="out-in">
+            <div
+              v-if="activeTab.messages.length === 0 && !isSubAgentTab"
+              :key="`landing-${activeTab.id}`"
+              class="landing"
+            >
+              <WeatherBackground v-if="theme.showLandingArt" />
               <div class="center-col">
                 <ChatInput
                   :is-streaming="activeTab.isStreaming"
@@ -300,14 +244,143 @@ const parentTabExists = computed(() => {
                 />
               </div>
             </div>
-          </div>
-        </Transition>
+
+            <div
+              v-else-if="isSubAgentTab"
+              :key="`subagent-${activeTab.id}`"
+              class="conversation"
+            >
+              <SubAgentBanner :sub-agent="activeTab.subAgent!" />
+
+              <div class="thread-container">
+                <div class="scroll-blur-top" />
+
+                <div ref="threadRef" class="thread" @scroll="onScroll">
+                  <div class="thread-inner">
+                    <MessageThread
+                      :messages="activeTab.messages"
+                      :is-streaming="activeTab.isStreaming"
+                      :is-sub-agent="true"
+                      @preview-attachment="previewAttachment = $event"
+                    />
+                  </div>
+                </div>
+
+                <div class="scroll-blur-bottom" />
+
+                <Transition name="btn-pop">
+                  <button
+                    v-if="showScrollButton"
+                    class="scroll-down-btn sa-scroll-down-btn"
+                    aria-label="Scroll to bottom"
+                    @click="scrollToBottom"
+                  >
+                    <ArrowDown :size="16" :stroke-width="2.5" />
+                  </button>
+                </Transition>
+              </div>
+
+              <div class="sa-footer">
+                <div class="sa-footer-inner">
+                  <button
+                    v-if="parentTabExists"
+                    class="sa-footer-parent-btn"
+                    title="Go to the tab that spawned this agent"
+                    @click="goToParent"
+                  >
+                    Back to parent
+                  </button>
+                  <span v-else class="sa-footer-orphan">Spawned by a closed tab</span>
+
+                  <div class="sa-footer-spacer" />
+
+                  <button
+                    v-if="activeTab.isStreaming"
+                    class="sa-footer-stop"
+                    aria-label="Stop sub-agent"
+                    @click="chat.stopGeneration(activeTab.id)"
+                  >
+                    <Square :size="12" :stroke-width="0" style="fill: currentColor; margin-right: 6px;" />
+                    Stop
+                  </button>
+
+                  <span
+                    v-else
+                    class="sa-footer-done"
+                    :class="`sa-footer-done--${activeTab.subAgent!.status}`"
+                  >
+                    {{ activeTab.subAgent!.status === 'done' ? 'Completed' : 'Stopped' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-else
+              :key="`conversation-${activeTab.id}`"
+              class="conversation"
+            >
+              <div class="thread-container">
+                <div class="scroll-blur-top" />
+
+                <div ref="threadRef" class="thread" @scroll="onScroll">
+                  <div class="thread-inner">
+                    <MessageThread
+                      :messages="activeTab.messages"
+                      :is-streaming="activeTab.isStreaming"
+                      :is-sub-agent="false"
+                      @preview-attachment="previewAttachment = $event"
+                    />
+                  </div>
+                </div>
+
+                <div class="scroll-blur-bottom" />
+              </div>
+
+              <div class="convo-input-wrap">
+                <Transition name="btn-pop">
+                  <button
+                    v-if="showScrollButton"
+                    class="scroll-down-btn"
+                    aria-label="Scroll to bottom"
+                    @click="scrollToBottom"
+                  >
+                    <ArrowDown :size="16" :stroke-width="2.5" />
+                  </button>
+                </Transition>
+
+                <div class="center-col">
+                  <ChatInput
+                    :is-streaming="activeTab.isStreaming"
+                    @send="send"
+                    @stop="stop"
+                  />
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+
+        <div
+          v-if="hasTerminalPane"
+          class="chat-terminal-split-handle"
+          :class="{ 'chat-terminal-split-handle--active': terminalDragging }"
+          @mousedown="onTerminalDragStart"
+        />
+
+        <div v-if="hasTerminalPane" class="chat-terminal-panel" :style="terminalPanelStyle">
+          <TerminalPane
+            :owner-id="activeId"
+            :cwd="resolvedWorkspacePath"
+            @close="terminal.closePanel(activeId)"
+          />
+        </div>
       </div>
 
       <div
         v-if="hasRightPane"
         class="chat-split-handle"
-        :class="{ 'chat-split-handle--active': dragging }"
+        :class="{ 'chat-split-handle--active': horizontalDragging }"
         @mousedown="onDragStart"
       />
 
@@ -351,10 +424,24 @@ const parentTabExists = computed(() => {
 }
 
 .chat-main-panel {
-  position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
+  min-height: 0;
   z-index: 30;
+}
+
+.chat-main-panel--dragging {
+  cursor: row-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chat-main-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 .chat-browser-panel {
@@ -397,6 +484,39 @@ const parentTabExists = computed(() => {
 .chat-split-handle--active {
   background: var(--color-accent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.chat-terminal-split-handle {
+  position: relative;
+  height: 1px;
+  background: var(--color-border-subtle);
+  cursor: row-resize;
+  flex-shrink: 0;
+  z-index: 20;
+  transition:
+    background 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.chat-terminal-split-handle::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
+}
+
+.chat-terminal-split-handle:hover,
+.chat-terminal-split-handle--active {
+  background: var(--color-accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.chat-terminal-panel {
+  min-height: 140px;
+  overflow: hidden;
+  background: var(--color-bg-base);
 }
 
 .center-col {

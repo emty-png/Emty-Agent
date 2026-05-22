@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Copy, FolderOpen, Minus, Square, X } from 'lucide-vue-next'
+import { Copy, FolderOpen, Minus, Square, SquareTerminal, X } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useProjectStore } from '@/stores/project'
+import { useTerminalStore } from '@/stores/terminal'
 import ServicesDropdown from './ServicesDropdown.vue'
 
 interface Props {
@@ -14,9 +15,13 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   title: 'App',
 })
+const emit = defineEmits<{
+  toggleTerminal: []
+}>()
 
 const project = useProjectStore()
 const chat = useChatStore()
+const terminal = useTerminalStore()
 const displayProjectPath = computed(() => resolveTabWorkspacePath(chat.activeTab, project.projectPath))
 const displayProjectName = computed(() => {
   const path = displayProjectPath.value
@@ -24,6 +29,7 @@ const displayProjectName = computed(() => {
     return null
   return path.replace(/[\\/]+$/, '').split(/[/\\]/).pop() ?? null
 })
+const terminalActive = computed(() => terminal.getOwner(chat.activeId).isPanelOpen)
 
 // ── window state ──────────────────────────────────────────────────────────────
 const appWindow = getCurrentWindow()
@@ -114,6 +120,16 @@ async function pickProject() {
         @click.stop="pickProject"
       >
         <FolderOpen :size="15" :stroke-width="1.8" />
+      </button>
+
+      <button
+        class="ctrl-btn ctrl-btn--terminal"
+        :class="{ 'ctrl-btn--active': terminalActive }"
+        aria-label="Toggle terminal panel"
+        title="Toggle terminal panel"
+        @click.stop="emit('toggleTerminal')"
+      >
+        <SquareTerminal :size="15" :stroke-width="1.8" />
       </button>
 
       <ServicesDropdown />
@@ -260,6 +276,12 @@ async function pickProject() {
 }
 
 .ctrl-btn--project:hover {
+  color: var(--color-accent-text);
+  background: var(--color-accent-muted);
+}
+
+.ctrl-btn--terminal:hover,
+.ctrl-btn--active {
   color: var(--color-accent-text);
   background: var(--color-accent-muted);
 }

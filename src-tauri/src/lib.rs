@@ -1,8 +1,10 @@
 mod browser;
+mod terminal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(terminal::TerminalState::default())
         .invoke_handler(tauri::generate_handler![
             browser::browser_mount_surface,
             browser::browser_resize_surface,
@@ -12,6 +14,10 @@ pub fn run() {
             browser::browser_surface_reload,
             browser::browser_surface_screenshot,
             browser::browser_surface_dispatch,
+            terminal::terminal_start,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_close,
         ])
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())

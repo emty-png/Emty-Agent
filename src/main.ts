@@ -8,6 +8,7 @@ import { captureFatalError } from './utils/errors'
 import './styles/styles.css'
 import './styles/themes.css'
 import 'devicon/devicon.min.css'
+import '@xterm/xterm/css/xterm.css'
 
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)

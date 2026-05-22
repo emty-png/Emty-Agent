@@ -187,6 +187,23 @@ body {
   background: transparent;
 }
 
+.xterm {
+  color: var(--color-text-primary);
+}
+
+.xterm .xterm-viewport {
+  background: transparent !important;
+  scrollbar-color: var(--color-border-mid) transparent;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--color-border-mid);
+}
+
+.xterm .xterm-selection div {
+  background: var(--color-accent-muted-plus) !important;
+}
+
 ::selection {
   background-color: var(--color-selection-bg);
   color: var(--color-text-primary);

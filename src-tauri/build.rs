@@ -9,6 +9,10 @@ fn main() {
             "browser_surface_reload",
             "browser_surface_screenshot",
             "browser_surface_dispatch",
+            "terminal_start",
+            "terminal_write",
+            "terminal_resize",
+            "terminal_close",
         ]),
     ))
     .expect("failed to run tauri build helpers")
