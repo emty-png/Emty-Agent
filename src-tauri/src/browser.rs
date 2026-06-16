@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+#[cfg(windows)]
+use serde_json::json;
 use serde_json::Value as JsonValue;
 use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder};
@@ -331,9 +333,14 @@ pub async fn browser_surface_reload<R: Runtime>(
 }
 
 #[cfg(windows)]
-fn capture_surface_screenshot<R: Runtime>(surface: tauri::Webview<R>) -> Result<String, String> {
+fn call_devtools_protocol_method<R: Runtime>(
+    surface: tauri::Webview<R>,
+    method_name: &'static str,
+    params_json: String,
+    timeout: std::time::Duration,
+    timeout_message: &'static str,
+) -> Result<String, String> {
     use std::sync::mpsc;
-    use std::time::Duration;
     use webview2_com::{CallDevToolsProtocolMethodCompletedHandler, CoTaskMemPWSTR};
 
     let (tx, rx) = mpsc::channel::<Result<String, String>>();
@@ -362,10 +369,8 @@ fn capture_surface_screenshot<R: Runtime>(surface: tauri::Webview<R>) -> Result<
                 },
             ));
 
-            let method = CoTaskMemPWSTR::from("Page.captureScreenshot");
-            let params = CoTaskMemPWSTR::from(
-                r#"{"format":"png","fromSurface":true,"captureBeyondViewport":false}"#,
-            );
+            let method = CoTaskMemPWSTR::from(method_name);
+            let params = CoTaskMemPWSTR::from(params_json.as_str());
 
             if let Err(err) = unsafe {
                 webview.CallDevToolsProtocolMethod(
@@ -379,9 +384,19 @@ fn capture_surface_screenshot<R: Runtime>(surface: tauri::Webview<R>) -> Result<
         })
         .map_err(|e| e.to_string())?;
 
-    let result_json = rx
-        .recv_timeout(Duration::from_secs(8))
-        .map_err(|_| "Timed out capturing native browser screenshot".to_string())??;
+    rx.recv_timeout(timeout)
+        .map_err(|_| timeout_message.to_string())?
+}
+
+#[cfg(windows)]
+fn capture_surface_screenshot<R: Runtime>(surface: tauri::Webview<R>) -> Result<String, String> {
+    let result_json = call_devtools_protocol_method(
+        surface,
+        "Page.captureScreenshot",
+        r#"{"format":"png","fromSurface":true,"captureBeyondViewport":false}"#.to_string(),
+        std::time::Duration::from_secs(8),
+        "Timed out capturing native browser screenshot",
+    )?;
 
     let result: JsonValue = serde_json::from_str(&result_json).map_err(|e| e.to_string())?;
     let data = result
@@ -390,6 +405,75 @@ fn capture_surface_screenshot<R: Runtime>(surface: tauri::Webview<R>) -> Result<
         .ok_or_else(|| "WebView2 screenshot response did not contain PNG data".to_string())?;
 
     Ok(format!("data:image/png;base64,{data}"))
+}
+
+#[cfg(windows)]
+fn dispatch_surface_request_native<R: Runtime>(
+    surface: tauri::Webview<R>,
+    session_id: &str,
+    payload: &JsonValue,
+) -> Result<JsonValue, String> {
+    let bridge_source = browser_bridge_script(session_id)?;
+    let bridge_json = serde_json::to_string(&bridge_source).map_err(|e| e.to_string())?;
+    let request_json = serde_json::to_string(payload).map_err(|e| e.to_string())?;
+    let expression = format!(
+        r#"(async () => {{
+  const bridgeSource = {bridge_json};
+  const request = {request_json};
+
+  try {{
+    if (!window.__EMTY_AGENT_BROWSER_BRIDGE__ || typeof window.__EMTY_AGENT_BROWSER_BRIDGE__.run !== 'function')
+      (0, eval)(bridgeSource);
+
+    if (!window.__EMTY_AGENT_BROWSER_BRIDGE__ || typeof window.__EMTY_AGENT_BROWSER_BRIDGE__.run !== 'function')
+      throw new Error('Browser bridge is unavailable on this page.');
+
+    const result = await window.__EMTY_AGENT_BROWSER_BRIDGE__.run(request);
+    return {{ ok: true, result }};
+  }}
+  catch (error) {{
+    return {{
+      ok: false,
+      error: String(error && error.message ? error.message : error),
+    }};
+  }}
+}})()"#
+    );
+    let params = json!({
+        "expression": expression,
+        "awaitPromise": true,
+        "returnByValue": true,
+        "userGesture": true,
+        "allowUnsafeEvalBlockedByCSP": true,
+    })
+    .to_string();
+    let result_json = call_devtools_protocol_method(
+        surface,
+        "Runtime.evaluate",
+        params,
+        std::time::Duration::from_secs(30),
+        "Timed out executing native browser action",
+    )?;
+    let result: JsonValue = serde_json::from_str(&result_json).map_err(|e| e.to_string())?;
+
+    if let Some(exception) = result.get("exceptionDetails") {
+        return Err(format!("Browser action failed: {exception}"));
+    }
+
+    let value = result
+        .get("result")
+        .and_then(|result| result.get("value"))
+        .ok_or_else(|| "Browser action did not return a value.".to_string())?;
+
+    if value.get("ok").and_then(JsonValue::as_bool) == Some(true) {
+        return Ok(value.get("result").cloned().unwrap_or(JsonValue::Null));
+    }
+
+    Err(value
+        .get("error")
+        .and_then(JsonValue::as_str)
+        .unwrap_or("Browser action failed")
+        .to_string())
 }
 
 #[cfg(not(windows))]
@@ -411,12 +495,22 @@ pub async fn browser_surface_dispatch<R: Runtime>(
     app: AppHandle<R>,
     session_id: String,
     payload: JsonValue,
-) -> Result<(), String> {
+) -> Result<Option<JsonValue>, String> {
     let surface = get_surface(&app, &session_id)?;
-    let json = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
-    let script = format!(
-        "window.__EMTY_AGENT_BROWSER_BRIDGE__ && window.__EMTY_AGENT_BROWSER_BRIDGE__.dispatch({json});"
+
+    #[cfg(windows)]
+    {
+        return dispatch_surface_request_native(surface, &session_id, &payload).map(Some);
+    }
+
+    #[cfg(not(windows))]
+    {
+        let json = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+        let script = format!(
+        "if (!window.__EMTY_AGENT_BROWSER_BRIDGE__ || typeof window.__EMTY_AGENT_BROWSER_BRIDGE__.dispatch !== 'function') {{ throw new Error('Browser bridge is unavailable on this page.'); }} window.__EMTY_AGENT_BROWSER_BRIDGE__.dispatch({json});"
     );
 
-    surface.eval(script).map_err(|e| e.to_string())
+        surface.eval(script).map_err(|e| e.to_string())?;
+        Ok(None)
+    }
 }

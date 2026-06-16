@@ -9,6 +9,7 @@ export type BuiltinToolGroupId
     | 'web'
     | 'filesystem'
     | 'shell'
+    | 'image'
 
 export type ToolGroupId = BuiltinToolGroupId | `mcp:${string}`
 
@@ -54,7 +55,12 @@ const BUILTIN_GROUPS: BuiltinGroupDefinition[] = [
     description: 'Conversation and delegation tools the agent uses to coordinate work.',
     tools: [
       { id: 'ask_questions', label: 'ask_questions', description: 'Pause to ask the user clarifying questions.' },
-      { id: 'write_todo', label: 'write_todo', description: 'Maintain the live todo list in the chat UI.' },
+      { id: 'create_task', label: 'create_task', description: 'Add a new task to the live task list.' },
+      { id: 'update_task', label: 'update_task', description: 'Update or delete an existing task.' },
+      { id: 'list_tasks', label: 'list_tasks', description: 'List all current tasks with IDs and status.' },
+      { id: 'get_task', label: 'get_task', description: 'Get full details of a single task.' },
+      { id: 'write_plan', label: 'write_plan', description: 'Write an implementation plan for the user to review.' },
+      { id: 'sleep', label: 'sleep', description: 'Pause execution for a specified duration.' },
       { id: 'spawn_subagent', label: 'spawn_subagent', description: 'Delegate focused work to a sub-agent tab.' },
     ],
   },
@@ -102,27 +108,31 @@ const BUILTIN_GROUPS: BuiltinGroupDefinition[] = [
   {
     id: 'filesystem',
     label: 'Filesystem',
-    description: 'Inspect, read, write, and modify files in the project workspace.',
+    description: 'Inspect, read, search, and safely update files in the project workspace.',
     tools: [
-      { id: 'list_directory', label: 'list_directory', description: 'List files and folders in a directory.' },
-      { id: 'read_files', label: 'read_files', description: 'Read one or more files from the workspace.' },
-      { id: 'write_files', label: 'write_files', description: 'Create or overwrite files in the workspace.' },
-      { id: 'edit_files', label: 'edit_files', description: 'Apply targeted search-and-replace edits to files.' },
-      { id: 'modify_files', label: 'modify_files', description: 'Move, copy, rename, delete, or create paths.' },
-      { id: 'glob', label: 'glob', description: 'Find files by glob pattern.' },
-      { id: 'grep', label: 'grep', description: 'Search file contents by pattern.' },
+      { id: 'list_directory', label: 'list_directory', description: 'List files and directories at an absolute path, with optional ignore patterns.' },
+      { id: 'read_files', label: 'read_files', description: 'Read one or more files with line numbers. Supports offset/limit pagination.' },
+      { id: 'write_file', label: 'write_file', description: 'Create, append to, or overwrite a file in the workspace.' },
+      { id: 'edit_files', label: 'edit_files', description: 'Apply transactional search-and-replace edits to existing files. Supports batch edits per file with rollback on failure.' },
+      { id: 'glob', label: 'glob', description: 'Fast file search by glob pattern. Respects .gitignore by default, supports dotfile control and custom ignore patterns.' },
+      { id: 'grep', label: 'grep', description: 'Fast text/regex search across file contents. Respects .gitignore, supports glob filtering, files-only mode, and multiline matching.' },
     ],
   },
   {
     id: 'shell',
     label: 'Shell',
-    description: 'Run commands, git operations, and long-lived background processes.',
+    description: 'Run shell commands and git operations in the project directory.',
     tools: [
-      { id: 'run_command', label: 'run_command', description: 'Run shell commands in the project directory.' },
-      { id: 'git_command', label: 'git_command', description: 'Run git operations in the project directory.' },
-      { id: 'run_bg_command', label: 'run_bg_command', description: 'Start a background shell command.' },
-      { id: 'bg_command_status', label: 'bg_command_status', description: 'Check status and output of a background command.' },
-      { id: 'kill_bg_command', label: 'kill_bg_command', description: 'Stop a running background command.' },
+      { id: 'run_command', label: 'run_command', description: 'Run shell commands in the project directory. Supports command sequences, background mode, and large output truncation.' },
+      { id: 'git_command', label: 'git_command', description: 'Run tracked git operations in the project directory.' },
+    ],
+  },
+  {
+    id: 'image',
+    label: 'Image Generation',
+    description: 'Generate images from text descriptions using AI models.',
+    tools: [
+      { id: 'create_image', label: 'create_image', description: 'Generate images from a text prompt using configured image generation provider.' },
     ],
   },
 ]

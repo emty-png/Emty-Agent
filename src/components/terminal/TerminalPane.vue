@@ -166,7 +166,7 @@ async function closeSession(sessionId: string) {
 .terminal-tab__dot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   flex-shrink: 0;
 }
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-glob-search"
+description = "Enables the glob_search command without any pre-configured scope."
+commands.allow = ["glob_search"]
+
+[[permission]]
+identifier = "deny-glob-search"
+description = "Denies the glob_search command without any pre-configured scope."
+commands.deny = ["glob_search"]

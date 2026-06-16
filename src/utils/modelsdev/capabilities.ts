@@ -10,7 +10,7 @@ export function supportsReasoning(
   rawModelId: string,
 ): boolean {
   const meta = lookupModel(data, mdevId, rawModelId)
-  return Boolean(meta?.reasoning || meta?.interleaved)
+  return Boolean(meta?.reasoning || meta?.interleaved || meta?.reasoning_options?.length)
 }
 
 /**

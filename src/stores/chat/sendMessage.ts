@@ -1,10 +1,10 @@
 import type { LanguageModel } from 'ai'
 import type { ComputedRef, Ref } from 'vue'
 import type { Attachment, ChatMode, ChatTab, Message, SubAgentPersonality, ToolEvent } from './types'
-import type { StreamChatOptions, ToolCallEvent, ToolResultEvent } from '@/utils/ai'
+import type { StreamChatOptions } from '@/utils/ai'
 import type { RequestToolPermission, ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { QuestionAnswer, QuestionSpec } from '@/utils/tools/questions'
-import type { TodoItem } from '@/utils/tools/todos'
+import type { TaskItem } from '@/utils/tools/todos'
 import {
   dbInsertConversation,
   dbInsertMessage,
@@ -17,10 +17,6 @@ import { runSubAgentStream } from './subagent'
 import { makeId, toModelMessages } from './utils'
 import { resolveTabWorkspacePath } from './workspace'
 
-// How often (ms) to write partial content to the DB during a text/reasoning stream.
-// Tool-call and tool-result events always flush immediately regardless of this value.
-const PERSIST_THROTTLE_MS = 1500
-
 export function createSendMessage(
   tabs: Ref<ChatTab[]>,
   activeId: Ref<string>,
@@ -29,7 +25,7 @@ export function createSendMessage(
   questionResolvers: Map<string, (answers: QuestionAnswer[]) => void>,
   requestToolPermission: (tabId: string, request: Parameters<RequestToolPermission>[0]) => Promise<ToolPermissionDecision>,
 ) {
-  return async function sendMessage(content: string, mode: ChatMode = 'build', attachments?: Attachment[]): Promise<void> {
+  async function sendMessage(content: string, _mode: ChatMode = 'build', attachments?: Attachment[], modelOverride?: string | null): Promise<void> {
     const tab = activeTab.value
     if ((!content.trim() && (!attachments || attachments.length === 0)) || tab.isStreaming)
       return
@@ -40,23 +36,29 @@ export function createSendMessage(
       { applyMentionContextToMessages, buildCachedSystemPrompt, buildContextCachingProviderOptions, extractUsageStats },
       { useSettingsStore },
       { useProjectStore },
-      { createFilesystemTools, toolDisplayLabel },
-      { createShellTools, shellToolDisplayLabel },
-      { createQuestionsTool, questionsToolDisplayLabel },
-      { createSkillTools, skillToolDisplayLabel },
-      { createWebTools, webToolDisplayLabel },
-      { createBrowserTools, browserToolDisplayLabel },
-      { createMcpTools, mcpToolDisplayLabel },
-      { createWriteTodoTool, todosToolDisplayLabel },
-      { createMemoryTools, memoryToolDisplayLabel },
+      { createFilesystemTools },
+      { createShellTools },
+      { createQuestionsTool },
+      { createSkillTools },
+      { createWebTools },
+      { createBrowserTools },
+      { createImageGenTools },
+      { createMcpTools },
+      { createTaskTools },
+      { createMemoryTools },
+      { createSleepTool },
       { filterDisabledTools },
       { wrapToolSetWithPermissions },
-      { createSpawnSubAgentTool, subAgentDisplayLabel, buildSubAgentSystemPrompt },
+      { SequentialToolQueue, wrapToolSetSequentially },
+      { createSpawnSubAgentTool, buildSubAgentSystemPrompt },
       { getOsInfo },
       { inspectWorkspace, buildWorkspacePromptContext },
       { buildMemoryPromptContext, saveConversationTurnMemory },
       { newReplayId, startReplayCapture, finishReplayCapture },
       { buildRecoveryPromptContext, classifyFailure, recordFailureEvent, resolveConversationFailures },
+      { resolveLanguageModel, resolveMaxTokens },
+      { createStreamHandlers },
+      { getCoreToolDisplayLabel },
     ] = await Promise.all([
       import('@/utils/ai'),
       import('@/utils/agentContext'),
@@ -69,17 +71,23 @@ export function createSendMessage(
       import('@/utils/tools/skills'),
       import('@/utils/tools/web'),
       import('@/utils/tools/browser'),
+      import('@/utils/tools/imageGen'),
       import('@/utils/tools/mcp'),
       import('@/utils/tools/todos'),
       import('@/utils/tools/memory'),
+      import('@/utils/tools/sleep'),
       import('@/utils/tools/catalog'),
       import('@/utils/tools/permissions'),
+      import('@/utils/tools/sequential'),
       import('@/utils/tools/subagent'),
       import('@/utils/os'),
       import('@/utils/worktrees'),
       import('@/utils/memory'),
       import('@/utils/evals'),
       import('@/utils/failureRecovery'),
+      import('./models'),
+      import('./streamHandlers'),
+      import('./toolLabels'),
     ])
 
     const settings = useSettingsStore()
@@ -88,7 +96,7 @@ export function createSendMessage(
     const workspaceSnapshot = await inspectWorkspace(requestedWorkspacePath)
     const effectiveProjectPath = workspaceSnapshot?.path ?? requestedWorkspacePath ?? null
 
-    const resolvedModelUid = tab.modelUid ?? settings.activeModelUid
+    const resolvedModelUid = modelOverride ?? tab.modelUid ?? settings.activeModelUid
     const activeModel = settings.enabledModels.find((m: { uid: string }) => m.uid === resolvedModelUid) ?? settings.activeModel
 
     if (!activeModel) {
@@ -104,37 +112,6 @@ export function createSendMessage(
 
     const osInfo = await getOsInfo().catch(() => undefined)
 
-    function allToolDisplayLabel(name: string, args: Record<string, unknown>): string {
-      const fsLabel = toolDisplayLabel(name, args)
-      if (fsLabel !== `Called ${name}`)
-        return fsLabel
-      const shellLabel = shellToolDisplayLabel(name, args)
-      if (shellLabel !== `Called ${name}`)
-        return shellLabel
-      const qLabel = questionsToolDisplayLabel(name, args)
-      if (qLabel !== `Called ${name}`)
-        return qLabel
-      const skillLabel = skillToolDisplayLabel(name, args)
-      if (skillLabel !== `Called ${name}`)
-        return skillLabel
-      const webLabel = webToolDisplayLabel(name, args)
-      if (webLabel !== `Called ${name}`)
-        return webLabel
-      const browserLabel = browserToolDisplayLabel(name, args)
-      if (browserLabel !== `Called ${name}`)
-        return browserLabel
-      const mcpLabel = mcpToolDisplayLabel(name)
-      if (mcpLabel !== `Called ${name}`)
-        return mcpLabel
-      const todoLabel = todosToolDisplayLabel(name, args)
-      if (todoLabel !== `Called ${name}`)
-        return todoLabel
-      const memoryLabel = memoryToolDisplayLabel(name, args)
-      if (memoryLabel !== `Called ${name}`)
-        return memoryLabel
-      return subAgentDisplayLabel(name, args)
-    }
-
     async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
       if (settings.agent.permissionMode === 'auto')
         return 'allow-once' as const
@@ -144,6 +121,27 @@ export function createSendMessage(
 
     const now = Date.now()
     const text = content.trim()
+
+    // Detect skill chips and extract ID
+    const SKILL_CHIP_PATTERN = /\[skill:([^\]]+)\]/
+    let skillId: string | null = null
+    let skillContentToInject = ''
+
+    const match = SKILL_CHIP_PATTERN.exec(text)
+    if (match && match[1]) {
+      skillId = match[1]
+    }
+
+    const finalContent = text // Preserve the user's message including the chip
+    if (skillId) {
+      const { loadSkillDefinition } = await import('@/utils/skills')
+      const { recordSkillUsage } = await import('@/utils/skills/tracking')
+      const skill = await loadSkillDefinition(skillId, effectiveProjectPath)
+      if (skill) {
+        recordSkillUsage(skillId)
+        skillContentToInject = `## Requested Skill: ${skill.name}\n\n${skill.content}`
+      }
+    }
 
     const tabId = tab.id
     tab.workspacePath = effectiveProjectPath
@@ -165,7 +163,7 @@ export function createSendMessage(
 
     const { useCheckpointStore } = await import('@/stores/checkpoints')
     const checkpointStore = useCheckpointStore()
-    checkpointStore.createCheckpoint(
+    await checkpointStore.createCheckpoint(
       tab.id,
       tab.conversationId,
       tab.messages.length,
@@ -206,13 +204,17 @@ export function createSendMessage(
     const userMsg: Message = {
       id: makeId(),
       role: 'user',
-      content: text,
+      content: finalContent,
       timestamp: new Date(now),
+      ...(skillId ? { skillId } : {}),
       ...(attachments?.length ? { attachments } : {}),
     }
     tab.messages.push(userMsg)
 
-    const mentionContext = await buildMentionContext(text, effectiveProjectPath).catch(() => '')
+    let mentionContext = await buildMentionContext(finalContent, effectiveProjectPath, tab.readRegistry).catch(() => '')
+    if (skillContentToInject) {
+      mentionContext = mentionContext ? `${mentionContext}\n\n${skillContentToInject}` : skillContentToInject
+    }
     if (mentionContext.trim())
       userMsg.mentionContext = mentionContext
 
@@ -220,8 +222,9 @@ export function createSendMessage(
       id: userMsg.id,
       conversation_id: tab.conversationId!,
       role: 'user',
-      content: text,
+      content: finalContent,
       created_at: now,
+      ...(skillId ? { skill_id: skillId } : {}),
       ...(mentionContext.trim() ? { mention_context: mentionContext } : {}),
       ...(attachments?.length ? { attachments: JSON.stringify(attachments) } : {}),
     })
@@ -253,31 +256,7 @@ export function createSendMessage(
 
     let languageModel: LanguageModel | undefined
     try {
-      const pid = activeModel.providerId
-      if (pid === 'openai') {
-        languageModel = buildLanguageModel(
-          { type: 'openai', apiKey: settings.openai.apiKey, ...(settings.openai.baseURL ? { baseURL: settings.openai.baseURL } : {}), ...(settings.openai.organizationId ? { organizationId: settings.openai.organizationId } : {}) },
-          activeModel.id,
-        )
-      }
-      else if (pid === 'anthropic') {
-        languageModel = buildLanguageModel(
-          { type: 'anthropic', apiKey: settings.anthropic.apiKey, ...(settings.anthropic.baseURL ? { baseURL: settings.anthropic.baseURL } : {}) },
-          activeModel.id,
-        )
-      }
-      else if (pid === 'google') {
-        languageModel = buildLanguageModel({ type: 'google', apiKey: settings.google.apiKey }, activeModel.id)
-      }
-      else {
-        const compat = settings.compatibleProviders.find((p: { id: string }) => p.id === pid)
-        if (!compat)
-          throw new Error(`Provider "${pid}" not found`)
-        languageModel = buildLanguageModel(
-          { type: 'compatible', apiKey: compat.apiKey, baseURL: compat.baseURL, name: compat.name },
-          activeModel.id,
-        )
-      }
+      languageModel = resolveLanguageModel(activeModel, settings, buildLanguageModel)
     }
     catch (e) {
       assistantMsg.error = `Failed to initialise model: ${e instanceof Error ? e.message : String(e)}`
@@ -298,13 +277,7 @@ export function createSendMessage(
       return
     }
 
-    const maxOutputTokens = activeModel.supportsThinking
-      ? activeModel.thinkingEffort === 'high'
-        ? 16000
-        : activeModel.thinkingEffort === 'low'
-          ? 2048
-          : 8000
-      : 16_384
+    const maxOutputTokens = resolveMaxTokens(activeModel, 16_384)
 
     const cacheRuntime = {
       settings: settings.contextCaching,
@@ -321,7 +294,7 @@ export function createSendMessage(
     ])
 
     const promptBuild = await buildAgentSystemPrompt({
-      basePrompt: buildSystemPrompt(effectiveProjectPath, mode, osInfo),
+      basePrompt: buildSystemPrompt(effectiveProjectPath, tab.mode || 'build', osInfo, settings.agent.gitCoAuthor),
       projectPath: effectiveProjectPath,
       requestText: text,
       autoContext: settings.autoContext,
@@ -343,72 +316,10 @@ export function createSendMessage(
 
     const liveMsg = tab.messages.find(m => m.id === assistantId)!
 
-    // ── Live persistence helpers ───────────────────────────────────────────
-    // persistLive() is throttled for text/reasoning deltas. Pass force=true
-    // to flush immediately (used by tool-call and tool-result events).
-    let _lastPersistAt = 0
-
-    function persistLive(force = false): void {
-      if (!tab.conversationId)
-        return
-      const now = Date.now()
-      if (!force && now - _lastPersistAt < PERSIST_THROTTLE_MS)
-        return
-      _lastPersistAt = now
-      dbUpdateMessage(assistantId, {
-        content: liveMsg.content,
-        parts: liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null,
-        tool_events: liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null,
-      }).catch(() => { /* non-fatal during streaming */ })
-    }
-
-    const handleToolCall = (event: ToolCallEvent) => {
-      liveMsg.toolEvents ??= []
-      liveMsg.toolEvents.push({
-        id: event.id,
-        name: event.name,
-        label: allToolDisplayLabel(event.name, event.args),
-        status: 'running',
-        toolName: event.name,
-        startedAt: Date.now(),
-        args: event.args,
-      })
-      liveMsg.parts ??= []
-      liveMsg.parts.push({ type: 'tool', toolCallId: event.id })
-      // Flush immediately — tool calls are important for crash recovery
-      persistLive(true)
-    }
-
-    const handleToolResult = (event: ToolResultEvent) => {
-      const te = liveMsg.toolEvents?.find(e => e.id === event.id)
-      if (te) {
-        te.status = event.ok ? 'done' : 'error'
-        te.finishedAt = Date.now()
-        te.result = event.result
-
-        // Append +added / -removed line-count stats to the badge label so
-        // ToolCallBadge can colour them without a separate data channel.
-        // write_files and edit_files both return { added, removed } from execute().
-        // The cast is safe: execute() returns a plain object the AI SDK passes through.
-        if (event.ok) {
-          const result = (event as unknown as { result?: Record<string, unknown> }).result
-          const added = typeof result?.added === 'number' ? result.added : null
-          const removed = typeof result?.removed === 'number' ? result.removed : null
-          if (added !== null || removed !== null) {
-            const parts: string[] = []
-            if ((added ?? 0) > 0)
-              parts.push(`+${added}`)
-            if ((removed ?? 0) > 0)
-              parts.push(`-${removed}`)
-            if (parts.length > 0)
-              te.label = `${te.label} ${parts.join(' ')}`
-          }
-        }
-      }
-      // Flush immediately — tool results (including file contents) are the
-      // most critical data to not lose on a crash
-      persistLive(true)
-    }
+    const streamHandlers = createStreamHandlers({
+      liveMsg,
+      getToolLabel: getCoreToolDisplayLabel,
+    })
 
     const apiMessages = applyMentionContextToMessages(
       toModelMessages(tab.messages.slice(0, -1), {
@@ -418,7 +329,8 @@ export function createSendMessage(
       cacheRuntime,
     )
 
-    const todoCallback = (items: TodoItem[]) => { tab.todos = items }
+    const todoCallback = (items: TaskItem[]) => { tab.todos = items }
+    const { reset: _resetTasks, ...taskTools } = createTaskTools(todoCallback)
 
     const questionCallback = (questions: QuestionSpec[], resolve: (answers: QuestionAnswer[]) => void) => {
       tab.pendingQuestions = { questions }
@@ -435,12 +347,13 @@ export function createSendMessage(
       const meta = PERSONALITY_META[personality as keyof typeof PERSONALITY_META]
       const titleMission = mission.length > 40 ? `${mission.slice(0, 40)}\u2026` : mission
       const subTabId = makeId()
+      const convId = makeId()
 
       const subTab: ChatTab = {
         id: subTabId,
         title: `${meta.label} \u00B7 ${titleMission}`,
         messages: [],
-        conversationId: null,
+        conversationId: convId,
         workspacePath: effectiveProjectPath,
         workspaceMeta: workspaceSnapshot,
         workspaceLocked: true,
@@ -458,6 +371,7 @@ export function createSendMessage(
         },
         pendingQuestions: null,
         pendingPermissions: [],
+        readRegistry: new Map(),
         subAgent: {
           personality,
           mission,
@@ -471,7 +385,7 @@ export function createSendMessage(
 
       const spawnEvent = liveMsg.toolEvents?.slice().reverse().find((e: ToolEvent) => e.toolName === 'spawn_subagent')
       if (spawnEvent) {
-        spawnEvent.metadata = { ...spawnEvent.metadata, subAgentTabId: subTabId }
+        spawnEvent.metadata = { ...spawnEvent.metadata, subAgentTabId: subTabId, subAgentConversationId: convId }
       }
 
       const subAc = new AbortController()
@@ -488,14 +402,10 @@ export function createSendMessage(
         settings,
         project: { projectPath: effectiveProjectPath },
         osInfo,
-        toolDisplayLabel,
-        shellToolDisplayLabel,
-        webToolDisplayLabel,
         createFilesystemTools,
         createShellTools,
         createWebTools,
         createBrowserTools,
-        browserToolDisplayLabel,
         requestToolPermission,
         onAbort: tabId => { abortControllers.delete(tabId) },
       })
@@ -514,8 +424,8 @@ export function createSendMessage(
       }
     }
 
-    const snapshotCallback = async (relPath: string, absPath: string) => {
-      await checkpointStore.snapshotFile(relPath, absPath)
+    const snapshotCallback = async (relPath: string, absPath: string, content?: string | null) => {
+      await checkpointStore.snapshotFile(relPath, absPath, content)
     }
 
     const mcpTools = activeModel.supportsToolCalls
@@ -525,31 +435,63 @@ export function createSendMessage(
         )
       : {}
 
+    const { createPlanTools } = await import('@/utils/tools/plan')
+    const planTools = createPlanTools(filepath => {
+      window.dispatchEvent(new CustomEvent('emty:plan-created', { detail: { filepath } }))
+    })
+
     const rawTools = activeModel.supportsToolCalls
       ? filterDisabledTools({
+          ...planTools,
           ask_questions: createQuestionsTool(questionCallback),
-          write_todo: createWriteTodoTool(todoCallback),
+          ...taskTools,
+          sleep: createSleepTool(),
           ...createMemoryTools(settings.memory.enabled, workspaceSnapshot),
           ...createSkillTools(effectiveProjectPath),
           spawn_subagent: createSpawnSubAgentTool(subAgentSpawnCallback, subAgentAbortCallback),
           ...mcpTools,
           ...createWebTools(),
           ...createBrowserTools(tab.id),
+          ...createImageGenTools(),
           ...(effectiveProjectPath
             ? {
-                ...createFilesystemTools(effectiveProjectPath, snapshotCallback),
-                ...createShellTools(effectiveProjectPath, osInfo?.shell),
+                ...createFilesystemTools(effectiveProjectPath, snapshotCallback, tab.readRegistry),
+                ...createShellTools(effectiveProjectPath, osInfo?.shell, settings.agent.gitCoAuthor, {
+                  onOutput: streamHandlers.onToolOutput,
+                }),
               }
             : {}),
         }, settings.disabledToolIds)
       : undefined
 
-    const tools = rawTools && Object.keys(rawTools).length > 0
+    if (rawTools && tab.mode === 'plan') {
+      const modifyingTools = ['write_file', 'edit_files', 'run_command', 'git_command']
+      const toolMap = rawTools as Record<string, unknown>
+      for (const toolName of modifyingTools) {
+        if (toolMap[toolName]) {
+          const original = toolMap[toolName] as Record<string, unknown>
+          toolMap[toolName] = {
+            ...original,
+            execute: async (..._args: unknown[]) => {
+              return 'Error: Please write a plan or if u already have then wait for the users approvel'
+            },
+          }
+        }
+      }
+    }
+
+    const permissionWrappedTools = rawTools && Object.keys(rawTools).length > 0
       ? wrapToolSetWithPermissions(rawTools, {
           tabId: tab.id,
           requestPermission: requestPermissionForTool,
-          getToolLabel: allToolDisplayLabel,
+          getToolLabel: getCoreToolDisplayLabel,
+          onToolExecutionStart: streamHandlers.onToolExecutionStart,
         })
+      : undefined
+
+    const toolQueue = new SequentialToolQueue()
+    const tools = permissionWrappedTools
+      ? wrapToolSetSequentially(permissionWrappedTools, toolQueue)
       : undefined
 
     const providerOptions = mergeProviderOptions(
@@ -599,25 +541,10 @@ export function createSendMessage(
       systemPrompt,
       supportsToolCalls: activeModel.supportsToolCalls,
       maxOutputTokens,
-      onDelta: (delta: string) => {
-        liveMsg.content += delta
-        liveMsg.parts ??= []
-        const last = liveMsg.parts.at(-1)
-        if (last?.type === 'text') { last.text += delta }
-        else { liveMsg.parts.push({ type: 'text', text: delta }) }
-        // Throttled — fires at most every PERSIST_THROTTLE_MS
-        persistLive()
-      },
-      onReasoningDelta: (delta: string) => {
-        liveMsg.parts ??= []
-        const last = liveMsg.parts.at(-1)
-        if (last?.type === 'reasoning') { last.text += delta }
-        else { liveMsg.parts.push({ type: 'reasoning', text: delta }) }
-        // Throttled — thinking tokens are saved just like regular text
-        persistLive()
-      },
-      onToolCall: handleToolCall,
-      onToolResult: handleToolResult,
+      onDelta: streamHandlers.onDelta,
+      onReasoningDelta: streamHandlers.onReasoningDelta,
+      onToolCall: streamHandlers.onToolCall,
+      onToolResult: streamHandlers.onToolResult,
       onFinish: async ({ fullText, usage }) => {
         liveMsg.content = fullText
         const usageStats = extractUsageStats(usage, activeModel.providerId)
@@ -665,8 +592,16 @@ export function createSendMessage(
         // Persist whatever was generated before the error so it isn't lost.
         // is_complete stays 0, signalling the message was interrupted.
         if (tab.conversationId) {
+          const hasInterruptionNote = /\[Assistant turn ended with error\/interruption:/.test(liveMsg.content)
+          const persistedContent = hasInterruptionNote
+            ? liveMsg.content
+            : (
+                liveMsg.content.trim()
+                  ? `${liveMsg.content}\n\n[Assistant turn ended with error/interruption: ${error.message}]`
+                  : `Error: ${error.message}`
+              )
           dbUpdateMessage(assistantId, {
-            content: liveMsg.content || `Error: ${error.message}`,
+            content: persistedContent,
             parts: liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null,
             tool_events: liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null,
           }).catch(() => { })
@@ -717,4 +652,6 @@ export function createSendMessage(
       await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => { })
     }
   }
+
+  return { sendMessage }
 }

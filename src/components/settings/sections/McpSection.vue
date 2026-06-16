@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Loader, Plus, Server, Trash2, TriangleAlert, Zap } from 'lucide-vue-next'
+import { Check, Loader, Plus, Server, Trash2, X, Zap } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -38,13 +38,12 @@ function onInput(id: string, key: string, e: Event) {
         <div class="mcp-header-actions">
           <div
             v-if="server.status !== 'idle'"
-            class="status-badge"
-            :class="`status-badge--${server.status}`"
+            class="status-icon"
+            :class="`status-icon--${server.status}`"
           >
-            <Loader v-if="server.status === 'testing'" :size="12" class="spin" />
-            <Check v-else-if="server.status === 'ok'" :size="12" />
-            <TriangleAlert v-else :size="12" />
-            <span>{{ server.status === 'testing' ? 'Testing...' : server.statusMessage }}</span>
+            <Loader v-if="server.status === 'testing'" :size="14" class="spin" />
+            <Check v-else-if="server.status === 'ok'" :size="14" :stroke-width="2.5" />
+            <X v-else :size="14" :stroke-width="2.5" />
           </div>
 
           <label class="mcp-enabled-toggle">
@@ -294,35 +293,24 @@ function onInput(id: string, key: string, e: Event) {
   margin-top: 2px;
 }
 
-/* ── status badge ── */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+/* ── status icon ── */
+.status-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
   height: 22px;
-  padding-inline: 9px;
-  border-radius: 99px;
-  font-size: 11.5px;
-  font-weight: 500;
-  white-space: nowrap;
 }
 
-.status-badge--testing {
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border-mid);
+.status-icon--testing {
+  color: var(--color-text-tertiary);
 }
 
-.status-badge--ok {
-  background: color-mix(in srgb, var(--color-success-muted) 30%, transparent);
-  color: var(--color-success-text);
-  border: 1px solid var(--color-success-muted);
+.status-icon--ok {
+  color: var(--color-success);
 }
 
-.status-badge--error {
-  background: color-mix(in srgb, var(--color-danger-muted) 30%, transparent);
-  color: var(--color-danger-text);
-  border: 1px solid var(--color-danger-muted);
+.status-icon--error {
+  color: var(--color-danger);
 }
 
 /* ── header actions ── */
@@ -352,7 +340,7 @@ function onInput(id: string, key: string, e: Event) {
   align-items: center;
   width: 34px;
   height: 19px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--color-border-mid);
   background: var(--color-toggle-track-off);
   cursor: pointer;

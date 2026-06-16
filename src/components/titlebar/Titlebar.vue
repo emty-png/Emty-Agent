@@ -81,6 +81,7 @@ async function pickProject() {
     // open() returns string | string[] | null
     if (typeof selected === 'string') {
       project.setProject(selected)
+      window.location.reload()
     }
   }
   finally {

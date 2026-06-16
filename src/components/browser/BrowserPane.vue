@@ -517,12 +517,12 @@ watch(viewportRef, node => {
 /* ── Tab Strip ─────────────────────────────────────────────── */
 .browser-tabs {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 40px;
-  padding: 0 10px;
-  background: color-mix(in srgb, var(--color-bg-base, #000000) 80%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle, #1a1a1a) 40%, transparent);
+  align-items: flex-end;
+  gap: 2px;
+  height: 36px;
+  padding: 0 8px;
+  background: var(--color-bg-surface, #0a0a0a);
+  box-shadow: inset 0 -1px 0 var(--color-border-subtle, #1a1a1a);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -537,29 +537,38 @@ watch(viewportRef, node => {
   min-width: 80px;
   max-width: 220px;
   height: 30px;
-  padding: 0 8px 0 10px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-lg);
+  padding: 0 10px;
+  border-top: 1px solid transparent;
+  border-left: 1px solid transparent;
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid var(--color-border-subtle, #1a1a1a);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   background: transparent;
-  color: var(--color-text-dim, #595959);
+  color: var(--color-text-tertiary, #8a8a8a);
+  font-size: 12px;
+  font-weight: 450;
   cursor: pointer;
   user-select: none;
+  flex-shrink: 0;
   transition:
-    background 150ms ease,
-    color 150ms ease,
-    border-color 150ms ease;
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
 .browser-tab:hover:not(.browser-tab--active) {
-  background: color-mix(in srgb, var(--color-bg-surface, #0a0a0a) 50%, transparent);
+  background: var(--color-bg-hover, #1c1c1c);
   color: var(--color-text-secondary, #cccccc);
 }
 
 .browser-tab--active {
-  background: var(--color-bg-surface, #0a0a0a);
+  background: var(--color-bg-base, #000000);
   color: var(--color-text-primary, #f2f2f2);
-  border-color: color-mix(in srgb, var(--color-border-subtle, #1a1a1a) 60%, transparent);
-  box-shadow: var(--color-shadow-sm);
+  border-top-color: var(--color-border-subtle, #1a1a1a);
+  border-left-color: var(--color-border-subtle, #1a1a1a);
+  border-right-color: var(--color-border-subtle, #1a1a1a);
+  border-bottom-color: var(--color-bg-base, #000000);
+  cursor: default;
 }
 
 .browser-tab:focus-visible {

@@ -2,7 +2,7 @@ import type { LoadedSkillResource, SkillDefinition, SkillMetadata, SkillResource
 import type { DirEntry } from '@/utils/tauriFs'
 import { TEXT_RESOURCE_EXTENSIONS } from './constants'
 import { parseSkillMarkdown } from './parser'
-import { joinSkillPath, normalizeRelativePath, toTitleCase, trimInlineResource } from './utils'
+import { getGlobalSkillsRoot, joinSkillPath, normalizeRelativePath, toTitleCase, trimInlineResource } from './utils'
 
 const BUILTIN_SKILL_FILES = import.meta.glob<string>(
   '/src/skills/builtin/*/SKILL.md',
@@ -26,7 +26,7 @@ export async function discoverProjectSkills(projectPath: string | null): Promise
     return []
 
   const { readDir, readTextFile } = await import('@/utils/tauriFs')
-  const skillsRoot = joinSkillPath(projectPath, '.emty-agent', 'skills')
+  const skillsRoot = joinSkillPath(projectPath, '.emty', 'skills')
 
   let entries: Awaited<ReturnType<typeof readDir>>
   try {
@@ -58,7 +58,54 @@ export async function discoverProjectSkills(projectPath: string | null): Promise
       id: `project:${entry.name}`,
       content,
       source: 'project',
-      location: `.emty-agent/skills/${entry.name}/SKILL.md`,
+      location: `.emty/skills/${entry.name}/SKILL.md`,
+      fallbackTitle: toTitleCase(entry.name),
+      rootPath,
+      resources,
+    })))
+  }
+
+  return skills.sort((a, b) => a.title.localeCompare(b.title))
+}
+
+export async function discoverGlobalSkills(): Promise<SkillMetadata[]> {
+  const skillsRoot = await getGlobalSkillsRoot()
+  if (!skillsRoot)
+    return []
+
+  const { readDir, readTextFile } = await import('@/utils/tauriFs')
+
+  let entries: Awaited<ReturnType<typeof readDir>>
+  try {
+    entries = await readDir(skillsRoot)
+  }
+  catch {
+    return []
+  }
+
+  const skills: SkillMetadata[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory || !entry.name)
+      continue
+
+    const rootPath = joinSkillPath(skillsRoot, entry.name)
+    const skillPath = joinSkillPath(rootPath, 'SKILL.md')
+
+    let content: string
+    try {
+      content = await readTextFile(skillPath)
+    }
+    catch {
+      continue
+    }
+
+    const resources = await listProjectSkillResources(rootPath)
+    skills.push(toMetadata(parseSkillMarkdown({
+      id: `global:${entry.name}`,
+      content,
+      source: 'global',
+      location: `~/.emty/skills/${entry.name}/SKILL.md`,
       fallbackTitle: toTitleCase(entry.name),
       rootPath,
       resources,
@@ -72,8 +119,16 @@ export async function getEnabledSkills(
   projectPath: string | null,
   disabledSkillIds: string[],
 ): Promise<SkillMetadata[]> {
-  const projectSkills = await discoverProjectSkills(projectPath)
-  return [...BUILTIN_SKILL_METADATA, ...projectSkills]
+  const [globalSkills, projectSkills] = await Promise.all([
+    discoverGlobalSkills(),
+    discoverProjectSkills(projectPath),
+  ])
+  // Project skills override global skills on name conflict
+  const globalByName = new Map(globalSkills.map(s => [s.name, s]))
+  for (const skill of projectSkills)
+    globalByName.delete(skill.name)
+
+  return [...BUILTIN_SKILL_METADATA, ...globalByName.values(), ...projectSkills]
     .filter(skill => isSkillEnabled(skill.id, disabledSkillIds))
 }
 
@@ -85,6 +140,41 @@ export async function loadSkillDefinition(
   if (builtinSkill)
     return builtinSkill
 
+  // Global skill
+  if (skillId.startsWith('global:')) {
+    const slug = skillId.slice('global:'.length)
+    if (!slug)
+      return null
+
+    const skillsRoot = await getGlobalSkillsRoot()
+    if (!skillsRoot)
+      return null
+
+    const { readTextFile } = await import('@/utils/tauriFs')
+    const rootPath = joinSkillPath(skillsRoot, slug)
+    const skillPath = joinSkillPath(rootPath, 'SKILL.md')
+
+    let content: string
+    try {
+      content = await readTextFile(skillPath)
+    }
+    catch {
+      return null
+    }
+
+    const resources = await listProjectSkillResources(rootPath)
+    return parseSkillMarkdown({
+      id: skillId,
+      content,
+      source: 'global',
+      location: `~/.emty/skills/${slug}/SKILL.md`,
+      fallbackTitle: toTitleCase(slug),
+      rootPath,
+      resources,
+    })
+  }
+
+  // Project skill
   if (!skillId.startsWith('project:') || !projectPath)
     return null
 
@@ -93,7 +183,7 @@ export async function loadSkillDefinition(
     return null
 
   const { readTextFile } = await import('@/utils/tauriFs')
-  const rootPath = joinSkillPath(projectPath, '.emty-agent', 'skills', slug)
+  const rootPath = joinSkillPath(projectPath, '.emty', 'skills', slug)
   const skillPath = joinSkillPath(rootPath, 'SKILL.md')
 
   let content: string
@@ -109,7 +199,7 @@ export async function loadSkillDefinition(
     id: skillId,
     content,
     source: 'project',
-    location: `.emty-agent/skills/${slug}/SKILL.md`,
+    location: `.emty/skills/${slug}/SKILL.md`,
     fallbackTitle: toTitleCase(slug),
     rootPath,
     resources,

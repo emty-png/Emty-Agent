@@ -1,2 +1,2 @@
 export type { DirEntry } from '@tauri-apps/plugin-fs'
-export { readDir, readTextFile } from '@tauri-apps/plugin-fs'
+export { mkdir, readDir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'

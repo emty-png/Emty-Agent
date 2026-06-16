@@ -7,30 +7,27 @@ import {
   Puzzle,
   Server,
   Settings,
-  Shield,
   X,
   Zap,
 } from 'lucide-vue-next'
 import { ref } from 'vue'
 
+import ProvidersSection from './providers/ProvidersSection.vue'
 import AgentSection from './sections/AgentSection.vue'
-import GeneralSection from './sections/GeneralSection.vue'
 import McpSection from './sections/McpSection.vue'
 import ModelsSection from './sections/ModelsSection.vue'
-import ProvidersSection from './sections/ProvidersSection.vue'
 import SkillsSection from './sections/SkillsSection.vue'
 import ThemeSection from './sections/ThemeSection.vue'
 
 //  props / emits
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; browseProviders: [] }>()
 
 //  navigation
-type Section = 'general' | 'agent' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models'
+type Section = 'agent' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models'
 const activeSection = ref<Section>('providers')
 
 const NAV: { id: Section; label: string; icon: Component }[] = [
-  { id: 'general', label: 'General', icon: Settings },
-  { id: 'agent', label: 'Agent', icon: Shield },
+  { id: 'agent', label: 'Agent', icon: Settings },
   { id: 'theme', label: 'Theme', icon: Palette },
   { id: 'skills', label: 'Skills', icon: BookOpen },
   { id: 'mcp', label: 'MCP', icon: Server },
@@ -83,12 +80,11 @@ function onKeydown(e: KeyboardEvent) {
 
           <!-- right content -->
           <div class="settings-content">
-            <GeneralSection v-if="activeSection === 'general'" />
-            <AgentSection v-else-if="activeSection === 'agent'" />
+            <AgentSection v-if="activeSection === 'agent'" />
             <ThemeSection v-else-if="activeSection === 'theme'" />
             <SkillsSection v-else-if="activeSection === 'skills'" />
             <McpSection v-else-if="activeSection === 'mcp'" />
-            <ProvidersSection v-else-if="activeSection === 'providers'" />
+            <ProvidersSection v-else-if="activeSection === 'providers'" @browse-providers="emit('browseProviders')" />
             <ModelsSection v-else-if="activeSection === 'models'" />
           </div>
         </div>

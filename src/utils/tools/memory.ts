@@ -1,7 +1,7 @@
 import type { WorkspaceSnapshot } from '@/utils/worktrees'
 import { tool } from 'ai'
 import { z } from 'zod'
-import { saveAgentMemory } from '@/utils/memory'
+import { deleteAgentMemory, saveAgentMemory } from '@/utils/memory'
 
 export function createMemoryTools(
   enabled: boolean,
@@ -44,6 +44,29 @@ Don't store: ephemeral observations, secrets, tokens, or temporary debugging not
         }
       },
     }),
+    forget_memory: tool({
+      description: 'Delete a previously saved memory by its key. Use this to remove outdated or incorrect facts or preferences.',
+      inputSchema: z.object({
+        scope: z.enum(['global', 'project']).describe('Where this memory applies.'),
+        key: z.string().min(1).max(40).describe('The stable key of the memory to delete.'),
+      }),
+      execute: async ({ scope, key }) => {
+        const result = await deleteAgentMemory({
+          scope,
+          workspace,
+          key,
+        })
+
+        if (!result.ok)
+          throw new Error(result.reason ?? 'Failed to delete memory.')
+
+        return {
+          ok: true,
+          scope,
+          key,
+        }
+      },
+    }),
   }
 }
 
@@ -51,10 +74,17 @@ export function memoryToolDisplayLabel(
   toolName: string,
   args: Record<string, unknown>,
 ): string {
-  if (toolName !== 'remember_memory')
-    return `Called ${toolName}`
+  if (toolName === 'remember_memory') {
+    const scope = typeof args.scope === 'string' ? args.scope : 'memory'
+    const title = typeof args.title === 'string' ? args.title : 'memory'
+    return `Saved ${scope} memory: ${title}`
+  }
 
-  const scope = typeof args.scope === 'string' ? args.scope : 'memory'
-  const title = typeof args.title === 'string' ? args.title : 'memory'
-  return `Saved ${scope} memory: ${title}`
+  if (toolName === 'forget_memory') {
+    const scope = typeof args.scope === 'string' ? args.scope : 'memory'
+    const key = typeof args.key === 'string' ? args.key : ''
+    return `Deleted ${scope} memory: ${key}`
+  }
+
+  return `Called ${toolName}`
 }

@@ -21,16 +21,66 @@
     "allow-terminal-write",
     "allow-terminal-resize",
     "allow-terminal-close",
+    "allow-glob-search",
+    "allow-grep-search",
+    "allow-ddg-search",
     "core:window:allow-scale-factor",
     "fs:read-all",
-    "fs:allow-read-dir",
-    "fs:allow-read-text-file",
-    "fs:allow-write-file",
-    "fs:allow-write-text-file",
-    "fs:allow-mkdir",
-    "fs:allow-rename",
-    "fs:allow-remove",
-    "fs:allow-copy-file",
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-read-text-file-lines",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        { "path": "C:\\Program Files\\Git\\bin\\bash.exe" },
+        { "path": "C:\\Program Files\\Git\\usr\\bin\\bash.exe" },
+        { "path": "C:\\Program Files\\Git\\git-bash.exe" },
+        { "path": "C:\\Program Files (x86)\\Git\\bin\\bash.exe" },
+        { "path": "C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe" },
+        { "path": "C:\\Program Files (x86)\\Git\\git-bash.exe" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-rename",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-copy-file",
+      "allow": [{ "path": "**" }]
+    },
     "core:window:allow-minimize",
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
@@ -44,63 +94,25 @@
     {
       "identifier": "shell:allow-spawn",
       "allow": [
-        { "name": "powershell", "cmd": "powershell.exe", "args": true },
-        { "name": "pwsh",       "cmd": "pwsh",           "args": true },
-        { "name": "cmd",        "cmd": "cmd.exe",         "args": true },
-        { "name": "bash",       "cmd": "bash",            "args": true },
-        { "name": "sh",         "cmd": "sh",              "args": true },
-        { "name": "zsh",        "cmd": "zsh",             "args": true },
-        { "name": "git",        "cmd": "git",             "args": true },
-        { "name": "node",       "cmd": "node",            "args": true },
-        { "name": "node-exe",   "cmd": "node.exe",        "args": true },
-        { "name": "npm",        "cmd": "npm",             "args": true },
-        { "name": "npm-cmd",    "cmd": "npm.cmd",         "args": true },
-        { "name": "npx",        "cmd": "npx",             "args": true },
-        { "name": "npx-cmd",    "cmd": "npx.cmd",         "args": true },
-        { "name": "pnpm",       "cmd": "pnpm",            "args": true },
-        { "name": "pnpm-cmd",   "cmd": "pnpm.cmd",        "args": true },
-        { "name": "yarn",       "cmd": "yarn",            "args": true },
-        { "name": "yarn-cmd",   "cmd": "yarn.cmd",        "args": true },
-        { "name": "python",     "cmd": "python",          "args": true },
-        { "name": "python-exe", "cmd": "python.exe",      "args": true },
-        { "name": "py",         "cmd": "py",              "args": true },
-        { "name": "py-exe",     "cmd": "py.exe",          "args": true },
-        { "name": "uv",         "cmd": "uv",              "args": true },
-        { "name": "uvx",        "cmd": "uvx",             "args": true },
-        { "name": "bun",        "cmd": "bun",             "args": true },
-        { "name": "bunx",       "cmd": "bunx",            "args": true },
-        { "name": "deno",       "cmd": "deno",            "args": true }
+        { "name": "git", "cmd": "git", "args": true },
+        { "name": "powershell", "cmd": "powershell", "args": true },
+        { "name": "pwsh", "cmd": "pwsh", "args": true },
+        { "name": "sh", "cmd": "sh", "args": true },
+        { "name": "git-bash", "cmd": "C:\\Program Files\\Git\\bin\\bash.exe", "args": true },
+        { "name": "git-bash-x86", "cmd": "C:\\Program Files (x86)\\Git\\bin\\bash.exe", "args": true },
+        { "name": "cmd", "cmd": "cmd", "args": true }
       ]
     },
     {
       "identifier": "shell:allow-execute",
       "allow": [
-        { "name": "powershell", "cmd": "powershell.exe", "args": true },
-        { "name": "pwsh",       "cmd": "pwsh",           "args": true },
-        { "name": "cmd",        "cmd": "cmd.exe",         "args": true },
-        { "name": "bash",       "cmd": "bash",            "args": true },
-        { "name": "sh",         "cmd": "sh",              "args": true },
-        { "name": "zsh",        "cmd": "zsh",             "args": true },
-        { "name": "git",        "cmd": "git",             "args": true },
-        { "name": "node",       "cmd": "node",            "args": true },
-        { "name": "node-exe",   "cmd": "node.exe",        "args": true },
-        { "name": "npm",        "cmd": "npm",             "args": true },
-        { "name": "npm-cmd",    "cmd": "npm.cmd",         "args": true },
-        { "name": "npx",        "cmd": "npx",             "args": true },
-        { "name": "npx-cmd",    "cmd": "npx.cmd",         "args": true },
-        { "name": "pnpm",       "cmd": "pnpm",            "args": true },
-        { "name": "pnpm-cmd",   "cmd": "pnpm.cmd",        "args": true },
-        { "name": "yarn",       "cmd": "yarn",            "args": true },
-        { "name": "yarn-cmd",   "cmd": "yarn.cmd",        "args": true },
-        { "name": "python",     "cmd": "python",          "args": true },
-        { "name": "python-exe", "cmd": "python.exe",      "args": true },
-        { "name": "py",         "cmd": "py",              "args": true },
-        { "name": "py-exe",     "cmd": "py.exe",          "args": true },
-        { "name": "uv",         "cmd": "uv",              "args": true },
-        { "name": "uvx",        "cmd": "uvx",             "args": true },
-        { "name": "bun",        "cmd": "bun",             "args": true },
-        { "name": "bunx",       "cmd": "bunx",            "args": true },
-        { "name": "deno",       "cmd": "deno",            "args": true }
+        { "name": "git", "cmd": "git", "args": true },
+        { "name": "powershell", "cmd": "powershell", "args": true },
+        { "name": "pwsh", "cmd": "pwsh", "args": true },
+        { "name": "sh", "cmd": "sh", "args": true },
+        { "name": "git-bash", "cmd": "C:\\Program Files\\Git\\bin\\bash.exe", "args": true },
+        { "name": "git-bash-x86", "cmd": "C:\\Program Files (x86)\\Git\\bin\\bash.exe", "args": true },
+        { "name": "cmd", "cmd": "cmd", "args": true }
       ]
     },
     "shell:allow-kill",

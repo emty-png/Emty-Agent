@@ -2,9 +2,11 @@ import type { WorkspaceSnapshot } from './worktrees'
 import type { MemoryRow } from '@/db/database'
 import type { Message, ToolEvent } from '@/stores/chat/types'
 import {
+  dbDeleteMemoryByKey,
   dbListMemories,
   dbSaveMemory,
 } from '@/db/database'
+import { minifyMarkdown } from '@/utils/agentContext'
 
 export interface MemorySettings {
   enabled: boolean
@@ -14,7 +16,7 @@ type MemoryScope = 'global' | 'project'
 type MemoryKind = 'preference' | 'task' | 'note'
 
 function compact(value: string, max = 180): string {
-  const normalized = value.replace(/\s+/g, ' ').trim()
+  const normalized = minifyMarkdown(value).replace(/\s+/g, ' ').trim()
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized
 }
 
@@ -29,7 +31,7 @@ function formatMemoryList(title: string, memories: MemoryRow[]): string[] {
 
   return [
     title,
-    ...memories.map(memory => `- ${memory.title}: ${memory.content}`),
+    ...memories.map(memory => `- ${memory.title}: ${minifyMarkdown(memory.content).replace(/\s+/g, ' ')}`),
   ]
 }
 
@@ -168,6 +170,21 @@ export async function saveAgentMemory(options: {
         })
       : null,
   })
+
+  return { ok: true }
+}
+
+export async function deleteAgentMemory(options: {
+  scope: MemoryScope
+  workspace: WorkspaceSnapshot | null
+  key: string
+}): Promise<{ ok: boolean; reason?: string }> {
+  const { scope, workspace, key } = options
+
+  if (scope === 'project' && !workspace?.projectKey)
+    return { ok: false, reason: 'No active project memory scope is available.' }
+
+  await dbDeleteMemoryByKey(scope, scope === 'project' ? workspace?.projectKey ?? null : null, key)
 
   return { ok: true }
 }

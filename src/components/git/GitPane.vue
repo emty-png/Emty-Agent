@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import type { Message } from '@/stores/chat'
 import type { GitFileEntry, GitStatusResult } from '@/utils/git'
+import { generateText } from 'ai'
 import {
   Check,
   ChevronDown,
@@ -9,18 +11,23 @@ import {
   GitCommit,
   Loader2,
   Minus,
-  MoreHorizontal,
-  PanelRightClose,
   Plus,
   RefreshCw,
   Undo2,
+  Wrench,
   X,
 } from 'lucide-vue-next'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { buildCommitPrompt } from '@/prompts/commit'
+import { resolveLanguageModel } from '@/stores/chat/models'
+import { useSettingsStore } from '@/stores/settings'
+import { buildLanguageModel } from '@/utils/ai'
 import {
   gitCommit,
   gitDiff,
+  gitDiffStaged,
   gitDiscard,
+  gitDiscardUntracked,
   gitStage,
   gitStageAll,
   gitStatus,
@@ -28,17 +35,26 @@ import {
   gitUnstageAll,
   isGitRepo,
 } from '@/utils/git'
+import PlanReview from './PlanReview.vue'
+import ToolResultsReview from './ToolResultsReview.vue'
 
-const props = defineProps<{ cwd: string }>()
+const props = defineProps<{
+  cwd: string
+  messages: Message[]
+}>()
 const emit = defineEmits<{ close: [] }>()
 
 const loading = ref(false)
 const isRepo = ref(true)
 const status = ref<GitStatusResult | null>(null)
+const activePane = ref<'review' | 'tools' | 'plan'>('review')
 const filter = ref<'unstaged' | 'staged'>('unstaged')
 
 const unstagedCount = computed(() => (status.value?.unstaged.length || 0) + (status.value?.untracked.length || 0))
 const stagedCount = computed(() => status.value?.staged.length || 0)
+const toolEventCount = computed(() =>
+  props.messages.reduce((count, message) => count + (message.role === 'assistant' ? message.toolEvents?.length ?? 0 : 0), 0),
+)
 
 const displayedFiles = computed(() => {
   if (!status.value)
@@ -57,8 +73,8 @@ const commitMsg = ref('')
 const showCommitModal = ref(false)
 const includeUnstaged = ref(true)
 const busyAction = ref('')
-const toast = ref<{ text: string; type: 'ok' | 'err' } | null>(null)
-let toastTimer: ReturnType<typeof setTimeout> | null = null
+const commitResult = ref<{ type: 'ok' | 'err'; text: string } | null>(null)
+let commitResultTimer: ReturnType<typeof setTimeout> | null = null
 
 async function refresh() {
   loading.value = true
@@ -72,55 +88,131 @@ async function refresh() {
   finally { loading.value = false }
 }
 
-function showToast(text: string, type: 'ok' | 'err' = 'ok') {
-  if (toastTimer)
-    clearTimeout(toastTimer)
-  toast.value = { text, type }
-  toastTimer = setTimeout(() => { toast.value = null }, 3500)
+function showCommitResult(type: 'ok' | 'err', text: string) {
+  if (commitResultTimer)
+    clearTimeout(commitResultTimer)
+  commitResult.value = { type, text }
+  commitResultTimer = setTimeout(() => { commitResult.value = null }, 3500)
 }
 
-async function doAction(name: string, fn: () => Promise<{ ok: boolean; stderr: string }>, successMsg?: string | null) {
+async function doAction(name: string, fn: () => Promise<{ ok: boolean; stderr: string }>, successMsg?: string | null, errMsg?: string | null): Promise<boolean> {
   busyAction.value = name
+  let success = false
   try {
     const r = await fn()
     if (r.ok) {
-      if (successMsg !== null)
-        showToast(successMsg ?? `${name} done`, 'ok')
+      success = true
+      if (successMsg)
+        showCommitResult('ok', successMsg)
     }
     else {
-      showToast(r.stderr || `${name} failed`, 'err')
+      if (errMsg)
+        showCommitResult('err', errMsg)
+      else if (r.stderr)
+        showCommitResult('err', r.stderr)
     }
+
     await refresh()
     parsedDiffs.value = {}
     expandedFiles.value.clear()
   }
-  catch (e) { showToast(String(e), 'err') }
+  catch { /* toast removed */ }
+
   finally { busyAction.value = '' }
+
+  return success
 }
 
 const stageFile = (f: string) => doAction('Stage', () => gitStage(props.cwd, [f]))
 const unstageFile = (f: string) => doAction('Unstage', () => gitUnstage(props.cwd, [f]))
-const discardFile = (f: string) => doAction('Discard', () => gitDiscard(props.cwd, [f]))
+function discardFile(f: string) {
+  const isUntracked = status.value?.untracked.some(u => u.path === f)
+  if (isUntracked) {
+    return doAction('Discard', () => gitDiscardUntracked(props.cwd, [f]))
+  }
+  return doAction('Discard', () => gitDiscard(props.cwd, [f]))
+}
 const stageAll = () => doAction('Stage all', () => gitStageAll(props.cwd), null)
 const unstageAll = () => doAction('Unstage all', () => gitUnstageAll(props.cwd))
 function revertAll() {
-  if (status.value) {
-    doAction('Discard all', () => gitDiscard(props.cwd, [...status.value!.unstaged, ...status.value!.untracked].map(f => f.path)))
-  }
+  if (!status.value)
+    return
+
+  const trackedPaths = status.value.unstaged.map(f => f.path).filter(p => !status.value!.untracked.some(u => u.path === p))
+  const untrackedPaths = status.value.untracked.map(f => f.path)
+
+  doAction('Discard all', async () => {
+    let trackedRes = { ok: true, stderr: '' }
+    let untrackedRes = { ok: true, stderr: '' }
+    if (trackedPaths.length)
+      trackedRes = await gitDiscard(props.cwd, trackedPaths)
+    if (untrackedPaths.length)
+      untrackedRes = await gitDiscardUntracked(props.cwd, untrackedPaths)
+    return {
+      ok: trackedRes.ok && untrackedRes.ok,
+      stderr: [trackedRes.stderr, untrackedRes.stderr].filter(Boolean).join('; '),
+    }
+  })
 }
 
+const isCommitting = ref(false)
+
 async function commitFromModal() {
-  if (includeUnstaged.value && unstagedCount.value > 0) {
-    const r = await gitStageAll(props.cwd)
-    if (!r.ok) {
-      showToast(r.stderr || 'Failed to stage files', 'err')
-      return
+  if (isCommitting.value)
+    return
+  isCommitting.value = true
+  try {
+    if (includeUnstaged.value && unstagedCount.value > 0) {
+      const r = await gitStageAll(props.cwd)
+      if (!r.ok) {
+        showCommitResult('err', r.stderr || 'Failed to stage files')
+        return
+      }
+    }
+
+    let msg = commitMsg.value.trim()
+
+    // Autogenerate commit message if empty
+    if (!msg) {
+      try {
+        const diff = await gitDiffStaged(props.cwd)
+        if (!diff.trim()) {
+          showCommitResult('err', 'No staged changes to commit')
+          return
+        }
+
+        const settingsStore = useSettingsStore()
+        if (!settingsStore.activeModel) {
+          showCommitResult('err', 'Please select an AI model in settings to autogenerate commit message.')
+          return
+        }
+
+        const languageModel = resolveLanguageModel(settingsStore.activeModel, settingsStore, buildLanguageModel)
+        const prompt = buildCommitPrompt(diff)
+
+        const result = await generateText({
+          model: languageModel,
+          prompt,
+          system: prompt,
+        })
+
+        msg = result.text.trim()
+      }
+      catch (e) {
+        showCommitResult('err', `Failed to generate commit message: ${String(e)}`)
+        return
+      }
+    }
+
+    const success = await doAction('Commit', () => gitCommit(props.cwd, msg, false), 'Committed!', 'Fail to commit')
+    if (success) {
+      commitMsg.value = ''
+      showCommitModal.value = false
     }
   }
-  const msg = commitMsg.value.trim() || 'Update files'
-  await doAction('Commit', () => gitCommit(props.cwd, msg, false), 'Committed!')
-  commitMsg.value = ''
-  showCommitModal.value = false
+  finally {
+    isCommitting.value = false
+  }
 }
 
 function getDotClass(f: GitFileEntry) {
@@ -262,7 +354,19 @@ async function toggleFile(path: string, isStaged: boolean) {
 watch(filter, () => {
   expandedFiles.value.clear()
 })
-onMounted(refresh)
+function handlePlanCreated() {
+  activePane.value = 'plan'
+}
+
+onMounted(() => {
+  refresh()
+  window.addEventListener('emty:plan-created', handlePlanCreated)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('emty:plan-created', handlePlanCreated)
+})
+
 watch(() => props.cwd, refresh)
 </script>
 
@@ -271,24 +375,44 @@ watch(() => props.cwd, refresh)
     <!-- Top Header -->
     <div class="pane-header">
       <div class="pane-title">
-        <FileText :size="13" class="pane-title-icon" />
-        <span>Review</span>
+        <button
+          class="pane-title-tab"
+          :class="{ 'pane-title-tab--active': activePane === 'review' }"
+          @click="activePane = 'review'"
+        >
+          <FileText :size="13" class="pane-title-icon" />
+          <span>Review</span>
+        </button>
+        <button
+          class="pane-title-tab"
+          :class="{ 'pane-title-tab--active': activePane === 'tools' }"
+          @click="activePane = 'tools'"
+        >
+          <Wrench :size="13" class="pane-title-icon" />
+          <span>Tools</span>
+          <span v-if="toolEventCount > 0" class="pane-title-count">{{ toolEventCount }}</span>
+        </button>
+        <button
+          class="pane-title-tab"
+          :class="{ 'pane-title-tab--active': activePane === 'plan' }"
+          @click="activePane = 'plan'"
+        >
+          <FileText :size="13" class="pane-title-icon" />
+          <span>Plan</span>
+        </button>
       </div>
       <div class="pane-header-actions">
         <button class="icon-btn" title="Refresh" :disabled="loading" @click="refresh">
           <RefreshCw :size="13" :class="{ spin: loading }" />
         </button>
-        <button class="icon-btn" title="Commit changes" @click="showCommitModal = true">
-          <GitCommit :size="13" />
-        </button>
-        <button class="icon-btn" title="Close panel" @click="emit('close')">
-          <PanelRightClose :size="13" />
+        <button class="icon-btn" title="Close" @click="emit('close')">
+          <X :size="13" />
         </button>
       </div>
     </div>
 
     <!-- Filter Row -->
-    <div class="filter-bar">
+    <div v-if="activePane === 'review'" class="filter-bar">
       <div class="filter-tabs">
         <button
           class="filter-tab"
@@ -307,13 +431,19 @@ watch(() => props.cwd, refresh)
           <span class="tab-count" :class="{ 'tab-count--active': filter === 'staged' }">{{ stagedCount }}</span>
         </button>
       </div>
-      <button class="icon-btn" title="More options">
-        <MoreHorizontal :size="13" />
-      </button>
     </div>
 
     <!-- Empty States -->
-    <div v-if="!isRepo" class="git-empty">
+    <ToolResultsReview
+      v-if="activePane === 'tools'"
+      :messages="messages"
+    />
+
+    <PlanReview
+      v-else-if="activePane === 'plan'"
+    />
+
+    <div v-else-if="!isRepo" class="git-empty">
       <div class="git-empty-icon-wrap">
         <GitBranch :size="20" :stroke-width="1.5" />
       </div>
@@ -452,7 +582,7 @@ watch(() => props.cwd, refresh)
     </div>
 
     <!-- Bottom Action Bar -->
-    <div v-if="displayedFiles.length > 0" class="bottom-bar">
+    <div v-if="activePane === 'review' && displayedFiles.length > 0" class="bottom-bar">
       <template v-if="filter === 'unstaged'">
         <button class="bottom-btn bottom-btn--ghost" @click="revertAll">
           <Undo2 :size="12" />
@@ -476,77 +606,81 @@ watch(() => props.cwd, refresh)
     </div>
 
     <!-- Commit Modal -->
-    <Transition name="modal">
-      <div v-if="showCommitModal" class="commit-modal-overlay" @click.self="showCommitModal = false">
-        <div class="commit-modal">
-          <div class="modal-header">
-            <GitCommit :size="14" class="modal-header-icon" />
-            <span class="modal-title">Commit changes</span>
-            <button class="icon-btn" @click="showCommitModal = false">
-              <X :size="13" />
-            </button>
-          </div>
 
-          <div class="modal-body">
-            <div class="modal-meta">
-              <div class="modal-meta-row">
-                <span class="meta-label">Branch</span>
-                <span class="meta-value branch-value">
-                  <GitBranch :size="11" />
-                  {{ status?.branch || 'main' }}
-                </span>
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showCommitModal" class="commit-modal-overlay" @click.self="showCommitModal = false">
+          <div class="commit-modal">
+            <div class="modal-header">
+              <GitCommit :size="14" class="modal-header-icon" />
+              <span class="modal-title">Commit changes</span>
+              <button class="icon-btn" @click="showCommitModal = false">
+                <X :size="13" />
+              </button>
+            </div>
+
+            <div class="modal-body">
+              <div class="modal-meta">
+                <div class="modal-meta-row">
+                  <span class="meta-label">Branch</span>
+                  <span class="meta-value branch-value">
+                    <GitBranch :size="11" />
+                    {{ status?.branch || 'main' }}
+                  </span>
+                </div>
+                <div class="modal-meta-row">
+                  <span class="meta-label">Files</span>
+                  <span class="meta-value">{{ unstagedCount + stagedCount }} changed</span>
+                </div>
               </div>
-              <div class="modal-meta-row">
-                <span class="meta-label">Files</span>
-                <span class="meta-value">{{ unstagedCount + stagedCount }} changed</span>
+
+              <div class="modal-toggle-row">
+                <label class="toggle-switch">
+                  <input v-model="includeUnstaged" type="checkbox">
+                  <span class="toggle-track">
+                    <span class="toggle-thumb" />
+                  </span>
+                </label>
+                <span class="toggle-label">Include unstaged changes</span>
+              </div>
+
+              <div class="commit-input-group">
+                <label class="input-label">
+                  <span>Commit message</span>
+                  <span class="input-label-hint">optional</span>
+                </label>
+                <textarea
+                  v-model="commitMsg"
+                  class="commit-textarea"
+                  placeholder="Leave blank to autogenerate…"
+                  rows="3"
+                />
+
+                <div v-if="commitResult && commitResult.type === 'err'" class="commit-failure-box">
+                  <div class="commit-failure-title">
+                    Commit Failed
+                  </div>
+                  <div class="commit-failure-body">
+                    {{ commitResult.text }}
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div class="modal-toggle-row">
-              <label class="toggle-switch">
-                <input v-model="includeUnstaged" type="checkbox">
-                <span class="toggle-track">
-                  <span class="toggle-thumb" />
-                </span>
-              </label>
-              <span class="toggle-label">Include unstaged changes</span>
+            <div class="modal-footer">
+              <button class="footer-btn footer-btn--cancel" @click="showCommitModal = false">
+                Cancel
+              </button>
+              <button class="footer-btn footer-btn--commit" :disabled="isCommitting" @click="commitFromModal">
+                <Loader2 v-if="isCommitting" :size="12" class="spin" />
+                <GitCommit v-else :size="12" />
+                {{ isCommitting ? (commitMsg.trim() ? 'Committing...' : 'Generating...') : 'Commit' }}
+              </button>
             </div>
-
-            <div class="commit-input-group">
-              <label class="input-label">
-                <span>Commit message</span>
-                <span class="input-label-hint">optional</span>
-              </label>
-              <textarea
-                v-model="commitMsg"
-                class="commit-textarea"
-                placeholder="Leave blank to autogenerate…"
-                rows="3"
-              />
-            </div>
-          </div>
-
-          <div class="modal-footer">
-            <button class="footer-btn footer-btn--cancel" @click="showCommitModal = false">
-              Cancel
-            </button>
-            <button class="footer-btn footer-btn--commit" @click="commitFromModal">
-              <GitCommit :size="12" />
-              Commit
-            </button>
           </div>
         </div>
-      </div>
-    </Transition>
-
-    <!-- Toast -->
-    <Transition name="toast">
-      <div v-if="toast" class="git-toast" :class="`git-toast--${toast.type}`">
-        <Check v-if="toast.type === 'ok'" :size="12" />
-        <X v-else :size="12" />
-        {{ toast.text }}
-      </div>
-    </Transition>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -566,30 +700,72 @@ watch(() => props.cwd, refresh)
 /* ── Pane Header ─────────────────────────────────────────────── */
 .pane-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  padding: 0 10px;
+  padding-inline: 8px 4px;
   height: 36px;
-  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+  box-shadow: inset 0 -1px 0 var(--color-border-subtle);
   flex-shrink: 0;
 }
 .pane-title {
   display: flex;
+  align-items: flex-end;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.pane-title-tab {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: 30px;
+  padding-inline: 12px;
+  border-top: 1px solid transparent;
+  border-left: 1px solid transparent;
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--color-text-primary);
-  text-transform: uppercase;
+  font-weight: 450;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
-.pane-title-icon {
-  color: var(--color-text-dim);
+.pane-title-tab:not(.pane-title-tab--active):hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+}
+.pane-title-tab--active {
+  background: var(--color-bg-base);
+  color: var(--color-text-primary);
+  border-top-color: var(--color-border-subtle);
+  border-left-color: var(--color-border-subtle);
+  border-right-color: var(--color-border-subtle);
+  border-bottom-color: var(--color-bg-base);
+  cursor: default;
+}
+.pane-title-count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-accent-text);
+  background: var(--color-accent-muted);
+  text-align: center;
 }
 .pane-header-actions {
   display: flex;
   align-items: center;
   gap: 2px;
+  padding-bottom: 5px;
 }
 
 /* ── Icon Buttons ────────────────────────────────────────────── */
@@ -1047,30 +1223,37 @@ watch(() => props.cwd, refresh)
 
 /* ── Commit Modal ────────────────────────────────────────────── */
 .commit-modal-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  background: transparent;
+  z-index: 99999;
+  /* Match SettingsModal backdrop styles */
+  background: color-mix(in srgb, var(--color-bg-base) 65%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
-  padding: 16px;
+  padding: 24px;
 }
+
 .commit-modal {
-  background: var(--color-bg-elevated);
+  background: var(--color-bg-card);
   border: 1px solid var(--color-border-bright);
   border-radius: var(--radius-lg);
   width: 100%;
-  max-width: 320px;
+  max-width: 360px;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--color-shadow-floating);
+  box-shadow:
+    var(--color-shadow-floating),
+    0 8px 32px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  animation: modal-in 160ms cubic-bezier(0.2, 0, 0, 1) both;
 }
 .modal-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--color-bg-surface) 50%, transparent);
   border-bottom: 1px solid var(--color-border-subtle);
 }
 .modal-header-icon {
@@ -1078,49 +1261,58 @@ watch(() => props.cwd, refresh)
 }
 .modal-title {
   flex: 1;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
+  letter-spacing: 0.01em;
 }
 .modal-body {
-  padding: 14px 14px 10px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 .modal-meta {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  background: var(--color-bg-base);
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--color-bg-surface);
   border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 60%, transparent);
+  border: 1px solid var(--color-border-subtle);
 }
 .modal-meta-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: 13px;
 }
 .meta-label {
   color: var(--color-text-dim);
+  font-weight: 500;
 }
 .meta-value {
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   font-weight: 500;
 }
 .branch-value {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  padding: 2px 6px;
+  background: var(--color-bg-base);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-subtle);
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 /* Toggle */
 .modal-toggle-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding: 4px 0;
 }
 .toggle-switch {
   position: relative;
@@ -1135,11 +1327,11 @@ watch(() => props.cwd, refresh)
 }
 .toggle-track {
   display: block;
-  width: 30px;
-  height: 17px;
-  background: var(--color-toggle-track-off);
+  width: 34px;
+  height: 20px;
+  background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
-  border-radius: 17px;
+  border-radius: 20px;
   position: relative;
   transition:
     background 150ms ease,
@@ -1149,24 +1341,25 @@ watch(() => props.cwd, refresh)
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 11px;
-  height: 11px;
-  background: var(--color-toggle-thumb-off);
+  width: 14px;
+  height: 14px;
+  background: var(--color-text-dim);
   border-radius: 50%;
   transition:
     transform 150ms ease,
     background 150ms ease;
 }
 .toggle-switch input:checked + .toggle-track {
-  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
   border-color: var(--color-accent);
 }
 .toggle-switch input:checked + .toggle-track .toggle-thumb {
-  transform: translateX(13px);
+  transform: translateX(14px);
   background: var(--color-accent);
 }
 .toggle-label {
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--color-text-secondary);
 }
 
@@ -1174,36 +1367,44 @@ watch(() => props.cwd, refresh)
 .commit-input-group {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
 .input-label {
   display: flex;
   justify-content: space-between;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 .input-label-hint {
   color: var(--color-text-dim);
-  font-weight: 400;
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 .commit-textarea {
   width: 100%;
   background: var(--color-bg-base);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border-bright);
   border-radius: var(--radius-md);
-  padding: 8px 10px;
+  padding: 10px 12px;
   color: var(--color-text-primary);
   font-family: inherit;
-  font-size: 12px;
-  resize: none;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 80px;
   box-sizing: border-box;
   line-height: 1.5;
-  transition: border-color 100ms ease;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
 }
 .commit-textarea:focus {
   outline: none;
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent-muted);
 }
 .commit-textarea::placeholder {
   color: var(--color-text-dim);
@@ -1214,23 +1415,26 @@ watch(() => props.cwd, refresh)
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--color-bg-surface) 50%, transparent);
   border-top: 1px solid var(--color-border-subtle);
 }
 .footer-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 16px;
   border-radius: var(--radius-md);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
   transition:
-    background 100ms ease,
-    opacity 100ms ease;
+    background 120ms ease,
+    transform 100ms ease,
+    opacity 120ms ease;
 }
 .footer-btn:active {
   transform: scale(0.97);
@@ -1241,15 +1445,43 @@ watch(() => props.cwd, refresh)
   color: var(--color-text-secondary);
 }
 .footer-btn--cancel:hover {
-  background: var(--color-state-hover);
+  background: var(--color-bg-hover);
   color: var(--color-text-primary);
+  border-color: var(--color-border-bright);
 }
 .footer-btn--commit {
-  background: var(--color-text-primary);
+  background: var(--color-accent);
   color: var(--color-bg-base);
 }
-.footer-btn--commit:hover {
-  opacity: 0.88;
+.footer-btn--commit:hover:not(:disabled) {
+  opacity: 0.9;
+  box-shadow: 0 2px 8px var(--color-accent-muted);
+}
+.footer-btn--commit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Commit failure box shown under the commit input when commitResult.type === 'err' */
+.commit-failure-box {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
+  color: var(--color-text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.commit-failure-title {
+  font-weight: 700;
+  color: var(--color-danger-text);
+  font-size: 13px;
+}
+.commit-failure-body {
+  font-size: 13px;
+  color: var(--color-text-secondary);
 }
 
 /* ── Toast ───────────────────────────────────────────────────── */

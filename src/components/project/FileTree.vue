@@ -25,7 +25,12 @@ import { useFileTreeStore } from '@/stores/fileTree'
 import { getDeviconForFile } from '@/utils/icons'
 
 const ft = useFileTreeStore()
-const { tree, selectedPath, loadingTree } = storeToRefs(ft)
+const { tree, selectedPath, loadingTree, fileContent } = storeToRefs(ft)
+
+function clearSelection() {
+  selectedPath.value = null
+  fileContent.value = null
+}
 
 // ── file icon / color by extension ───────────────────────────────────────────
 interface FileStyle {
@@ -132,15 +137,13 @@ const FileTreeNode = defineComponent({
     toggleDir: { type: Function as PropType<(node: FileNode) => void>, required: true },
     selectFile: { type: Function as PropType<(node: FileNode) => void>, required: true },
   },
-  emits: ['select'],
-  setup(props, { emit }) {
+  setup(props) {
     function onClick() {
       if (props.node.isDir) {
         props.toggleDir(props.node)
       }
       else {
         props.selectFile(props.node)
-        emit('select')
       }
     }
 
@@ -212,7 +215,6 @@ const FileTreeNode = defineComponent({
               selectedPath,
               toggleDir: this.toggleDir,
               selectFile: this.selectFile,
-              onSelect: () => this.$emit('select'),
             }),
           )
         : []
@@ -224,7 +226,7 @@ const FileTreeNode = defineComponent({
 
 <!-- ── recursive node component ────────────────────────────────────────────── -->
 <template>
-  <div class="tree-root">
+  <div class="tree-root" @click.self="clearSelection">
     <!-- loading skeleton -->
     <div v-if="loadingTree" class="tree-loading">
       <Loader :size="14" :stroke-width="1.8" class="spin" />
@@ -245,7 +247,6 @@ const FileTreeNode = defineComponent({
         :selected-path="selectedPath"
         :toggle-dir="ft.toggleDir"
         :select-file="ft.selectFile"
-        @select="ft.selectFile(treeNode)"
       />
     </template>
   </div>

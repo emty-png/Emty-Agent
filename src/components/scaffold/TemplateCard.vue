@@ -100,7 +100,7 @@ const emit = defineEmits<{
   display: inline-flex;
   align-items: center;
   padding: 3px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   font-size: 10px;
   line-height: 1;
   text-transform: uppercase;

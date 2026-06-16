@@ -13,6 +13,9 @@ fn main() {
             "terminal_write",
             "terminal_resize",
             "terminal_close",
+            "glob_search",
+            "grep_search",
+            "ddg_search",
         ]),
     ))
     .expect("failed to run tauri build helpers")

@@ -20,7 +20,7 @@
  *   called to abort the sub-agent's stream controller too.
  *
  * Constraints:
- *   • Sub-agents never have ask_questions, write_todo, or spawn_subagent
+ *   • Sub-agents never have ask_questions, task tools, or spawn_subagent
  *     (no recursive spawning, no UI interaction tools).
  *   • General personality sub-agents have full filesystem + shell + web access
  *     but still cannot spawn further sub-agents.
@@ -271,11 +271,16 @@ WHEN TO USE:
   • Tasks requiring deep focused work on one area (e.g. trace full auth flow)
   • Web research that would clutter the main response
   • Self-contained implementation sub-tasks
+  • Any investigation that would otherwise require many file reads or long command/debug loops in the parent context
 
 WHEN NOT TO USE:
   • Simple single-step lookups — use the tool directly instead
   • When you already have enough context — do the work yourself
-  • Recursive spawning is not allowed`,
+  • Recursive spawning is not allowed
+
+ISOLATION:
+  • General and debugger sub-agents may run inside an isolated git worktree when the project supports it.
+    Use them freely for risky or high-churn work instead of keeping everything in the parent workspace.`,
 
     inputSchema: z.object({
       personality: z
@@ -358,11 +363,6 @@ export type SpawnSubAgentTool = ReturnType<typeof createSpawnSubAgentTool>
 
 // ── display label ─────────────────────────────────────────────────────────────
 
-function truncate(s: string, max: number): string {
-  const t = s.trim()
-  return t.length > max ? `${t.slice(0, max)}\u2026` : t
-}
-
 export function subAgentDisplayLabel(
   toolName: string,
   args: Record<string, unknown>,
@@ -371,11 +371,7 @@ export function subAgentDisplayLabel(
     return `Called ${toolName}`
 
   const personality = args.personality as SubAgentPersonality | undefined
-  const mission = args.mission as string | undefined
   const label = personality ? PERSONALITY_META[personality].label : 'Agent'
 
-  if (!mission)
-    return `Spawned ${label}`
-
-  return `${label} \u00B7 ${truncate(mission, 52)}`
+  return `Sub agent ${label} started`
 }

@@ -1,118 +1,86 @@
-import { readDir } from '@tauri-apps/plugin-fs'
+import { invoke } from '@tauri-apps/api/core'
 import { tool } from 'ai'
 import { z } from 'zod'
-import { ALWAYS_SKIP, safePath } from './shared'
+import { safePath } from './allowedPaths'
 
-export function globToRegex(pattern: string): RegExp {
-  let src = '^'
-  let i = 0
-  while (i < pattern.length) {
-    const ch = pattern[i]!
-    if (pattern.slice(i, i + 2) === '**') {
-      src += '.*'
-      i += 2
-      if (pattern[i] === '/')
-        i++
-    }
-    else if (ch === '*') {
-      src += '[^/]*'
-      i++
-    }
-    else if (ch === '?') {
-      src += '[^/]'
-      i++
-    }
-    else if (ch === '{') {
-      const end = pattern.indexOf('}', i)
-      if (end === -1) {
-        src += '\\{'
-        i++
-        continue
-      }
-      const alts = pattern.slice(i + 1, end).split(',').map(a =>
-        a.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]'),
-      )
-      src += `(?:${alts.join('|')})`
-      i = end + 1
-    }
-    else if (ch === '[') {
-      const end = pattern.indexOf(']', i)
-      if (end === -1) {
-        src += '\\['
-        i++
-        continue
-      }
-      src += pattern.slice(i, end + 1)
-      i = end + 1
-    }
-    else {
-      src += ch.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      i++
-    }
-  }
-  src += '$'
-  return new RegExp(src, 'i')
+// ---------------------------------------------------------------------------
+// Response type from the Rust command
+// ---------------------------------------------------------------------------
+
+interface GlobResult {
+  message: string
+  numFiles: number
 }
 
-async function globWalk(
-  absDir: string,
-  relDir: string,
-  regex: RegExp,
-  results: string[],
-  maxResults: number,
-  showHidden: boolean,
-): Promise<void> {
-  if (results.length >= maxResults)
-    return
-  let entries: Awaited<ReturnType<typeof readDir>>
-  try { entries = await readDir(absDir) }
-  catch { return }
-
-  for (const entry of entries) {
-    if (!entry.name)
-      continue
-    if (!showHidden && entry.name.startsWith('.'))
-      continue
-    if (ALWAYS_SKIP.has(entry.name))
-      continue
-    const relPath = relDir ? `${relDir}/${entry.name}` : entry.name
-    const absPath = `${absDir}/${entry.name}`
-    if (entry.isDirectory) {
-      await globWalk(absPath, relPath, regex, results, maxResults, showHidden)
-    }
-    else if (regex.test(relPath)) {
-      results.push(relPath)
-      if (results.length >= maxResults)
-        return
-    }
-  }
-}
+// ---------------------------------------------------------------------------
+// Tool
+// ---------------------------------------------------------------------------
 
 export function createGlobTool(projectPath: string) {
   return tool({
-    description: 'Find files by glob pattern. Supports *, **, ?, {a,b}, [abc]. Build artifacts (node_modules, dist, .git, etc.) always excluded. Use when you need to locate files without knowing their exact path.',
+    description: `Find files and directories by glob pattern. Respects .gitignore by default.
+
+Use when you need to locate files without knowing their exact path.
+Supports *, **, ?, {a,b}, [abc] patterns.
+Results are sorted: directories first, then files, both alphabetically.
+Hidden dotfiles and gitignored files are excluded by default.`,
     inputSchema: z.object({
-      pattern: z.string().describe('Glob pattern relative to project root. E.g. "**/*.ts", "src/**/*.vue"'),
-      maxResults: z.number().int().min(1).max(500).optional().describe('Max results. Default: 100.'),
-      showHidden: z.boolean().optional().describe('Include dotfiles. Default: false.'),
+      pattern: z
+        .string()
+        .describe('The glob pattern to match files against. Examples: "**/*.ts", "src/**/*.{js,jsx}", "*.config.*"'),
+      path: z
+        .string()
+        .optional()
+        .describe('Directory to search from. Can be absolute or relative to the project root. Default: project root.'),
+      limit: z
+        .number()
+        .optional()
+        .default(200)
+        .describe('Maximum number of results to return. Default: 200. Max: 1000.'),
+      dot: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe('If true, include hidden dotfiles and dot-directories (e.g. .env, .github/). Default: false.'),
+      no_gitignore: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe('If true, bypass .gitignore filtering. Default: false.'),
+      ignore: z
+        .array(z.string())
+        .optional()
+        .describe('Additional glob patterns to exclude from results. Applied after .gitignore. Example: ["**/node_modules/**", "**/*.test.ts"]'),
     }),
-    execute: async ({ pattern, maxResults = 100, showHidden = false }) => {
-      let rootPath: string
-      try { rootPath = await safePath(projectPath, '.') }
-      catch (e) { return { error: e instanceof Error ? e.message : String(e) } }
 
-      let regex: RegExp
-      try { regex = globToRegex(pattern) }
-      catch (e) { return { error: `Invalid glob pattern: ${e instanceof Error ? e.message : String(e)}` } }
+    execute: async ({ pattern, path: inputPath, limit, dot, no_gitignore, ignore }) => {
+      const isAbsolute = (p: string) => /^[a-z]:[/\\]|^\/|^\\\\/i.test(p)
+      const rawPath = inputPath
+        ? (inputPath === '.' ? projectPath : isAbsolute(inputPath) ? inputPath : `${projectPath}/${inputPath}`)
+        : projectPath
 
-      const matches: string[] = []
-      await globWalk(rootPath, '', regex, matches, maxResults, showHidden)
-      const truncated = matches.length === maxResults
-      return {
-        pattern,
-        matches,
-        count: matches.length,
-        ...(truncated ? { note: `Results capped at ${maxResults}. Use a more specific pattern.` } : {}),
+      // Path security — validate against allowed roots + sensitive-file blocklist
+      let basePath: string
+      try {
+        basePath = await safePath(projectPath, rawPath, { kind: 'read' })
+      }
+      catch (e) {
+        return { message: `Error: ${e instanceof Error ? e.message : String(e)}`, numFiles: 0 }
+      }
+
+      try {
+        const result = await invoke<GlobResult>('glob_search', {
+          basePath,
+          pattern,
+          limit,
+          dot,
+          noGitignore: no_gitignore,
+          ignorePatterns: ignore,
+        })
+        return { message: result.message, numFiles: result.numFiles }
+      }
+      catch (e) {
+        return { message: `Error: ${e instanceof Error ? e.message : String(e)}`, numFiles: 0 }
       }
     },
   })

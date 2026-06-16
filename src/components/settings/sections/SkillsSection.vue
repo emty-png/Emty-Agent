@@ -105,7 +105,7 @@ async function refreshSkills() {
   color: var(--color-text-tertiary);
   padding: 3px 10px;
   background: var(--color-bg-elevated);
-  border-radius: 99px;
+  border-radius: var(--radius-md);
 }
 
 .icon-btn {
@@ -218,7 +218,7 @@ async function refreshSkills() {
   align-items: center;
   width: 34px;
   height: 20px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--color-border-mid);
   background: var(--color-toggle-track-off);
   cursor: pointer;

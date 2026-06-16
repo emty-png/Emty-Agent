@@ -184,6 +184,9 @@ const MIGRATIONS: string[] = [
     resolved_at     INTEGER
   )`,
   'CREATE INDEX IF NOT EXISTS idx_failure_conv_created ON failure_events (conversation_id, created_at DESC)',
+
+  // v8 — sub-agent conversations
+  'ALTER TABLE conversations ADD COLUMN is_subagent INTEGER NOT NULL DEFAULT 0',
 ]
 
 // ── column existence helper ───────────────────────────────────────────────────
@@ -244,6 +247,7 @@ async function migrate(instance: Database): Promise<void> {
   await ensureColumns(instance, 'conversations', [
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'is_subagent', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ])
 
   await ensureColumns(instance, 'memories', [
@@ -279,6 +283,7 @@ export interface ConversationRow {
   msg_count: number
   workspace_path?: string | null
   workspace_meta?: string | null
+  is_subagent?: number
 }
 
 export interface MessageRow {
@@ -377,8 +382,8 @@ export async function dbInsertConversation(
 ): Promise<void> {
   const d = await getDb()
   await d.execute(
-    `INSERT INTO conversations (id, title, created_at, updated_at, msg_count, workspace_path, workspace_meta)
-     VALUES (?, ?, ?, ?, 0, ?, ?)`,
+    `INSERT INTO conversations (id, title, created_at, updated_at, msg_count, workspace_path, workspace_meta, is_subagent)
+     VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
     [
       conv.id,
       conv.title,
@@ -386,6 +391,7 @@ export async function dbInsertConversation(
       conv.updated_at,
       conv.workspace_path ?? null,
       conv.workspace_meta ?? null,
+      conv.is_subagent ?? 0,
     ],
   )
 }
@@ -458,9 +464,17 @@ export async function dbListConversations(
 ): Promise<ConversationRow[]> {
   const d = await getDb()
   return d.select<ConversationRow[]>(
-    'SELECT * FROM conversations ORDER BY updated_at DESC LIMIT ? OFFSET ?',
+    'SELECT * FROM conversations WHERE is_subagent = 0 ORDER BY updated_at DESC LIMIT ? OFFSET ?',
     [Math.max(1, limit), Math.max(0, offset)],
   )
+}
+
+export async function dbGetConversation(id: string): Promise<ConversationRow | undefined> {
+  if (!id)
+    throw new Error('dbGetConversation: id is required')
+  const d = await getDb()
+  const rows = await d.select<ConversationRow[]>('SELECT * FROM conversations WHERE id = ? LIMIT 1', [id])
+  return rows[0]
 }
 
 export async function dbSearchConversations(
@@ -477,7 +491,7 @@ export async function dbSearchConversations(
   return d.select<ConversationRow[]>(
     `SELECT c.* FROM conversations c
      JOIN conversations_fts f ON c.id = f.id
-     WHERE conversations_fts MATCH ?
+     WHERE conversations_fts MATCH ? AND c.is_subagent = 0
      ORDER BY rank LIMIT ?`,
     [`${safe}*`, Math.max(1, limit)],
   )
@@ -504,8 +518,8 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
   const d = await getDb()
   await d.execute(
     `INSERT INTO messages
-       (id, conversation_id, role, content, created_at,
-        mention_context, tool_events, parts, attachments, cache_stats, is_complete)
+        (id, conversation_id, role, content, created_at,
+         mention_context, tool_events, parts, attachments, cache_stats, is_complete)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       msg.id,
@@ -810,6 +824,21 @@ export async function dbSaveMemory(input: {
 }
 
 // —— replay helpers ————————————————————————————————————————————————————————————————
+
+export async function dbDeleteMemoryByKey(
+  scope: MemoryRow['scope'],
+  project_key: string | null,
+  memory_key: string,
+): Promise<void> {
+  const d = await getDb()
+  await d.execute(
+    `DELETE FROM memories
+     WHERE scope = ?
+       AND ${project_key == null ? 'project_key IS NULL' : 'project_key = ?'}
+       AND memory_key = ?`,
+    project_key == null ? [scope, memory_key] : [scope, project_key, memory_key],
+  )
+}
 
 export async function dbInsertReplayRun(row: ReplayRunRow): Promise<void> {
   const d = await getDb()

@@ -102,39 +102,90 @@ function getCapabilitiesText(m: DiscoveredModel): string {
   return caps.join(', ')
 }
 
+function formatTieredCost(model: DiscoveredModel): string[] {
+  const lines: string[] = []
+  if (model.costTiers?.length) {
+    for (const tier of model.costTiers) {
+      const sizeK = Math.round(tier.tier.size / 1000)
+      const input = tier.input ?? model.costInput
+      const output = tier.output ?? model.costOutput
+      lines.push(`≤${sizeK}K: ${formatPrice(input)} in / ${formatPrice(output)} out`)
+    }
+  }
+  if (model.costContextOver200k) {
+    const c = model.costContextOver200k
+    lines.push(`>200K: ${formatPrice(c.input ?? null)} in / ${formatPrice(c.output ?? null)} out`)
+  }
+  return lines
+}
+
+function getEffortOption(model: DiscoveredModel): { type: 'effort'; values: string[] } | null {
+  return model.reasoningOptions?.find((o): o is { type: 'effort'; values: string[] } => o.type === 'effort') ?? null
+}
+
+function getBudgetOption(model: DiscoveredModel): { type: 'budget_tokens'; min: number } | null {
+  return model.reasoningOptions?.find((o): o is { type: 'budget_tokens'; min: number } => o.type === 'budget_tokens') ?? null
+}
+
+function getEffortLevels(model: DiscoveredModel): Array<'low' | 'medium' | 'high'> {
+  const effort = getEffortOption(model)
+  if (effort) {
+    const levels: Array<'low' | 'medium' | 'high'> = []
+    if (effort.values.includes('low'))
+      levels.push('low')
+    if (effort.values.includes('medium'))
+      levels.push('medium')
+    if (effort.values.includes('high'))
+      levels.push('high')
+    return levels.length > 0 ? levels : ['low', 'medium', 'high']
+  }
+  return ['low', 'medium', 'high']
+}
+
 function shouldShowEffort(model: DiscoveredModel): boolean {
   if (!model.supportsThinking)
     return false
 
-  const id = model.id.toLowerCase()
-  if (model.providerId === 'anthropic') {
-    const useAdaptive = /claude-opus-4-[7-9]|claude-opus-4-\d{2,}|claude-opus-4-6|claude-sonnet-4-6/.test(id)
-    if (useAdaptive)
-      return false
+  // Data-driven: show if reasoning_options exist
+  if (model.reasoningOptions?.length)
     return true
-  }
 
-  if (model.providerId === 'google') {
-    return false
-  }
+  // Fallback: show for known reasoning providers
+  if (model.providerId === 'anthropic' || model.providerId === 'google')
+    return true
 
   const pName = model.providerName.toLowerCase()
   const isOllama = model.providerId === 'compatible'
     && (model.mdevProviderId === 'ollama' || pName === 'ollama' || pName.includes('ollama'))
-  if (isOllama && !id.includes('gpt-oss')) {
+  if (isOllama && !model.id.toLowerCase().includes('gpt-oss'))
     return false
-  }
 
   return true
 }
 
 function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'): string {
-  if (model.providerId === 'anthropic') {
-    return lvl === 'low' ? '2K' : lvl === 'medium' ? '10K' : '32K'
+  // Data-driven: effort type from reasoning_options
+  const effort = getEffortOption(model)
+  if (effort) {
+    const hasMax = effort.values.includes('max')
+    if (lvl === 'high' && hasMax)
+      return 'Max'
+    return lvl === 'low' ? 'Low' : lvl === 'medium' ? 'Med' : 'High'
   }
-  if (model.providerId === 'openai') {
-    return lvl === 'low' ? 'Low' : lvl === 'medium' ? 'Medium' : 'High'
+
+  // Data-driven: budget_tokens type from reasoning_options
+  const budget = getBudgetOption(model)
+  if (budget) {
+    // Map effort levels to token budgets
+    const minBudget = budget.min
+    return lvl === 'low'
+      ? `${Math.round(minBudget / 1024)}K`
+      : lvl === 'medium'
+        ? `${Math.round(minBudget * 10 / 1024)}K`
+        : `${Math.round(minBudget * 32 / 1024)}K`
   }
+
+  // Fallback for providers without reasoning_options
   return lvl === 'low' ? 'Low' : lvl === 'medium' ? 'Med' : 'High'
 }
 </script>
@@ -215,8 +266,16 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
                     <span v-if="model.family" class="tt-meta-label">Family:</span>
                     <span v-if="model.family" class="tt-meta-value">{{ model.family }}</span>
 
-                    <span v-if="model.costInput !== null" class="tt-meta-label">Cost / 1M:</span>
-                    <span v-if="model.costInput !== null" class="tt-meta-value">{{ formatPrice(model.costInput) }} in / {{ formatPrice(model.costOutput) }} out</span>
+                    <template v-if="model.costTiers?.length || model.costContextOver200k">
+                      <span class="tt-meta-label">Cost / 1M:</span>
+                      <span class="tt-meta-value">
+                        <span v-for="(line, i) in formatTieredCost(model)" :key="i" class="tt-tier-line">{{ line }}</span>
+                      </span>
+                    </template>
+                    <template v-else-if="model.costInput !== null">
+                      <span class="tt-meta-label">Cost / 1M:</span>
+                      <span class="tt-meta-value">{{ formatPrice(model.costInput) }} in / {{ formatPrice(model.costOutput) }} out</span>
+                    </template>
 
                     <span v-if="model.releaseDate" class="tt-meta-label">Released:</span>
                     <span v-if="model.releaseDate" class="tt-meta-value">{{ formatDate(model.releaseDate) }}</span>
@@ -255,7 +314,7 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
             <div class="model-controls">
               <div v-if="model.enabled && shouldShowEffort(model)" class="effort-seg">
                 <button
-                  v-for="lvl in (['low', 'medium', 'high'] as const)"
+                  v-for="lvl in getEffortLevels(model)"
                   :key="lvl"
                   class="effort-btn"
                   :class="{ 'effort-btn--active': model.thinkingEffort === lvl }"
@@ -552,6 +611,12 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   color: var(--color-text-tertiary);
 }
 
+.tt-tier-line {
+  display: block;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 /* Title & ID */
 .model-name {
   margin: 0;
@@ -705,7 +770,7 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   align-items: center;
   width: 38px;
   height: 22px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--color-border-mid, #2e2e2e);
   background: var(--color-bg-elevated, #262626);
   cursor: pointer;

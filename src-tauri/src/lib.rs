@@ -1,4 +1,7 @@
 mod browser;
+mod glob;
+mod grep;
+mod search;
 mod terminal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -18,6 +21,9 @@ pub fn run() {
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_close,
+            glob::glob_search,
+            grep::grep_search,
+            search::ddg_search,
         ])
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())

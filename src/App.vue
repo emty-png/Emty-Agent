@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import FatalErrorScreen from './components/app/FatalErrorScreen.vue'
+import ProviderBrowser from './components/settings/providers/ProviderBrowser.vue'
 import SettingsModal from './components/settings/SettingsModal.vue'
 import SideBar from './components/sidebar/Sidebar.vue'
 import TitleBar from './components/titlebar/Titlebar.vue'
@@ -10,6 +11,7 @@ import { resolveTabWorkspacePath } from './stores/chat/workspace'
 import { useProjectStore } from './stores/project'
 import { useTerminalStore } from './stores/terminal'
 import { captureFatalError, fatalError } from './utils/errors'
+import { ALL_PROVIDERS, warmIconCache } from './utils/modelsdev'
 import ChatView from './views/Chatview.vue'
 import HistoryView from './views/HistoryView.vue'
 import ProjectView from './views/ProjectView.vue'
@@ -18,6 +20,18 @@ type ViewType = 'chat' | 'history' | 'projects'
 
 const activeView = ref<ViewType>('chat')
 const settingsOpen = ref(false)
+const showProviderBrowser = ref(false)
+
+function onBrowseProviders() {
+  settingsOpen.value = false
+  showProviderBrowser.value = true
+}
+
+watch(showProviderBrowser, open => {
+  if (!open)
+    settingsOpen.value = true
+})
+
 const chat = useChatStore()
 const project = useProjectStore()
 const terminal = useTerminalStore()
@@ -27,6 +41,7 @@ function selectView(view: ViewType) {
 }
 
 onMounted(async () => {
+  warmIconCache(ALL_PROVIDERS.map(p => p.id))
   try {
     await getDb()
   }
@@ -78,7 +93,12 @@ async function toggleTerminalPanel() {
         <ProjectView v-if="activeView === 'projects'" style="flex: 1" />
       </div>
 
-      <SettingsModal v-if="settingsOpen" @close="settingsOpen = false" />
+      <SettingsModal
+        v-if="settingsOpen"
+        @close="settingsOpen = false"
+        @browse-providers="onBrowseProviders"
+      />
+      <ProviderBrowser v-model="showProviderBrowser" />
     </template>
   </div>
 </template>

@@ -63,6 +63,15 @@ export function uniqueTerms(skill: SkillMetadata): string[] {
   for (const token of tokenize(skill.title))
     terms.add(token)
 
+  // Index command names and descriptions for multi-command skills
+  for (const command of skill.commands) {
+    terms.add(command.name.toLowerCase())
+    for (const token of tokenize(command.name))
+      terms.add(token)
+    for (const token of tokenize(command.description))
+      terms.add(token)
+  }
+
   return [...terms]
 }
 

@@ -283,6 +283,12 @@ export async function gitDiffStat(cwd: string): Promise<string> {
   return result.stdout
 }
 
+/** Get the diff of all staged files. */
+export async function gitDiffStaged(cwd: string): Promise<string> {
+  const result = await runGit(cwd, ['diff', '--cached'])
+  return result.stdout
+}
+
 /** Stage specific files. */
 export async function gitStage(cwd: string, files: string[]): Promise<GitCommandResult> {
   return runGit(cwd, ['add', '--', ...files])
@@ -315,14 +321,30 @@ export async function gitCommit(
   return runGit(cwd, args)
 }
 
-/** Discard unstaged changes for tracked files. */
+/**
+ * Discard unstaged changes for tracked files.
+ *
+ * Uses `git restore -- <files>` where available, and falls back to
+ * `git checkout -- <files>` on older Git versions for compatibility.
+ */
 export async function gitDiscard(cwd: string, files: string[]): Promise<GitCommandResult> {
-  return runGit(cwd, ['checkout', '--', ...files])
+  // Prefer `git restore` (introduced in Git 2.23). If it fails, fallback.
+  let res = await runGit(cwd, ['restore', '--', ...files])
+  if (!res.ok) {
+    res = await runGit(cwd, ['checkout', '--', ...files])
+  }
+  return res
 }
 
-/** Delete untracked files. */
-export async function gitDiscardUntracked(cwd: string, files: string[]): Promise<GitCommandResult> {
-  return runGit(cwd, ['clean', '-f', '--', ...files])
+/**
+ * Delete untracked files.
+ *
+ * `includeDirs` controls whether untracked directories are removed as well
+ * (passes `-d` to `git clean`). Default is `false` to be conservative.
+ */
+export async function gitDiscardUntracked(cwd: string, files: string[], includeDirs = false): Promise<GitCommandResult> {
+  const args = includeDirs ? ['clean', '-fd', '--', ...files] : ['clean', '-f', '--', ...files]
+  return runGit(cwd, args)
 }
 
 /** Push to upstream. */

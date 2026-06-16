@@ -157,6 +157,7 @@ export const useHistoryStore = defineStore('history', () => {
           ...(parts ? { parts } : {}),
           ...(attachments ? { attachments } : {}),
           ...(cacheStats ? { cacheStats } : {}),
+          ...(r.is_complete === 0 ? { error: 'Interrupted during generation.' } : {}),
         }
       }),
     })

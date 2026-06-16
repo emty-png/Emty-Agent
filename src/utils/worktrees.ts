@@ -1,4 +1,4 @@
-import { readDir } from '@tauri-apps/plugin-fs'
+import { mkdir, readDir } from '@tauri-apps/plugin-fs'
 import { Command } from '@tauri-apps/plugin-shell'
 
 interface GitResult {
@@ -51,6 +51,12 @@ export interface WorkspaceSnapshot extends WorktreeStatus {
   label: string
 }
 
+export interface AgentWorktreeHandle {
+  path: string
+  branch: string
+  basePath: string
+}
+
 const GIT_TIMEOUT_MS = 8000
 
 function pathKey(path: string | null | undefined): string {
@@ -62,6 +68,23 @@ function pathKey(path: string | null | undefined): string {
 
 function basename(path: string): string {
   return path.replace(/[\\/]+$/, '').split(/[/\\]/).pop() || path
+}
+
+function dirname(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '')
+  const parts = trimmed.split(/[/\\]/)
+  parts.pop()
+  if (parts.length === 0)
+    return trimmed
+  const separator = trimmed.includes('\\') ? '\\' : '/'
+  return parts.join(separator) || separator
+}
+
+function joinPath(base: string, ...parts: string[]): string {
+  const separator = base.includes('\\') ? '\\' : '/'
+  const normalizedBase = base.replace(/[\\/]+$/, '')
+  const normalizedParts = parts.map(part => part.replace(/^[\\/]+|[\\/]+$/g, ''))
+  return [normalizedBase, ...normalizedParts].filter(Boolean).join(separator)
 }
 
 function buildLabel(path: string, branch: string | null): string {
@@ -380,4 +403,103 @@ export function buildWorkspacePromptContext(workspace: WorkspaceSnapshot | null)
   }
 
   return lines.join('\n')
+}
+
+function sanitizeWorktreeSlug(value: string): string {
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+
+  return slug || 'agent'
+}
+
+async function ensureDir(path: string): Promise<void> {
+  try {
+    await mkdir(path, { recursive: true })
+  }
+  catch {
+    // Best effort only. git worktree add will surface a real error if the path
+    // still cannot be created.
+  }
+}
+
+async function findAvailableWorktreePath(root: string, slug: string): Promise<string> {
+  let index = 0
+  while (index < 50) {
+    const candidate = joinPath(root, index === 0 ? slug : `${slug}-${index + 1}`)
+    if (!await directoryExists(candidate))
+      return candidate
+    index++
+  }
+
+  return joinPath(root, `${slug}-${Date.now().toString(36)}`)
+}
+
+export async function createAgentWorktree(
+  workspacePath: string,
+  label: string,
+): Promise<AgentWorktreeHandle | null> {
+  const workspace = await inspectWorkspace(workspacePath)
+  if (!workspace?.isGitRepo || !workspace.repoTopLevel)
+    return null
+
+  const repoContainer = dirname(workspace.repoTopLevel)
+  const worktreeRoot = joinPath(repoContainer, '.emty-agent-worktrees', basename(workspace.repoTopLevel))
+  const slug = sanitizeWorktreeSlug(label)
+
+  await ensureDir(worktreeRoot)
+
+  const worktreePath = await findAvailableWorktreePath(worktreeRoot, slug)
+  const branch = `emty/subagent/${sanitizeWorktreeSlug(`${slug}-${Date.now().toString(36)}`)}`
+
+  const addResult = await runGit(workspace.path, ['worktree', 'add', '-b', branch, worktreePath, 'HEAD'])
+  if (addResult.exitCode !== 0) {
+    throw new Error(addResult.stderr || 'Failed to create isolated git worktree')
+  }
+
+  return {
+    path: worktreePath,
+    branch,
+    basePath: workspace.path,
+  }
+}
+
+export async function cleanupAgentWorktree(
+  handle: AgentWorktreeHandle,
+): Promise<{ removed: boolean; kept: boolean; reason?: string }> {
+  const status = await inspectGitStatus(handle.path)
+  if (status && !status.isClean) {
+    return {
+      removed: false,
+      kept: true,
+      reason: `Kept isolated worktree with local changes at ${handle.path} on branch ${handle.branch}.`,
+    }
+  }
+
+  const removeResult = await runGit(handle.basePath, ['worktree', 'remove', handle.path])
+  if (removeResult.exitCode !== 0) {
+    return {
+      removed: false,
+      kept: true,
+      reason: removeResult.stderr || `Failed to remove isolated worktree at ${handle.path}.`,
+    }
+  }
+
+  await runGit(handle.basePath, ['branch', '-D', handle.branch]).catch(() => ({
+    exitCode: null,
+    stdout: '',
+    stderr: '',
+  }))
+  await runGit(handle.basePath, ['worktree', 'prune']).catch(() => ({
+    exitCode: null,
+    stdout: '',
+    stderr: '',
+  }))
+
+  return {
+    removed: true,
+    kept: false,
+  }
 }

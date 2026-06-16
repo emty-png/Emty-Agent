@@ -44,6 +44,7 @@ export interface ProviderCredentials {
   baseURL?: string | undefined
   organizationId?: string | undefined
   name?: string | undefined
+  headers?: Record<string, string> | undefined
 }
 
 // ── model factory ─────────────────────────────────────────────────────────────
@@ -102,6 +103,9 @@ export function buildLanguageModel(
         baseURL: credentials.baseURL,
         includeUsage: true,
         fetch: platformFetch,
+        ...(credentials.headers && Object.keys(credentials.headers).length > 0
+          ? { headers: credentials.headers }
+          : {}),
       })
       return provider(modelId)
     }
@@ -151,8 +155,25 @@ export function buildProviderOptions(
 
   const id = config.modelId.toLowerCase()
 
-  // Anthropic extended thinking
+  // ── Anthropic extended thinking ──────────────────────────────────────────
+  // Claude 4.6+ uses adaptive thinking (model decides depth automatically).
+  // Earlier Claude 4.x models use budget-based thinking with explicit token limits.
+  // Opus 4.7+ omits reasoning text by default — display: 'summarized' is required.
   if (config.providerId === 'anthropic' && /claude-3-7|opus-4|sonnet-4|haiku-4/.test(id)) {
+    const isAdaptive = /claude-(?:opus|sonnet)-4-(?:[6-9]|\d{2,})/.test(id)
+    const needsDisplay = /claude-opus-4-(?:[7-9]|\d{2,})/.test(id)
+
+    if (isAdaptive) {
+      const anthropicOpts: Record<string, JSONValue> = {
+        thinking: { type: 'adaptive' },
+        effort: config.thinkingEffort === 'high' ? 'max' : config.thinkingEffort,
+      }
+      if (needsDisplay)
+        anthropicOpts.thinking = { type: 'adaptive', display: 'summarized' }
+
+      return { anthropic: anthropicOpts }
+    }
+
     return {
       anthropic: {
         thinking: {
@@ -163,20 +184,57 @@ export function buildProviderOptions(
     }
   }
 
-  // Google Gemini thought summaries
+  // ── Google Gemini thinking ───────────────────────────────────────────────
+  // Gemini 3+ models use level-based thinking (low/medium/high).
+  // Gemini 2.5 models use budget-based thinking with explicit token limits.
+  // Both support includeThoughts to surface reasoning in the response.
   if (config.providerId === 'google') {
+    const isGemini3Plus = /gemini-3/.test(id)
+
+    if (isGemini3Plus) {
+      return {
+        google: {
+          thinkingConfig: {
+            thinkingLevel: config.thinkingEffort === 'low'
+              ? 'low'
+              : config.thinkingEffort === 'high'
+                ? 'high'
+                : 'medium',
+            includeThoughts: true,
+          },
+        },
+      }
+    }
+
+    // Gemini 2.5 — budget-based with effort mapping
+    const budgetMap: Record<ThinkingEffort, number> = {
+      low: 2048,
+      medium: 8192,
+      high: 32_768,
+    }
     return {
       google: {
-        thinkingConfig: { includeThoughts: true },
+        thinkingConfig: {
+          thinkingBudget: budgetMap[config.thinkingEffort],
+          includeThoughts: true,
+        },
       },
     }
   }
 
-  // OpenAI o-series reasoning
-  const isOSeries = /^o[1-9]/.test(id) || id.startsWith('o3') || id.startsWith('o4')
-  if (config.providerId === 'openai' && isOSeries) {
+  // ── OpenAI reasoning (o-series + GPT-5 codex) ───────────────────────────
+  // Reasoning models support reasoningEffort and reasoningSummary.
+  // reasoningSummary: 'auto' surfaces reasoning text in the stream.
+  const isReasoningModel = /^o[1-9]/.test(id)
+    || id.startsWith('o3')
+    || id.startsWith('o4')
+    || /gpt-5[\d.]*-codex/.test(id)
+  if (config.providerId === 'openai' && isReasoningModel) {
     return {
-      openai: { reasoningEffort: config.thinkingEffort },
+      openai: {
+        reasoningEffort: config.thinkingEffort,
+        reasoningSummary: 'auto',
+      },
     }
   }
 
@@ -334,6 +392,7 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     })
 
     let fullText = ''
+    const toolFailureCounts = new Map<string, number>()
 
     for await (const part of result.fullStream) {
       // Check abort on every iteration to surface cancellation quickly
@@ -376,6 +435,25 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
             result: (part.output ?? {}) as Record<string, unknown>,
           })
           break
+
+        case 'tool-error': {
+          const errorMessage = extractErrorMessage(part.error)
+          onToolResult?.({
+            id: part.toolCallId,
+            name: part.toolName,
+            ok: false,
+            result: { error: errorMessage },
+          })
+
+          const failureCount = (toolFailureCounts.get(part.toolName) ?? 0) + 1
+          toolFailureCounts.set(part.toolName, failureCount)
+          if (failureCount >= 3) {
+            throw new Error(
+              `Error: Repeated tool call failur detected of ${part.toolName}, give the agent further instructions`,
+            )
+          }
+          break
+        }
 
         case 'error': {
           const msg = part.error instanceof Error
@@ -423,6 +501,7 @@ export function buildSystemPrompt(
   projectPath: string | null,
   _mode: ChatMode = 'build',
   osInfo?: OsInfo,
+  coAuthor?: boolean,
 ): string {
-  return buildPrompt(projectPath, osInfo)
+  return buildPrompt(projectPath, osInfo, coAuthor)
 }

@@ -68,6 +68,26 @@ function boundsKey(bounds: BrowserBounds): string {
   return [bounds.x, bounds.y, bounds.width, bounds.height].map(value => Math.round(value)).join(':')
 }
 
+function markSurfaceReady(sessionId: string) {
+  readySurfaceSessionId = sessionId
+  readySurfaceSessions.add(sessionId)
+  const waiters = readyWaiters.get(sessionId) ?? []
+  for (const waiter of waiters) {
+    clearTimeout(waiter.timer)
+    waiter.resolve()
+  }
+  readyWaiters.delete(sessionId)
+}
+
+function clearBridgeWaiter(requestId: string) {
+  const waiter = bridgeWaiters.get(requestId)
+  if (waiter) {
+    clearTimeout(waiter.timer)
+    bridgeWaiters.delete(requestId)
+  }
+  return waiter
+}
+
 export function currentSurfaceSessionId() {
   return activeSurfaceSessionId
 }
@@ -108,6 +128,7 @@ async function ensureListeners(): Promise<void> {
         case 'page-load-finished':
           if (payload.url)
             browser.markPageReady(payload.sessionId, payload.url)
+          markSurfaceReady(payload.sessionId)
           break
         case 'title-changed':
           if (payload.title)
@@ -116,26 +137,16 @@ async function ensureListeners(): Promise<void> {
         case 'bridge-ready': {
           if (payload.url)
             browser.syncPageFromBridge(payload.sessionId, { url: payload.url, title: payload.title })
-          readySurfaceSessionId = payload.sessionId
-          readySurfaceSessions.add(payload.sessionId)
-          const waiters = readyWaiters.get(payload.sessionId) ?? []
-          for (const waiter of waiters) {
-            clearTimeout(waiter.timer)
-            waiter.resolve()
-          }
-          readyWaiters.delete(payload.sessionId)
+          markSurfaceReady(payload.sessionId)
           break
         }
       }
     }),
     listen<BrowserBridgeEventPayload>(BROWSER_BRIDGE_EVENT, ({ payload }) => {
       const browser = useBrowserStore()
-      const waiter = bridgeWaiters.get(payload.requestId)
+      const waiter = clearBridgeWaiter(payload.requestId)
       if (!waiter)
         return
-
-      clearTimeout(waiter.timer)
-      bridgeWaiters.delete(payload.requestId)
 
       if (payload.ok) {
         const result = typeof payload.result === 'object' && payload.result !== null
@@ -443,7 +454,7 @@ export async function dispatchBridgeRequest<T = unknown>(
     bridgeWaiters.set(id, { resolve, reject, timer })
   })
 
-  await invoke('browser_surface_dispatch', {
+  const directResult = await invoke<unknown | null>('browser_surface_dispatch', {
     sessionId,
     payload: {
       id,
@@ -451,9 +462,14 @@ export async function dispatchBridgeRequest<T = unknown>(
       args: args ?? {},
     },
   }).catch(err => {
-    bridgeWaiters.delete(id)
+    clearBridgeWaiter(id)
     throw new Error(err instanceof Error ? err.message : String(err))
   })
+
+  if (directResult !== null && directResult !== undefined) {
+    clearBridgeWaiter(id)
+    return directResult as T
+  }
 
   return responsePromise as Promise<T>
 }

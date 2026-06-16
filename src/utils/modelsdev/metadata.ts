@@ -1,4 +1,4 @@
-import type { MDevData, ModelCost, ModelModalities } from './types'
+import type { MDevContextOver200k, MDevCostTier, MDevData, MDevReasoningOption, ModelCost, ModelModalities } from './types'
 import { lookupModel } from './cache'
 
 export function providerIconUrl(mdevId: string): string {
@@ -23,7 +23,37 @@ export function getCost(
     input: meta?.cost?.input ?? null,
     output: meta?.cost?.output ?? null,
     reasoning: meta?.cost?.reasoning ?? null,
+    cache_read: meta?.cost?.cache_read ?? null,
+    cache_write: meta?.cost?.cache_write ?? null,
+    input_audio: meta?.cost?.input_audio ?? null,
+    output_audio: meta?.cost?.output_audio ?? null,
+    tiers: meta?.cost?.tiers ?? null,
+    context_over_200k: meta?.cost?.context_over_200k ?? null,
   }
+}
+
+export function getCostTiers(
+  data: MDevData,
+  mdevId: string,
+  rawModelId: string,
+): MDevCostTier[] | null {
+  return lookupModel(data, mdevId, rawModelId)?.cost?.tiers ?? null
+}
+
+export function getContextOver200k(
+  data: MDevData,
+  mdevId: string,
+  rawModelId: string,
+): MDevContextOver200k | null {
+  return lookupModel(data, mdevId, rawModelId)?.cost?.context_over_200k ?? null
+}
+
+export function getReasoningOptions(
+  data: MDevData,
+  mdevId: string,
+  rawModelId: string,
+): MDevReasoningOption[] | null {
+  return lookupModel(data, mdevId, rawModelId)?.reasoning_options ?? null
 }
 
 export function getModalities(
@@ -84,4 +114,11 @@ export function modelDisplayName(
   rawModelId: string,
 ): string {
   return lookupModel(data, mdevId, rawModelId)?.name ?? rawModelId
+}
+
+export function getProviderNpm(
+  data: MDevData,
+  mdevId: string,
+): string | null {
+  return data[mdevId]?.npm ?? null
 }

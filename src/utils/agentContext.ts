@@ -152,26 +152,23 @@ function buildSkillCatalogSection(skills: SkillMetadata[], supportsToolCalls: bo
   if (supportsToolCalls) {
     lines.push('When a task matches a skill below, call `load_skill` before following any skill-specific workflow.')
     lines.push('If that SKILL.md references files in `scripts/`, `references/`, or `assets/`, call `load_skill_resource` only for the specific file you need.')
+    lines.push('Some skills expose multiple commands. If the user message starts with a command name (e.g. `/commit`), load the parent skill and execute the matching command.')
   }
   else {
     lines.push('This model cannot load skills on demand, so matching skills may be preloaded automatically when needed.')
   }
 
-  lines.push('<available_skills>')
+  lines.push('')
 
   for (const skill of skills) {
-    lines.push('  <skill>')
-    lines.push(`    <id>${escapeXml(skill.id)}</id>`)
-    lines.push(`    <name>${escapeXml(skill.name)}</name>`)
-    lines.push(`    <title>${escapeXml(skill.title)}</title>`)
-    lines.push(`    <description>${escapeXml(skill.description)}</description>`)
-    lines.push(`    <location>${escapeXml(skill.location)}</location>`)
-    lines.push(`    <source>${escapeXml(skill.source)}</source>`)
-    lines.push(`    <resource_count>${skill.resourceCount}</resource_count>`)
-    lines.push('  </skill>')
+    let skillLine = `- **${skill.id}**: ${skill.title} - ${skill.description}`
+    if (skill.whenToUse)
+      skillLine += ` (Use when: ${skill.whenToUse})`
+    if (skill.commands.length > 0)
+      skillLine += ` Commands: ${skill.commands.map(c => `\`${c.name}\``).join(', ')}`
+    lines.push(skillLine)
   }
 
-  lines.push('</available_skills>')
   return lines.join('\n')
 }
 
@@ -215,20 +212,22 @@ function joinProjectPath(basePath: string, ...parts: string[]): string {
   return [normalizedBase, ...normalizedParts].filter(Boolean).join(separator)
 }
 
+export function minifyMarkdown(content: string): string {
+  return content
+    .replace(/<!--[\s\S]*?-->/g, '') // Strip HTML comments
+    .replace(/[ \t]+$/gm, '') // Strip trailing spaces
+    .replace(/\n{3,}/g, '\n\n') // Collapse 3+ newlines into 2
+    .trim()
+}
+
 function trimContextContent(content: string, maxChars = MAX_CONTEXT_CHARS): string {
-  if (content.length <= maxChars)
-    return content
+  const minified = minifyMarkdown(content)
+  if (minified.length <= maxChars)
+    return minified
 
   const head = Math.floor(maxChars * 0.7)
   const tail = maxChars - head
-  return `${content.slice(0, head).trimEnd()}\n\n[... context trimmed ...]\n\n${content.slice(-tail).trimStart()}`
-}
-
-function escapeXml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
+  return `${minified.slice(0, head).trimEnd()}\n\n[... context trimmed ...]\n\n${minified.slice(-tail).trimStart()}`
 }
 
 function hashPrompt(input: string): string {

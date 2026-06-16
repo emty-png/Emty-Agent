@@ -345,11 +345,15 @@
   margin-bottom: 14px;
   border: 1px solid var(--color-border-mid);
   border-radius: var(--radius-md);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-bright) transparent;
 }
 
 .md-root .md-table {
   width: 100%;
+  min-width: 0;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 13px;
 }
 
@@ -364,6 +368,8 @@
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border-mid);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .md-root .md-td {
@@ -371,6 +377,8 @@
   border-bottom: 1px solid var(--color-border-subtle);
   color: var(--color-text-primary);
   vertical-align: top;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .md-root tr:last-child .md-td {

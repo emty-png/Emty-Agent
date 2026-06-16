@@ -3,11 +3,8 @@ import { computed, ref } from 'vue'
 import { ALL_COLOR_VARS, DEFAULT_RADIUS, KEY_COLOR_VARS, useThemeStore } from '@/stores/themes'
 
 const store = useThemeStore()
-const showAdvanced = ref(false)
-const showImport = ref(false)
 const importText = ref('')
 const importError = ref('')
-const showRadius = ref(false)
 
 const allThemes = computed(() => [
   ...store.themes.map(t => ({ ...t, isCustom: false })),
@@ -43,7 +40,6 @@ function handleImport() {
   const result = store.importTheme(importText.value)
   if (result.success) {
     importText.value = ''
-    showImport.value = false
   }
   else {
     importError.value = result.error || 'Import failed'
@@ -112,30 +108,13 @@ function selectTheme(id: string) {
 
     <!-- Action Bar -->
     <div class="action-bar">
-      <button class="action-btn" @click="showImport = !showImport">
-        Import
-      </button>
       <button class="action-btn" @click="handleExport(store.activeTheme)">
         Export
-      </button>
-      <button
-        class="action-btn"
-        :class="{ active: showRadius }"
-        @click="showRadius = !showRadius"
-      >
-        Radius
-      </button>
-      <button
-        class="action-btn"
-        :class="{ active: store.editingTheme !== null }"
-        @click="store.editingTheme = store.editingTheme ? null : store.activeTheme"
-      >
-        Edit Colors
       </button>
     </div>
 
     <!-- Import Panel -->
-    <div v-if="showImport" class="panel">
+    <div class="panel">
       <p class="panel-title">
         Import Theme
       </p>
@@ -152,9 +131,6 @@ function selectTheme(id: string) {
         {{ importError }}
       </p>
       <div class="panel-actions">
-        <button class="action-btn" @click="showImport = false">
-          Cancel
-        </button>
         <button class="action-btn action-btn--primary" @click="handleImport">
           Import
         </button>
@@ -162,7 +138,7 @@ function selectTheme(id: string) {
     </div>
 
     <!-- Radius Editor -->
-    <div v-if="showRadius" class="panel">
+    <div class="panel">
       <p class="panel-title">
         Border Radius
       </p>
@@ -180,13 +156,13 @@ function selectTheme(id: string) {
           <span class="radius-value">{{ currentRadius(key) }}px</span>
         </label>
       </div>
-      <button class="action-btn" @click="store.resetOverrides(); showRadius = false">
+      <button class="action-btn" @click="store.resetOverrides()">
         Reset to defaults
       </button>
     </div>
 
     <!-- Color Editor -->
-    <div v-if="store.editingTheme" class="panel">
+    <div class="panel">
       <p class="panel-title">
         Edit Colors
       </p>
@@ -213,13 +189,8 @@ function selectTheme(id: string) {
         </label>
       </div>
 
-      <!-- Advanced toggle -->
-      <button class="action-btn" @click="showAdvanced = !showAdvanced">
-        {{ showAdvanced ? 'Hide' : 'Show' }} all variables
-      </button>
-
       <!-- Advanced: all variables grouped -->
-      <div v-if="showAdvanced" class="advanced-vars">
+      <div class="advanced-vars">
         <div v-for="group in ALL_COLOR_VARS" :key="group.group" class="var-group">
           <p class="var-group-title">
             {{ group.group }}
@@ -250,9 +221,6 @@ function selectTheme(id: string) {
       <div class="panel-actions">
         <button class="action-btn" @click="store.resetOverrides()">
           Reset changes
-        </button>
-        <button class="action-btn" @click="store.editingTheme = null">
-          Done
         </button>
       </div>
     </div>
@@ -692,7 +660,7 @@ function selectTheme(id: string) {
   align-items: center;
   width: 34px;
   height: 20px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--color-border-mid);
   background: var(--color-toggle-track-off);
   cursor: pointer;

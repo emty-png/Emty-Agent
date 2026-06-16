@@ -25,12 +25,18 @@ import type { QuestionAnswer } from '@/utils/tools/questions'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import {
+  dbDeleteMessages,
+  dbUpdateConversationMsgCount,
   dbUpdateConversationTitle,
+  dbUpdateMessage,
 } from '@/db/database'
 import { useBrowserStore } from '@/stores/browser'
 import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
+import { useSettingsStore } from '@/stores/settings'
 import { useTerminalStore } from '@/stores/terminal'
+import { compactConversationSession, persistCompactionMessages } from './chat/compaction'
+import { SESSION_COMPACTING_DIVIDER } from './chat/constants'
 import { createSendMessage } from './chat/sendMessage'
 import { createEmptyDraft, createEmptyEstimatorState, makeId, newTab } from './chat/utils'
 
@@ -45,11 +51,7 @@ export type {
   SubAgentPersonality,
   ToolEvent,
 } from './chat/types'
-export type { TodoItem } from '@/utils/tools/todos'
-
-// ── constants ─────────────────────────────────────────────────────────────────
-
-const MAX_TABS = 9
+export type { TaskItem } from '@/utils/tools/todos'
 
 // ── store ─────────────────────────────────────────────────────────────────────
 
@@ -135,12 +137,31 @@ export const useChatStore = defineStore('chat', () => {
   // ── tab actions ───────────────────────────────────────────────────────────────
 
   function addTab(): void {
-    if (tabs.value.length >= MAX_TABS)
-      return
     const tab = newTab()
     tab.workspacePath = useProjectStore().projectPath
     tabs.value.push(tab)
     activeId.value = tab.id
+  }
+
+  function markInterruptedAssistantMessage(tab: ChatTab, reason: string): void {
+    const lastAssistant = [...tab.messages].reverse().find(m => m.role === 'assistant')
+    if (!lastAssistant)
+      return
+
+    const interruptionNote = `[Assistant turn ended with error/interruption: ${reason}]`
+    if (!/\[Assistant turn ended with error\/interruption:/.test(lastAssistant.content)) {
+      lastAssistant.content = lastAssistant.content.trim()
+        ? `${lastAssistant.content}\n\n${interruptionNote}`
+        : interruptionNote
+    }
+    lastAssistant.error = reason
+    if (tab.conversationId) {
+      void dbUpdateMessage(lastAssistant.id, {
+        content: lastAssistant.content,
+        parts: lastAssistant.parts?.length ? JSON.stringify(lastAssistant.parts) : null,
+        tool_events: lastAssistant.toolEvents?.length ? JSON.stringify(lastAssistant.toolEvents) : null,
+      }).catch(() => { })
+    }
   }
 
   function closeTab(id: string): void {
@@ -155,6 +176,8 @@ export const useChatStore = defineStore('chat', () => {
     // Cancel any in-flight request
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
+    if (tab?.isStreaming)
+      markInterruptedAssistantMessage(tab, 'Interrupted during generation.')
 
     // Dismiss any pending questions
     const resolve = questionResolvers.get(id)
@@ -180,7 +203,10 @@ export const useChatStore = defineStore('chat', () => {
 
     // Clean up checkpoints for this tab
     import('./checkpoints').then(({ useCheckpointStore }) => {
-      useCheckpointStore().clearTab(id)
+      const checkpoints = useCheckpointStore()
+      void checkpoints.finalizeCheckpoint(tab?.conversationId ?? null).finally(() => {
+        checkpoints.clearTab(id, useProjectStore().projectPath ?? undefined)
+      })
     }).catch(() => { })
 
     const idx = tabs.value.findIndex(t => t.id === id)
@@ -211,6 +237,7 @@ export const useChatStore = defineStore('chat', () => {
     messages: Message[]
     workspacePath?: string | null
     workspaceMeta?: ChatTab['workspaceMeta']
+    subAgent?: ChatTab['subAgent']
   }): void {
     // Don't open the same conversation twice
     const existing = tabs.value.find(t => t.conversationId === payload.conversationId)
@@ -228,14 +255,17 @@ export const useChatStore = defineStore('chat', () => {
       conversationId: payload.conversationId,
       workspacePath: payload.workspacePath ?? null,
       workspaceMeta: payload.workspaceMeta ?? null,
+      ...(payload.subAgent ? { subAgent: payload.subAgent } : {}),
       workspaceLocked: payload.messages.length > 0,
       isStreaming: false,
       todos: [],
       modelUid: restoredState.modelUid,
       draft: restoredState.draft,
       estimator: restoredState.estimator,
+      isCompacting: false,
       pendingQuestions: null,
       pendingPermissions: [],
+      readRegistry: new Map(),
     }
 
     tabs.value.push(tab)
@@ -267,9 +297,14 @@ export const useChatStore = defineStore('chat', () => {
     abortControllers.delete(id)
     const tab = tabs.value.find(t => t.id === id)
     if (tab) {
+      if (tab.isStreaming)
+        markInterruptedAssistantMessage(tab, 'Interrupted during generation.')
       tab.isStreaming = false
       if (tab.subAgent)
         tab.subAgent.status = 'error'
+      import('./checkpoints').then(({ useCheckpointStore }) => {
+        void useCheckpointStore().finalizeCheckpoint(tab.conversationId)
+      }).catch(() => { })
     }
   }
 
@@ -324,6 +359,124 @@ export const useChatStore = defineStore('chat', () => {
       estimating: next.estimating === undefined ? tab.estimator.estimating : next.estimating,
     }
     snapshotConversationState(tab)
+  }
+
+  function insertStreamingCompactionDivider(tab: ChatTab): string | null {
+    const existing = tab.messages.find(message =>
+      message.role === 'assistant' && message.content.trim() === SESSION_COMPACTING_DIVIDER)
+    if (existing)
+      return existing.id
+
+    let liveAssistantIndex = -1
+    for (let i = tab.messages.length - 1; i >= 0; i--) {
+      const message = tab.messages[i]!
+      if (message.role === 'assistant') {
+        liveAssistantIndex = i
+        break
+      }
+    }
+
+    if (liveAssistantIndex <= 0)
+      return null
+
+    const divider: Message = {
+      id: makeId(),
+      role: 'assistant',
+      content: SESSION_COMPACTING_DIVIDER,
+      timestamp: new Date(),
+    }
+    tab.messages.splice(liveAssistantIndex, 0, divider)
+    return divider.id
+  }
+
+  function removeStreamingCompactionDivider(tab: ChatTab, dividerId: string | null): void {
+    if (!dividerId)
+      return
+
+    tab.messages = tab.messages.filter(message => message.id !== dividerId)
+  }
+
+  async function compactSession(
+    tabId: string,
+    source: 'auto' | 'manual' = 'manual',
+  ): Promise<{ ok: boolean; error?: string }> {
+    const tab = tabs.value.find(item => item.id === tabId)
+    if (!tab)
+      return { ok: false, error: 'Tab not found' }
+    if (tab.isCompacting)
+      return { ok: false, error: 'Session compaction is already running' }
+    if (!tab.conversationId)
+      return { ok: false, error: 'This conversation has not been saved yet' }
+
+    tab.isCompacting = true
+    const pendingDividerId = tab.isStreaming ? insertStreamingCompactionDivider(tab) : null
+    console.warn('[compaction] Requested session compaction', {
+      tabId,
+      source,
+      conversationId: tab.conversationId,
+      messageCount: tab.messages.length,
+      midStream: tab.isStreaming,
+      contextUsageRatio: tab.estimator.estimate?.contextUsageRatio ?? null,
+    })
+
+    try {
+      const settings = useSettingsStore()
+      const { useCheckpointStore } = await import('./checkpoints')
+      const checkpointStore = useCheckpointStore()
+
+      await compactConversationSession({
+        tab,
+        settings: {
+          activeModel: settings.activeModel,
+          activeModelUid: settings.activeModelUid,
+          enabledModels: settings.enabledModels,
+          openai: settings.openai,
+          anthropic: settings.anthropic,
+          google: settings.google,
+          compatibleProviders: settings.compatibleProviders,
+          agent: settings.agent,
+        },
+        source,
+        onPersist: async ({ deletedMessageIds, insertedMessages }) => {
+          const persistedCurrentCount = tab.messages.filter(message =>
+            message.content.trim() !== SESSION_COMPACTING_DIVIDER).length
+          await dbDeleteMessages(deletedMessageIds)
+          await persistCompactionMessages({
+            conversationId: tab.conversationId!,
+            insertedMessages,
+          })
+          await dbUpdateConversationMsgCount(
+            tab.conversationId!,
+            persistedCurrentCount - deletedMessageIds.length + insertedMessages.length,
+          )
+          await checkpointStore.clearConversationCheckpoints(tab.id, tab.conversationId)
+        },
+      })
+
+      snapshotConversationState(tab)
+      console.warn('[compaction] Session compaction completed', {
+        tabId,
+        source,
+        nextMessageCount: tab.messages.length,
+        contextUsageRatio: tab.estimator.estimate?.contextUsageRatio ?? null,
+      })
+      return { ok: true }
+    }
+    catch (error) {
+      removeStreamingCompactionDivider(tab, pendingDividerId)
+      console.warn('[compaction] Session compaction failed', {
+        tabId,
+        source,
+        error: error instanceof Error ? error.message : 'Failed to compact session',
+      })
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Failed to compact session',
+      }
+    }
+    finally {
+      tab.isCompacting = false
+    }
   }
 
   // ── questions ─────────────────────────────────────────────────────────────────
@@ -412,7 +565,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // ── send message ──────────────────────────────────────────────────────────────
 
-  const sendMessage = createSendMessage(
+  const { sendMessage } = createSendMessage(
     tabs,
     activeId,
     activeTab,
@@ -476,6 +629,7 @@ export const useChatStore = defineStore('chat', () => {
     setTabWorkspace,
     setTabModel,
     setTabEstimatorState,
+    compactSession,
     submitAnswers,
     dismissQuestions,
     submitToolPermission,

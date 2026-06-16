@@ -1,4 +1,4 @@
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -85,7 +85,7 @@ enum TerminalEventPayload {
     },
 }
 
-// Guarantees Windows ConPTY starts up successfully by auto-responding 
+// Guarantees Windows ConPTY starts up successfully by auto-responding
 // to the initial startup coordinate query before it can block the shell.
 fn strip_and_reply_to_terminal_queries(
     session: &Arc<TerminalSession>,
@@ -180,7 +180,8 @@ fn build_shell_command(cwd: &Path) -> (CommandBuilder, String) {
     let (mut command, label) = {
         // Prefer Windows PowerShell (`powershell.exe`) on Windows systems.
         // If it's not present, fall back to PowerShell Core (`pwsh`).
-        let shell = if shell_exists_on_path("powershell.exe") || shell_exists_on_path("powershell") {
+        let shell = if shell_exists_on_path("powershell.exe") || shell_exists_on_path("powershell")
+        {
             "powershell.exe"
         } else if shell_exists_on_path("pwsh.exe") || shell_exists_on_path("pwsh") {
             "pwsh.exe"
@@ -277,11 +278,12 @@ pub fn terminal_start(
                 }
                 Ok(count) => {
                     let data = String::from_utf8_lossy(&buffer[..count]).into_owned();
-                    let data = strip_and_reply_to_terminal_queries(&read_session, &session_id, data);
+                    let data =
+                        strip_and_reply_to_terminal_queries(&read_session, &session_id, data);
                     if data.is_empty() {
                         continue;
                     }
-                    
+
                     emit_terminal_event(
                         &read_app,
                         TerminalEventPayload::Output {
@@ -315,25 +317,21 @@ pub fn terminal_start(
             .and_then(|mut child| child.wait().map_err(|error| error.to_string()));
 
         match exit_result {
-            Ok(status) => {
-                emit_terminal_event(
-                    &wait_app,
-                    TerminalEventPayload::Exit {
-                        session_id: wait_session_id,
-                        exit_code: status.exit_code() as i32,
-                        success: status.success(),
-                    },
-                )
-            }
-            Err(message) => {
-                emit_terminal_event(
-                    &wait_app,
-                    TerminalEventPayload::Error {
-                        session_id: wait_session_id,
-                        message,
-                    },
-                )
-            }
+            Ok(status) => emit_terminal_event(
+                &wait_app,
+                TerminalEventPayload::Exit {
+                    session_id: wait_session_id,
+                    exit_code: status.exit_code() as i32,
+                    success: status.success(),
+                },
+            ),
+            Err(message) => emit_terminal_event(
+                &wait_app,
+                TerminalEventPayload::Error {
+                    session_id: wait_session_id,
+                    message,
+                },
+            ),
         }
     });
 

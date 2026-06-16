@@ -145,7 +145,7 @@ export async function buildChatRequestPreview(options: {
   ])
 
   const promptBuild = await buildAgentSystemPrompt({
-    basePrompt: buildSystemPrompt(workspacePath, 'build', osInfo),
+    basePrompt: buildSystemPrompt(workspacePath, 'build', osInfo, settings.agent.gitCoAuthor),
     projectPath: workspacePath,
     requestText: text,
     autoContext: settings.autoContext,
@@ -170,7 +170,8 @@ export async function buildChatRequestPreview(options: {
     },
   ]
 
-  const mentionContext = await buildMentionContext(text, workspacePath).catch(() => '')
+  const readRegistry = new Map<string, { hash: string; complete: boolean; mtimeMs: number | null; sizeBytes: number }>()
+  const mentionContext = await buildMentionContext(text, workspacePath, readRegistry).catch(() => '')
   const apiMessages = applyMentionContextToMessages(
     toModelMessages(draftMessages),
     mentionContext,
@@ -200,7 +201,9 @@ export async function buildChatRequestPreview(options: {
         memoryEnabled: settings.memory.enabled,
         mcpServers: settings.mcpServers,
         disabledToolIds: settings.disabledToolIds,
+        readRegistry,
         ...(osInfo?.shell ? { shell: osInfo.shell } : {}),
+        coAuthor: settings.agent.gitCoAuthor,
       })
     : []
 
@@ -361,9 +364,11 @@ async function buildToolDefinitions(options: {
   memoryEnabled: boolean
   mcpServers: McpServerConfig[]
   disabledToolIds: string[]
+  readRegistry?: Map<string, { hash: string; complete: boolean; mtimeMs: number | null; sizeBytes: number }>
   shell?: 'sh' | 'powershell'
+  coAuthor?: boolean
 }): Promise<PromptToolDefinition[]> {
-  const { projectPath, memoryEnabled, mcpServers, disabledToolIds, shell } = options
+  const { projectPath, memoryEnabled, mcpServers, disabledToolIds, readRegistry, shell, coAuthor } = options
   const [
     { createFilesystemTools },
     { createQuestionsTool },
@@ -371,7 +376,7 @@ async function buildToolDefinitions(options: {
     { createShellTools },
     { createSkillTools },
     { createSpawnSubAgentTool },
-    { createWriteTodoTool },
+    { createTaskTools },
     { createWebTools },
     { createBrowserTools },
   ] = await Promise.all([
@@ -394,9 +399,10 @@ async function buildToolDefinitions(options: {
     }),
   })
 
+  const { reset: _resetTasks, ...taskTools } = createTaskTools(() => {})
   const toolSet: ToolSet = {
     ask_questions: createQuestionsTool((_questions, resolve) => resolve([])),
-    write_todo: createWriteTodoTool(() => {}),
+    ...taskTools,
     ...createMemoryTools(memoryEnabled, null),
     ...createSkillTools(projectPath),
     spawn_subagent: createSpawnSubAgentTool(noopSpawn, () => {}),
@@ -405,8 +411,8 @@ async function buildToolDefinitions(options: {
   }
 
   if (projectPath) {
-    Object.assign(toolSet, createFilesystemTools(projectPath))
-    Object.assign(toolSet, shell ? createShellTools(projectPath, shell) : createShellTools(projectPath))
+    Object.assign(toolSet, createFilesystemTools(projectPath, undefined, readRegistry))
+    Object.assign(toolSet, createShellTools(projectPath, shell, coAuthor))
   }
 
   const builtInTools = Object.entries(filterDisabledTools(toolSet, disabledToolIds)).map(([name, tool]) => ({

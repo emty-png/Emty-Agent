@@ -196,8 +196,20 @@ export async function estimateChatPrompt(
     ),
   )
 
-  const inputCost = calculateCost(tokenEstimate.inputTokens, preview.activeModel.costInput)
-  const projectedOutputCost = calculateCost(projectedOutputTokens, preview.activeModel.costOutput)
+  const inputCost = calculateTieredCost(
+    tokenEstimate.inputTokens,
+    preview.activeModel.costInput,
+    preview.activeModel.costTiers,
+    preview.activeModel.costContextOver200k,
+    'input',
+  )
+  const projectedOutputCost = calculateTieredCost(
+    projectedOutputTokens,
+    preview.activeModel.costOutput,
+    preview.activeModel.costTiers,
+    preview.activeModel.costContextOver200k,
+    'output',
+  )
   const projectedReasoningTokens = preview.thinkingBudgetTokens
   const projectedReasoningCost = calculateCost(projectedReasoningTokens, preview.activeModel.costReasoning)
 
@@ -227,6 +239,40 @@ function calculateCost(tokens: number, ratePerMillion: number | null): number {
     return 0
 
   return (tokens / 1_000_000) * ratePerMillion
+}
+
+function calculateTieredCost(
+  tokens: number,
+  flatRate: number | null,
+  tiers: ChatRequestPreview['activeModel']['costTiers'],
+  contextOver200k: ChatRequestPreview['activeModel']['costContextOver200k'],
+  field: 'input' | 'output',
+): number {
+  if (tokens <= 0)
+    return 0
+
+  // Tiered pricing: find the matching tier based on context size
+  if (tiers?.length) {
+    // Sort tiers by size ascending to find the first that covers this token count
+    const sorted = [...tiers].sort((a, b) => a.tier.size - b.tier.size)
+    const matchingTier = sorted.find(t => tokens <= t.tier.size)
+    if (matchingTier) {
+      const rate = matchingTier[field] ?? flatRate
+      return calculateCost(tokens, rate ?? null)
+    }
+    // Tokens exceed all tier sizes — use the largest tier's rate
+    const largestTier = sorted[sorted.length - 1]!
+    const rate = largestTier[field] ?? flatRate
+    return calculateCost(tokens, rate ?? null)
+  }
+
+  // context_over_200k: use elevated rate when tokens exceed 200k
+  if (contextOver200k && tokens > 200_000) {
+    const rate = contextOver200k[field] ?? flatRate
+    return calculateCost(tokens, rate ?? null)
+  }
+
+  return calculateCost(tokens, flatRate)
 }
 
 async function countAnthropicTokens(

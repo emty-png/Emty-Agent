@@ -34,6 +34,16 @@ window.addEventListener('error', event => {
 })
 
 window.addEventListener('unhandledrejection', event => {
+  // Ignore harmless Tauri IPC race condition when aborting fetch streams or closing channels
+  if (
+    typeof event.reason === 'string'
+    && event.reason.includes('The resource id')
+    && event.reason.includes('is invalid')
+  ) {
+    event.preventDefault()
+    return
+  }
+
   captureFatalError(event.reason, {
     title: 'An async task failed',
     context: 'Unhandled promise rejection',

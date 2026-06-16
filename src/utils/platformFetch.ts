@@ -11,9 +11,11 @@ type TauriHttpModule = typeof import('@tauri-apps/plugin-http')
 function isTauriRuntime(): boolean {
   const tauriGlobal = globalThis as typeof globalThis & {
     __TAURI__?: unknown
+    __TAURI_INTERNALS__?: unknown
   }
 
   return typeof tauriGlobal.__TAURI__ !== 'undefined'
+    || typeof tauriGlobal.__TAURI_INTERNALS__ !== 'undefined'
 }
 
 export async function platformFetch(

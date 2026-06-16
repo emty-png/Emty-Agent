@@ -21,6 +21,7 @@ import {
   dbLoadCheckpoints,
   dbUpdateConversationMsgCount,
 } from '@/db/database'
+import { resetCwd } from '@/utils/tools/shell'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -52,11 +53,13 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
   let _activeCheckpointId: string | null = null
   let _activeTabId: string | null = null
   const _snapshotted = new Set<string>() // paths already captured this turn
+  const _persistedCheckpointIds = new Set<string>()
+  const _persistedCheckpointFiles = new Set<string>()
 
   /**
    * In-memory buffer of file snapshots for the current checkpoint.
-   * These are persisted to DB only in finalizeCheckpoint(), AFTER the
-   * parent checkpoint row is inserted — avoiding FK constraint violations.
+   * Snapshots are written immediately when the checkpoint row is already
+   * persisted, and finalized later as a fallback for early/offline captures.
    */
   const _pendingSnapshots: Array<{
     relativePath: string
@@ -71,12 +74,12 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
    * Create a new checkpoint before a user message is sent.
    * Returns the checkpoint ID so filesystem tools can snapshot against it.
    */
-  function createCheckpoint(
+  async function createCheckpoint(
     tabId: string,
     conversationId: string | null,
     messageIndex: number,
     userMessage: string,
-  ): string {
+  ): Promise<string> {
     const id = makeId()
     const label = userMessage.length > 40
       ? `${userMessage.slice(0, 40)}\u2026`
@@ -104,7 +107,56 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
     _snapshotted.clear()
     _pendingSnapshots.length = 0
 
+    if (conversationId) {
+      try {
+        await dbInsertCheckpoint({
+          id: cp.id,
+          conversation_id: conversationId,
+          message_index: cp.messageIndex,
+          label: cp.label,
+          created_at: cp.timestamp,
+        })
+        _persistedCheckpointIds.add(cp.id)
+      }
+      catch (e) {
+        console.warn('[checkpoints] Failed to persist checkpoint immediately:', e)
+      }
+    }
+
     return id
+  }
+
+  /**
+   * Snapshot every file a shell command is about to mutate. Used by
+   * `run_command` to extend checkpoint coverage to operations like
+   * `sed -i`, `rm`, `mv`, `cp`, `echo > file`, etc. No-ops when no
+   * checkpoint is active.
+   *
+   * Errors are swallowed — a snapshot failure must never block the
+   * command itself.
+   */
+  async function snapshotFilesFromCommand(
+    command: string,
+    cwd: string,
+    projectPath: string,
+  ): Promise<void> {
+    if (!_activeCheckpointId)
+      return
+    if (!command.trim() || !projectPath)
+      return
+
+    try {
+      const { extractShellMutationTargets } = await import(
+        '@/utils/tools/shellMutations',
+      )
+      const targets = await extractShellMutationTargets(command, { cwd, projectPath })
+      for (const t of targets) {
+        await snapshotFile(t.relativePath, t.absolutePath)
+      }
+    }
+    catch (e) {
+      console.warn('[checkpoints] Failed to snapshot shell command mutations:', e)
+    }
   }
 
   /**
@@ -112,11 +164,20 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
    * Called by the filesystem tool wrappers. Deduplicates by path within
    * a single checkpoint (we always want the FIRST pre-mutation state).
    *
-   * Snapshots are buffered in memory and persisted later in finalizeCheckpoint().
+   * Snapshots are kept in memory for restore/finalize and persisted immediately
+   * when the checkpoint row already exists in SQLite.
+   *
+   * @param relativePath — path relative to project root
+   * @param absolutePath — resolved absolute path
+   * @param prefetchedContent — when provided, skips disk read:
+   *   - `string` = file content (tool already loaded it)
+   *   - `null`    = file doesn't exist yet
+   *   - omit/undefined = reads from disk
    */
   async function snapshotFile(
     relativePath: string,
     absolutePath: string,
+    prefetchedContent?: string | null,
   ): Promise<void> {
     if (!_activeCheckpointId)
       return
@@ -130,18 +191,48 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
     let content: string | null = null
     let existed = false
 
-    try {
-      content = await readTextFile(absolutePath)
-      existed = true
+    if (prefetchedContent !== undefined) {
+      // Tool already loaded the content — use it directly
+      content = prefetchedContent
+      existed = prefetchedContent !== null
     }
-    catch {
-      // File doesn't exist yet → will be deleted on restore
-      content = null
-      existed = false
+    else {
+      // No prefetched content — read from disk
+      try {
+        content = await readTextFile(absolutePath)
+        existed = true
+      }
+      catch {
+        // File doesn't exist yet → will be deleted on restore
+        content = null
+        existed = false
+      }
     }
 
-    // Buffer in memory — will be flushed to DB in finalizeCheckpoint()
-    _pendingSnapshots.push({ relativePath, absolutePath, content, existed })
+    // Keep an in-memory copy so finalize/restore can still recover if the
+    // immediate DB write below fails or the checkpoint row is not available yet.
+    const snapshot = { relativePath, absolutePath, content, existed }
+    _pendingSnapshots.push(snapshot)
+
+    const activeCheckpoint = Object.values(checkpointsByTab.value)
+      .flat()
+      .find(c => c.id === _activeCheckpointId)
+    if (!activeCheckpoint?.conversationId || !_persistedCheckpointIds.has(activeCheckpoint.id))
+      return
+
+    try {
+      await dbInsertCheckpointFile({
+        checkpoint_id: activeCheckpoint.id,
+        relative_path: snapshot.relativePath,
+        absolute_path: snapshot.absolutePath,
+        content: snapshot.content,
+        existed: snapshot.existed ? 1 : 0,
+      })
+      _persistedCheckpointFiles.add(`${activeCheckpoint.id}:${key}`)
+    }
+    catch (e) {
+      console.warn('[checkpoints] Failed to persist file snapshot immediately:', e)
+    }
   }
 
   /**
@@ -170,20 +261,25 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
       cp.conversationId = conversationId
     }
 
-    // Persist checkpoint row FIRST, then file snapshots
+    // Ensure the checkpoint row and any snapshots not already written are saved.
     if (cp?.conversationId) {
       try {
-        // 1. Insert checkpoint row
-        await dbInsertCheckpoint({
-          id: cp.id,
-          conversation_id: cp.conversationId,
-          message_index: cp.messageIndex,
-          label: cp.label,
-          created_at: cp.timestamp,
-        })
+        if (!_persistedCheckpointIds.has(cp.id)) {
+          await dbInsertCheckpoint({
+            id: cp.id,
+            conversation_id: cp.conversationId,
+            message_index: cp.messageIndex,
+            label: cp.label,
+            created_at: cp.timestamp,
+          })
+          _persistedCheckpointIds.add(cp.id)
+        }
 
-        // 2. Insert all buffered file snapshots (FK now valid)
         for (const snap of pendingSnapshots) {
+          const key = `${cp.id}:${snap.absolutePath.toLowerCase()}`
+          if (_persistedCheckpointFiles.has(key))
+            continue
+
           try {
             await dbInsertCheckpointFile({
               checkpoint_id: cp.id,
@@ -192,6 +288,7 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
               content: snap.content,
               existed: snap.existed ? 1 : 0,
             })
+            _persistedCheckpointFiles.add(key)
           }
           catch (e) {
             console.warn('[checkpoints] Failed to persist file snapshot:', e)
@@ -303,6 +400,10 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
     // ── Step 6: Remove checkpoints from reactive state ────────────────────
     checkpointsByTab.value[tab.id] = tabCheckpoints.slice(0, targetIdx)
 
+    // ── Step 6b: Reset shell CWD to project root ─────────────────────────
+    if (tab.workspacePath)
+      resetCwd(tab.workspacePath)
+
     // ── Step 7: Refresh the file tree so the project view reflects changes ─
     try {
       const { useFileTreeStore } = await import('./fileTree')
@@ -343,11 +444,38 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
     }
   }
 
+  async function clearConversationCheckpoints(
+    tabId: string,
+    conversationId: string | null,
+  ): Promise<void> {
+    checkpointsByTab.value[tabId] = []
+    if (!conversationId)
+      return
+
+    try {
+      await dbDeleteCheckpointsFrom(conversationId, 0)
+    }
+    catch (e) {
+      console.warn('[checkpoints] Failed to clear conversation checkpoints:', e)
+    }
+  }
+
   /**
    * Clear checkpoints for a tab (on tab close).
    */
-  function clearTab(tabId: string): void {
+  function clearTab(tabId: string, projectPath?: string): void {
+    // If the tab being closed is mid-recording, reset active state
+    if (_activeTabId === tabId) {
+      _activeCheckpointId = null
+      _activeTabId = null
+      _snapshotted.clear()
+      _pendingSnapshots.length = 0
+    }
     delete checkpointsByTab.value[tabId]
+
+    // Reset shell CWD to project root
+    if (projectPath)
+      resetCwd(projectPath)
   }
 
   /**
@@ -361,9 +489,11 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
     checkpointsByTab,
     createCheckpoint,
     snapshotFile,
+    snapshotFilesFromCommand,
     finalizeCheckpoint,
     restoreToCheckpoint,
     loadForConversation,
+    clearConversationCheckpoints,
     clearTab,
     getCheckpoints,
   }

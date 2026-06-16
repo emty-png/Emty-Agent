@@ -1,6 +1,7 @@
 import type { JSONValue, ModelMessage, ToolResultPart } from 'ai'
 import type { ChatTab, Message, ToolEvent } from './types'
 import { isImageMime } from './attachment-types'
+import { SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from './constants'
 
 export function makeId(): string {
   return Math.random().toString(36).slice(2, 9)
@@ -35,8 +36,11 @@ export function newTab(): ChatTab {
     modelUid: null,
     draft: createEmptyDraft(),
     estimator: createEmptyEstimatorState(),
+    isCompacting: false,
     pendingQuestions: null,
     pendingPermissions: [],
+    readRegistry: new Map(),
+    mode: 'build',
   }
 }
 
@@ -53,6 +57,54 @@ function wrapToolOutput(value: unknown): { type: 'text'; value: string } | { typ
   if (typeof value === 'string')
     return { type: 'text', value }
   return { type: 'json', value: (value ?? null) as JSONValue }
+}
+
+/**
+ * Smartly compresses previous turn tool results to save maximum tokens without losing knowledge of the tool call.
+ */
+function smartCompressToolResult(toolName: string, result: unknown): unknown {
+  if (typeof result !== 'object' || result === null) {
+    if (typeof result === 'string' && result.length > 2500)
+      return `...[truncated]...\n${result.slice(-2500)}`
+    return result
+  }
+
+  const cloned = { ...result } as Record<string, unknown>
+
+  // Drop large payloads from file reading / viewing tools
+  if (toolName === 'read_file' || toolName === 'view_file' || toolName === 'browser' || toolName === 'list_dir') {
+    if ('content' in cloned && typeof cloned.content === 'string')
+      cloned.content = '[Content omitted to save context length. File read successfully. Use tool again if needed.]'
+    if ('text' in cloned && typeof cloned.text === 'string')
+      cloned.text = '[Content omitted to save context length. File read successfully. Use tool again if needed.]'
+    if ('output' in cloned && typeof cloned.output === 'string')
+      cloned.output = '[Content omitted to save context length. File read successfully. Use tool again if needed.]'
+  }
+
+  // Truncate massive command outputs
+  if (toolName === 'run_command' || toolName === 'execute_command') {
+    if ('stdout' in cloned && typeof cloned.stdout === 'string' && cloned.stdout.length > 2000)
+      cloned.stdout = `...[truncated]...\n${cloned.stdout.slice(-2000)}`
+    if ('stderr' in cloned && typeof cloned.stderr === 'string' && cloned.stderr.length > 2000)
+      cloned.stderr = `...[truncated]...\n${cloned.stderr.slice(-2000)}`
+    if ('output' in cloned && typeof cloned.output === 'string' && cloned.output.length > 2000)
+      cloned.output = `...[truncated]...\n${cloned.output.slice(-2000)}`
+  }
+
+  if ('diff' in cloned && typeof cloned.diff === 'string' && cloned.diff.length > 4000)
+    cloned.diff = `${cloned.diff.slice(0, 2000)}\n...[diff truncated]...\n${cloned.diff.slice(-2000)}`
+  if ('files' in cloned && Array.isArray(cloned.files)) {
+    cloned.files = cloned.files.map(file => {
+      if (typeof file !== 'object' || file === null)
+        return file
+      const nextFile = { ...file } as Record<string, unknown>
+      if (typeof nextFile.diff === 'string' && nextFile.diff.length > 4000)
+        nextFile.diff = `${nextFile.diff.slice(0, 2000)}\n...[diff truncated]...\n${nextFile.diff.slice(-2000)}`
+      return nextFile
+    })
+  }
+
+  return cloned
 }
 
 /**
@@ -97,11 +149,18 @@ export function toModelMessages(
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i]!
 
-    // Skip messages with errors or completely empty content (unless they have tool data)
-    const hasToolData = persistedToolEvents(m.toolEvents).length > 0
-    if (!hasToolData && !m.content.trim() && !m.mentionContext?.trim() && !m.attachments?.length)
+    const compactDivider = m.content.trim()
+    if (m.role === 'assistant' && (compactDivider === SESSION_COMPACTED_DIVIDER || compactDivider === SESSION_COMPACTING_DIVIDER))
       continue
-    if (m.error)
+
+    // Skip completely empty messages unless they have tool data or an error note.
+    const hasToolData = persistedToolEvents(m.toolEvents).length > 0
+    const errorText = typeof m.error === 'string'
+      ? m.error.trim()
+      : m.error
+        ? String(m.error).trim()
+        : ''
+    if (!hasToolData && !m.content.trim() && !m.mentionContext?.trim() && !m.attachments?.length && !errorText)
       continue
 
     const text = m.content.trim()
@@ -113,6 +172,12 @@ export function toModelMessages(
         ? `${mentionContext}\n\n${text}`
         : mentionContext
       : text
+    const hasPersistedErrorNote = /\[Assistant turn ended with error\/interruption:/.test(baseText)
+    const messageText = errorText && !hasPersistedErrorNote
+      ? baseText
+        ? `${baseText}\n\n[Assistant turn ended with error/interruption: ${errorText}]`
+        : `[Assistant turn ended with error/interruption: ${errorText}]`
+      : baseText
 
     // ── User messages ─────────────────────────────────────────────────
     if (m.role === 'user') {
@@ -131,11 +196,11 @@ export function toModelMessages(
           const fileContext = fileAttachments
             .map(f => `--- ${f.name} ---\n${f.dataUrl}`)
             .join('\n\n')
-          const combinedText = baseText ? `${baseText}\n\n${fileContext}` : fileContext
+          const combinedText = messageText ? `${messageText}\n\n${fileContext}` : fileContext
           content.push({ type: 'text', text: combinedText })
         }
         else {
-          content.push({ type: 'text', text: baseText })
+          content.push({ type: 'text', text: messageText })
         }
 
         // Append image parts
@@ -151,7 +216,7 @@ export function toModelMessages(
         continue
       }
 
-      result.push({ role: 'user' as const, content: baseText })
+      result.push({ role: 'user' as const, content: messageText })
       continue
     }
 
@@ -172,8 +237,8 @@ export function toModelMessages(
       | { type: 'tool-call'; toolCallId: string; toolName: string; input: unknown }
     > = []
 
-    if (text) {
-      assistantContent.push({ type: 'text', text })
+    if (messageText) {
+      assistantContent.push({ type: 'text', text: messageText })
     }
 
     for (const event of toolEvents) {
@@ -194,7 +259,7 @@ export function toModelMessages(
       toolName: event.toolName,
       output: wrapToolOutput(
         event.result !== undefined
-          ? event.result
+          ? smartCompressToolResult(event.toolName, event.result)
           : event.status === 'error'
             ? 'Tool execution failed'
             : 'Success',

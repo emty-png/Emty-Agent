@@ -1,55 +1,100 @@
 ---
 name: skill-factory
-description: Create production-ready SKILL.md packages and supporting resources when the user wants new reusable agent capabilities, skill systems, or skill authoring workflows.
-tags: skill, skills, skill factory, skill system, skill authoring, SKILL.md, agent capability, reusable instructions
+description: Build reusable skills, workflows, and templates
+tags: skill, factory, template, workflow
 ---
 
-This skill creates reusable agent skills as structured packages instead of one-off prompt text.
+# Skill Factory
 
-## Goal
+Create reusable instruction packages that enhance the agent's capabilities for this project.
 
-Turn raw documentation, user intent, API notes, or workflow knowledge into a production-ready skill package the agent can discover and reuse later.
+## How Skills Work
 
-## Skill Package Layout
+Skills are modular guidance files that extend what the agent can do. Each skill is a directory containing a `SKILL.md` file and optional resources.
 
-Create project skills under:
-`.emty-agent/skills/<skill-slug>/SKILL.md`
+## Directory Structure
 
-Optional supporting resources live beside it:
+```
+<skill-root>/
+  SKILL.md          — definition (YAML frontmatter + markdown body)
+  scripts/          — runnable automation
+  references/       — docs loaded on demand
+  assets/           — non-text resources
+```
 
-- `.emty-agent/skills/<skill-slug>/scripts/`
-- `.emty-agent/skills/<skill-slug>/references/`
-- `.emty-agent/skills/<skill-slug>/assets/`
+### SKILL.md
 
-## Authoring Standard
+Required YAML frontmatter:
 
-Every SKILL.md should include:
+```yaml
+---
+name: skill-name
+description: What the skill does
+tags: keyword1, keyword2
+---
+```
 
-1. YAML frontmatter with at least:
-   - `name`
-   - `description`
-   - `tags`
-2. A concise body that explains:
-   - when to use the skill
-   - when not to use it
-   - the expected workflow
-   - resource files to load only when needed
+Optional frontmatter for multi-command skills:
 
-## Factory Workflow
+```yaml
+---
+name: git-workflow
+description: Git workflow automation
+tags: git, commit, branch
+commands:
+  - name: commit
+    description: Create a conventional commit
+  - name: branch
+    description: Create a feature branch
+---
+```
 
-1. Gather the source material first: docs, examples, conventions, APIs, edge cases.
-2. Distill it into reusable operating instructions instead of copying raw docs.
-3. Make the skill narrow and opinionated enough to be reliably invoked.
-4. Write a "pushy" description so the agent does not under-trigger the skill.
-5. Keep the SKILL.md body concise and offload large details to `references/`.
-6. Put runnable automation or repetitive logic into `scripts/`.
-7. Add assets only when they materially improve delivery.
+When `commands` is defined, each command becomes a separate slash command in the dropdown (e.g., `/commit`, `/branch`). When omitted, the skill is invoked as `/skill-<name>`.
 
-## Quality Bar
+## Resource Directories
 
-- The skill should solve one family of tasks well.
-- Instructions should be actionable, not vague theory.
-- The skill should do what its name and description promise, no more and no less.
-- Avoid duplicating repository-wide rules that already belong in AGENTS.md.
-- Prefer durable conventions over task-specific temporary notes.
-- If the skill depends on a reference document, say exactly when to load it.
+- **scripts/** — automation the skill can invoke
+- **references/** — supplementary docs to load on demand
+- **assets/** — non-text resources (images, binaries)
+
+Reference resources in your SKILL.md by relative path (e.g., `references/checklist.md`). The agent loads them with `load_skill_resource`.
+
+## Scope
+
+- **Project** (default): `.emty/skills/` — only available in this project
+- **Global**: `~/.emty/skills/` — available across all projects
+
+Project skills override global skills with the same name.
+
+## Workflow
+
+1. Understand what the user is trying to build
+2. Ask clarifying questions about scope, triggers, and resources
+3. Use the `create_skill` tool to scaffold the skill:
+
+```
+create_skill({
+  name: "api-review",
+  description: "Review REST API design and implementation",
+  tags: ["api", "review", "rest"],
+  scope: "project",
+  content: `## Workflow
+1. Read the API route definitions
+2. Check for REST conventions...`,
+  commands: [
+    { name: "review-endpoint", description: "Review a single endpoint" },
+    { name: "review-api", description: "Review the entire API surface" }
+  ]
+})
+```
+
+4. Walk through the created files with the user
+5. Refine the content if needed
+
+## Guidelines
+
+- **Be specific** — write instructions a junior developer could follow
+- **Include examples** — show the expected input/output
+- **Describe resources** — explain when and how to use scripts/, references/, and assets/
+- **Decide scope** — use project for team-specific skills, global for personal cross-project skills
+- **Use commands** — expose multiple related operations as separate slash commands

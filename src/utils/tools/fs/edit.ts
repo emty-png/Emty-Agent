@@ -1,119 +1,392 @@
-import type { BeforeFileWriteCallback } from './shared'
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
+import type {
+  BeforeFileWriteCallback,
+  FileLockManager,
+  FileReadRegistry,
+  LineEnding,
+  TextEncoding,
+} from './shared'
+import { stat } from '@tauri-apps/plugin-fs'
 import { tool } from 'ai'
 import { z } from 'zod'
-import { safePath } from './shared'
+import { hasBinaryExtension, safePath } from './allowedPaths'
+import {
+  applyLineEnding,
+  createUnifiedDiff,
+  diffLineStats,
+  ensureDir,
+  normalizeLineEndings,
+  parentDirPath,
+  readTextSnapshot,
+  sha256Text,
+  updateReadRegistry,
+  writeEncodedTextFile,
+} from './shared'
+
+const NUMBERED_LINE_PATTERN = /^\s*\d+(?:\t|\s*\|\s?)/gm
+
+const CURLY_TO_STRAIGHT: Record<string, string> = {
+  '\u2018': "'",
+  '\u2019': "'",
+  '\u201C': '"',
+  '\u201D': '"',
+}
+
+interface EditFileResult {
+  file: string
+  status: 'success' | 'error'
+  message: string
+  added?: number
+  removed?: number
+  diff?: string
+}
+
+interface EditInput {
+  file_path: string
+  old_string: string
+  new_string: string
+  replace_all: boolean
+}
+
+interface PreparedEdit {
+  oldString: string
+  newString: string
+  actualOld: string | null
+  usedStrippedLineNumbers: boolean
+}
+
+function normalizeQuotes(str: string): string {
+  return str.replace(/[\u2018\u2019\u201C\u201D]/g, ch => CURLY_TO_STRAIGHT[ch]!)
+}
+
+function findActualString(fileContent: string, searchString: string): string | null {
+  if (searchString === '')
+    return ''
+
+  if (fileContent.includes(searchString))
+    return searchString
+
+  const normalizedSearch = normalizeQuotes(searchString)
+  const normalizedFile = normalizeQuotes(fileContent)
+  const idx = normalizedFile.indexOf(normalizedSearch)
+  if (idx !== -1)
+    return fileContent.substring(idx, idx + searchString.length)
+
+  return null
+}
+
+function stripLineNumbers(text: string): string {
+  return text.replace(NUMBERED_LINE_PATTERN, '')
+}
+
+function countOccurrences(content: string, needle: string): number {
+  if (!needle)
+    return 0
+
+  let count = 0
+  let from = 0
+  while (from <= content.length) {
+    const idx = content.indexOf(needle, from)
+    if (idx === -1)
+      break
+    count++
+    from = idx + needle.length
+  }
+  return count
+}
+
+function prepareEdit(fileBuffer: string, oldString: string, newString: string): PreparedEdit {
+  const normalizedOld = normalizeLineEndings(oldString)
+  const normalizedNew = normalizeLineEndings(newString)
+  const actualOld = findActualString(fileBuffer, normalizedOld)
+  if (actualOld !== null) {
+    return {
+      oldString: normalizedOld,
+      newString: normalizedNew,
+      actualOld,
+      usedStrippedLineNumbers: false,
+    }
+  }
+
+  const strippedOld = stripLineNumbers(normalizedOld)
+  const strippedNew = stripLineNumbers(normalizedNew)
+  const strippedActualOld = strippedOld !== normalizedOld
+    ? findActualString(fileBuffer, strippedOld)
+    : null
+
+  return {
+    oldString: strippedOld,
+    newString: strippedNew,
+    actualOld: strippedActualOld,
+    usedStrippedLineNumbers: strippedActualOld !== null,
+  }
+}
+
+async function processFile(
+  filePath: string,
+  edits: EditInput[],
+  projectPath: string,
+  registry: FileReadRegistry,
+  onBeforeFileWrite: BeforeFileWriteCallback | undefined,
+  lockManager: FileLockManager,
+): Promise<EditFileResult> {
+  let fullPath: string
+  try {
+    fullPath = await safePath(projectPath, filePath, { kind: 'write' })
+  }
+  catch (e) {
+    return { file: filePath, status: 'error', message: `Path error: ${e instanceof Error ? e.message : String(e)}` }
+  }
+
+  if (hasBinaryExtension(filePath))
+    return { file: filePath, status: 'error', message: 'Cannot edit binary files' }
+
+  return lockManager.withLock(fullPath, async () => {
+    const info = await stat(fullPath).catch(() => null)
+    if (info && !info.isFile)
+      return { file: filePath, status: 'error', message: `${filePath} is not a regular file.` }
+
+    const fileExists = info !== null
+    let fileBuffer = ''
+    let originalContent = ''
+    let diskLineEnding: LineEnding = 'lf'
+    let diskEncoding: TextEncoding = 'utf8'
+
+    if (fileExists) {
+      const registryEntry = registry.get(fullPath)
+      if (!registryEntry) {
+        return {
+          file: filePath,
+          status: 'error',
+          message: 'File has not been read yet. Call read_files first before editing.',
+        }
+      }
+
+      let snapshot: Awaited<ReturnType<typeof readTextSnapshot>>
+      try {
+        snapshot = await readTextSnapshot(fullPath)
+      }
+      catch (e) {
+        return { file: filePath, status: 'error', message: `Failed to read file: ${e instanceof Error ? e.message : String(e)}` }
+      }
+
+      const mtimesMatch = registryEntry.mtimeMs !== null
+        && snapshot.mtimeMs !== null
+        && registryEntry.mtimeMs === snapshot.mtimeMs
+      if (!mtimesMatch && registryEntry.hash !== snapshot.hash) {
+        return {
+          file: filePath,
+          status: 'error',
+          message: 'File has been modified since last read. Re-read with read_files before editing.',
+        }
+      }
+
+      fileBuffer = snapshot.content
+      originalContent = snapshot.content
+      diskLineEnding = snapshot.lineEnding
+      diskEncoding = snapshot.encoding
+    }
+    else {
+      const firstOld = edits[0] ? stripLineNumbers(normalizeLineEndings(edits[0].old_string)) : null
+      if (firstOld !== '')
+        return { file: filePath, status: 'error', message: `File does not exist: ${filePath}` }
+    }
+
+    if (fileExists && fileBuffer.length > 0 && edits.length > 0) {
+      const firstOld = stripLineNumbers(normalizeLineEndings(edits[0]!.old_string))
+      if (firstOld === '') {
+        return {
+          file: filePath,
+          status: 'error',
+          message: `Cannot create new file - ${filePath} already exists and is not empty. Use edit_files with an actual old_string, or write_file with rewrite: true.`,
+        }
+      }
+    }
+
+    for (let i = 0; i < edits.length; i++) {
+      const edit = edits[i]!
+      const editIndex = i + 1
+      const snippet = normalizeLineEndings(edit.old_string).slice(0, 30).replace(/\n/g, '\\n')
+      const prepared = prepareEdit(fileBuffer, edit.old_string, edit.new_string)
+
+      if (prepared.oldString === prepared.newString)
+        continue
+
+      if (prepared.actualOld === null) {
+        const hint = prepared.usedStrippedLineNumbers ? ' after removing copied line numbers' : ''
+        return {
+          file: filePath,
+          status: 'error',
+          message: `Edit #${editIndex} failed: old_string starting with '${snippet}...' not found in file${hint}. No edits applied to this file. Check exact wording and read file again if necessary.`,
+        }
+      }
+
+      if (prepared.actualOld === '') {
+        if (fileBuffer.length > 0) {
+          return {
+            file: filePath,
+            status: 'error',
+            message: `Edit #${editIndex} failed: empty old_string can only create or replace an empty file. No edits applied to this file.`,
+          }
+        }
+        fileBuffer = prepared.newString
+        continue
+      }
+
+      if (!edit.replace_all) {
+        const count = countOccurrences(fileBuffer, prepared.actualOld)
+        if (count > 1) {
+          return {
+            file: filePath,
+            status: 'error',
+            message: `Edit #${editIndex} failed: old_string starting with '${snippet}...' was found ${count} times. Include more surrounding lines to uniquely identify the target. No edits applied to this file.`,
+          }
+        }
+      }
+
+      fileBuffer = edit.replace_all
+        ? fileBuffer.split(prepared.actualOld).join(prepared.newString)
+        : fileBuffer.replace(prepared.actualOld, prepared.newString)
+    }
+
+    const parentDir = parentDirPath(fullPath)
+    if (parentDir) {
+      try {
+        await ensureDir(parentDir)
+      }
+      catch (e) {
+        return { file: filePath, status: 'error', message: `Failed to create directories: ${e instanceof Error ? e.message : String(e)}` }
+      }
+    }
+
+    const shouldWrite = !fileExists || fileBuffer !== originalContent
+    if (shouldWrite) {
+      if (onBeforeFileWrite) {
+        try {
+          await onBeforeFileWrite(filePath, fullPath, fileExists ? originalContent : null)
+        }
+        catch (e) {
+          return { file: filePath, status: 'error', message: `Failed to checkpoint file: ${e instanceof Error ? e.message : String(e)}` }
+        }
+      }
+
+      try {
+        await writeEncodedTextFile(fullPath, applyLineEnding(fileBuffer, diskLineEnding), diskEncoding)
+      }
+      catch (e) {
+        return { file: filePath, status: 'error', message: `Failed to write file: ${e instanceof Error ? e.message : String(e)}` }
+      }
+    }
+
+    try {
+      const newInfo = await stat(fullPath)
+      const updatedEntry = {
+        hash: await sha256Text(fileBuffer),
+        complete: true,
+        sizeBytes: newInfo.size,
+        mtimeMs: newInfo.mtime?.getTime() ?? null,
+      }
+      updateReadRegistry(registry, fullPath, updatedEntry)
+    }
+    catch { /* non-fatal */ }
+
+    const { added, removed } = diffLineStats(originalContent, fileBuffer)
+
+    return {
+      file: filePath,
+      status: 'success',
+      message: `Successfully applied ${edits.length} edit${edits.length > 1 ? 's' : ''} sequentially.`,
+      added,
+      removed,
+      diff: createUnifiedDiff(filePath, originalContent, fileBuffer),
+    }
+  })
+}
 
 export function createEditFilesTool(
   projectPath: string,
-  onBeforeFileWrite?: BeforeFileWriteCallback,
+  registry: FileReadRegistry,
+  onBeforeFileWrite: BeforeFileWriteCallback | undefined,
+  lockManager: FileLockManager,
 ) {
   return tool({
-    description: `PREFERRED way to modify existing files. Applies targeted string replacements — faster and safer than rewriting. Batches edits across files in one call.
-Use write_files only for new files or full rewrites.
+    description: `Apply one or more search-and-replace edits to existing files. Edits are applied sequentially per file; if any edit fails, all edits for that file are rolled back (no partial writes).
+
+You MUST read a file with read_files before editing it.
 
 Rules:
-- oldString must match exactly (whitespace, indentation).
-- oldString must be unique in the file; expand context if needed.
-- Edits per file applied top-to-bottom. Failed edits are reported but don't block others.`,
+- old_string must exactly match text in the file. If not found, a quote-normalized fallback will attempt to match regardless of curly vs straight quotes.
+- If old_string matches multiple locations and replace_all is false, the edit fails - include more surrounding context to uniquely identify the target.
+- Use replace_all to replace every occurrence of old_string.
+- To create a new file from scratch, use old_string: "" with the file that does not exist yet.`,
+
     inputSchema: z.object({
-      edits: z.preprocess(
-        val => (Array.isArray(val) ? val : [val]),
-        z.array(z.object({
-          path: z.string().describe('File path relative to the project root.'),
-          oldString: z.string().describe('Exact string to find and replace. Must be unique in the file.'),
-          newString: z.string().describe('String to replace oldString with. Can be empty to delete.'),
-        })).min(1),
-      ).describe('List of edits to apply.'),
+      edits: z
+        .array(
+          z.object({
+            file_path: z
+              .string()
+              .describe('The path to the file to edit. Can be absolute or relative to the project root.'),
+            old_string: z
+              .string()
+              .describe('The exact string to find and replace. Must be unique in the file unless replace_all is true.'),
+            new_string: z
+              .string()
+              .describe('The string to replace old_string with.'),
+            replace_all: z
+              .boolean()
+              .optional()
+              .default(false)
+              .describe('If true, replace all occurrences of old_string. Default: false.'),
+          }),
+        )
+        .min(1)
+        .describe('A list of edit operations to apply.'),
     }),
+
     execute: async ({ edits }) => {
-      // Group edits by file path so we read each file once
-      const byFile = new Map<string, { oldString: string; newString: string }[]>()
+      const grouped = new Map<string, EditInput[]>()
       for (const edit of edits) {
-        const list = byFile.get(edit.path) ?? []
-        list.push({ oldString: edit.oldString, newString: edit.newString })
-        byFile.set(edit.path, list)
+        const existing = grouped.get(edit.file_path)
+        if (existing)
+          existing.push(edit)
+        else
+          grouped.set(edit.file_path, [edit])
       }
 
-      const edited: string[] = []
-      const errors: string[] = []
+      const results: EditFileResult[] = []
       let totalAdded = 0
       let totalRemoved = 0
 
-      for (const [inputPath, fileEdits] of byFile) {
-        let fullPath: string
-        try { fullPath = await safePath(projectPath, inputPath) }
-        catch (e) {
-          errors.push(`${inputPath}: ${e instanceof Error ? e.message : String(e)}`)
-          continue
-        }
-
-        // Snapshot before mutation
-        if (onBeforeFileWrite) {
-          try { await onBeforeFileWrite(inputPath, fullPath) }
-          catch { /* snapshot failure must not block tool */ }
-        }
-
-        let content: string
-        try { content = await readTextFile(fullPath) }
-        catch (e) {
-          errors.push(`${inputPath}: Cannot read file — ${e instanceof Error ? e.message : String(e)}`)
-          continue
-        }
-
-        const originalContent = content
-        const fileErrors: string[] = []
-        const appliedRanges: string[] = []
-
-        for (const { oldString, newString } of fileEdits) {
-          if (!content.includes(oldString)) {
-            // Provide a useful diagnostic: show the first differing chars
-            fileErrors.push(
-              `String not found in file: ${JSON.stringify(oldString.slice(0, 80))}${oldString.length > 80 ? '…' : ''}`,
-            )
-            continue
-          }
-
-          // Check for ambiguity — the same string appearing more than once
-          const firstIdx = content.indexOf(oldString)
-          const lastIdx = content.lastIndexOf(oldString)
-          if (firstIdx !== lastIdx) {
-            fileErrors.push(
-              `Ambiguous match: ${JSON.stringify(oldString.slice(0, 60))}${oldString.length > 60 ? '…' : ''} appears multiple times. Make oldString more specific.`,
-            )
-            continue
-          }
-
-          // Calculate line range for the label
-          const before = content.slice(0, firstIdx)
-          const startLine = before.split('\n').length
-          const endLine = startLine + oldString.split('\n').length - 1
-          appliedRanges.push(`${startLine}–${endLine}`)
-          // Tally line-level diff for this replacement.
-          // Empty newString means pure deletion — counts as 0 lines added.
-          totalAdded += newString.length > 0 ? newString.split('\n').length : 0
-          totalRemoved += oldString.split('\n').length
-          content = content.slice(0, firstIdx) + newString + content.slice(firstIdx + oldString.length)
-        }
-
-        if (fileErrors.length > 0) {
-          errors.push(...fileErrors.map(e => `${inputPath}: ${e}`))
-        }
-
-        // Only write if at least one edit was successfully applied
-        if (content !== originalContent) {
-          try {
-            await writeTextFile(fullPath, content)
-            const rangeStr = appliedRanges.length > 0 ? ` lines ${appliedRanges.join(', ')}` : ''
-            edited.push(`${inputPath}${rangeStr}`)
-          }
-          catch (e) {
-            errors.push(`${inputPath}: Write failed — ${e instanceof Error ? e.message : String(e)}`)
-          }
+      for (const [filePath, fileEdits] of grouped) {
+        const result = await processFile(filePath, fileEdits, projectPath, registry, onBeforeFileWrite, lockManager)
+        results.push(result)
+        if (result.status === 'success') {
+          totalAdded += result.added ?? 0
+          totalRemoved += result.removed ?? 0
         }
       }
 
-      return { edited, added: totalAdded, removed: totalRemoved, ...(errors.length > 0 ? { errors } : {}) }
+      const failed = results.filter(r => r.status === 'error')
+      const succeeded = results.filter(r => r.status === 'success')
+
+      let message: string
+      if (failed.length === 0) {
+        message = `Successfully applied edits to ${succeeded.length} file${succeeded.length > 1 ? 's' : ''}.`
+      }
+      else if (succeeded.length === 0) {
+        message = `All edits failed:\n${failed.map(r => `  ${r.file}: ${r.message}`).join('\n')}`
+      }
+      else {
+        message = `Applied edits to ${succeeded.length} file${succeeded.length > 1 ? 's' : ''}. ${failed.length} failed:\n${failed.map(r => `  ${r.file}: ${r.message}`).join('\n')}`
+      }
+
+      return {
+        message,
+        added: totalAdded,
+        removed: totalRemoved,
+        diff: succeeded.map(r => r.diff).filter(Boolean).join('\n\n'),
+        files: results,
+      }
     },
   })
 }

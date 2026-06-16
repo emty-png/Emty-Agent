@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ddg-search"
+description = "Enables the ddg_search command without any pre-configured scope."
+commands.allow = ["ddg_search"]
+
+[[permission]]
+identifier = "deny-ddg-search"
+description = "Denies the ddg_search command without any pre-configured scope."
+commands.deny = ["ddg_search"]

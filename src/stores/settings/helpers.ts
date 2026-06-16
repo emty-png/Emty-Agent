@@ -1,4 +1,4 @@
-import type { DiscoveredModel } from './types'
+import type { CompatibleProviderModel, DiscoveredModel } from './types'
 import type { MDevData } from '@/utils/modelsdev'
 import {
   CORE_MDEV_IDS,
@@ -10,8 +10,10 @@ import {
   getModelFamily,
   getModelStatus,
   getProviderModels,
+  getReasoningOptions,
   getReleaseDate,
   isChatModel,
+  lookupModel,
   modelDisplayName,
   PRESET_MDEV_IDS,
   resolveModelMetadata,
@@ -53,8 +55,16 @@ export function mergeExplicitProviderModels(
 ): DiscoveredModel[] {
   const prevMap = new Map(existing.filter(m => m.providerId === providerId).map(m => [m.id, m]))
   const updated = rawModelIds
-    .filter(rawModelId => isChatModel(mdevData, mdevId, rawModelId))
-    .map(rawModelId => toDiscoveredModel(prevMap, providerId, providerName, mdevData, mdevId, rawModelId))
+    .map(rawModelId => {
+      // Model exists in models.dev — use full metadata if it's a chat model
+      if (lookupModel(mdevData, mdevId, rawModelId)) {
+        if (!isChatModel(mdevData, mdevId, rawModelId))
+          return null // in models.dev but not a chat model (e.g. embeddings) — skip
+        return toDiscoveredModel(prevMap, providerId, providerName, mdevData, mdevId, rawModelId)
+      }
+      // Not in models.dev at all — create a fallback entry so it's still usable
+      return createFallbackDiscoveredModel(prevMap, providerId, providerName, rawModelId)
+    })
     .filter((model): model is DiscoveredModel => model !== null)
 
   return [...existing.filter(m => m.providerId !== providerId), ...updated]
@@ -62,6 +72,48 @@ export function mergeExplicitProviderModels(
 
 export function makeId(): string {
   return Math.random().toString(36).slice(2, 9)
+}
+
+/**
+ * Apply display name and context limit overrides from manually defined models.
+ */
+export function applyManualModelOverrides(
+  models: DiscoveredModel[],
+  providerId: string,
+  manualModels?: CompatibleProviderModel[],
+): void {
+  if (!manualModels?.length)
+    return
+  const overrideMap = new Map(
+    manualModels
+      .filter(m => m.id.trim())
+      .map(m => [m.id.trim(), m]),
+  )
+  for (const model of models) {
+    if (model.providerId !== providerId)
+      continue
+    const override = overrideMap.get(model.id)
+    if (!override)
+      continue
+    if (override.name.trim())
+      model.name = override.name.trim()
+    if (override.contextLimit && override.contextLimit > 0)
+      model.contextLimit = override.contextLimit
+  }
+}
+
+function resolveSdkType(mdevData: MDevData, mdevId: string): 'openai' | 'anthropic' | 'google' | null {
+  const provider = mdevData[mdevId]
+  if (!provider?.npm)
+    return null
+  const npm = provider.npm
+  if (npm === '@ai-sdk/anthropic')
+    return 'anthropic'
+  if (npm === '@ai-sdk/openai')
+    return 'openai'
+  if (npm === '@ai-sdk/google' || npm === '@ai-sdk/google-vertex')
+    return 'google'
+  return null
 }
 
 function toDiscoveredModel(
@@ -101,9 +153,51 @@ function toDiscoveredModel(
     costInput: cost.input,
     costOutput: cost.output,
     costReasoning: cost.reasoning,
+    costTiers: cost.tiers,
+    costContextOver200k: cost.context_over_200k,
     knowledgeCutoff: getKnowledgeCutoff(mdevData, mdevId, rawModelId),
     releaseDate: getReleaseDate(mdevData, mdevId, rawModelId),
     lastUpdated: getLastUpdated(mdevData, mdevId, rawModelId),
     status: getModelStatus(mdevData, mdevId, rawModelId),
+    reasoningOptions: getReasoningOptions(mdevData, mdevId, rawModelId),
+    sdkType: resolveSdkType(mdevData, mdevId),
+  }
+}
+
+function createFallbackDiscoveredModel(
+  prevMap: Map<string, DiscoveredModel>,
+  providerId: string,
+  providerName: string,
+  rawModelId: string,
+): DiscoveredModel {
+  const prev = prevMap.get(rawModelId)
+  return {
+    uid: `${providerId}::${rawModelId}`,
+    id: rawModelId,
+    name: rawModelId,
+    providerId,
+    providerName,
+    enabled: prev?.enabled ?? true,
+    supportsThinking: false,
+    thinkingEffort: prev?.thinkingEffort ?? 'medium',
+    supportsToolCalls: true,
+    supportsAttachments: false,
+    supportsStructuredOutput: false,
+    supportsTemperature: true,
+    family: null,
+    inputModalities: ['text'],
+    outputModalities: ['text'],
+    contextLimit: null,
+    costInput: null,
+    costOutput: null,
+    costReasoning: null,
+    costTiers: null,
+    costContextOver200k: null,
+    knowledgeCutoff: null,
+    releaseDate: null,
+    lastUpdated: null,
+    status: null,
+    reasoningOptions: null,
+    sdkType: null,
   }
 }

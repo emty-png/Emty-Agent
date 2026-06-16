@@ -8,6 +8,8 @@ export interface CommandEntry {
   label: string
   description: string
   type: 'action' | 'skill'
+  skillId?: string
+  whenToUse?: string
 }
 
 const SLASH_PATTERN = /(?:^|\n)\/([\w\-]*)$/
@@ -39,6 +41,12 @@ export function useSlashCommand(
           type: 'action',
         },
         {
+          id: 'plan',
+          label: '/plan',
+          description: 'Enter plan mode to design the implementation without making code changes',
+          type: 'action',
+        },
+        {
           id: 'init',
           label: '/init',
           description: 'Generate or update AGENTS.md for this project',
@@ -47,12 +55,28 @@ export function useSlashCommand(
       ]
 
       for (const skill of skills) {
-        commands.push({
-          id: `skill-${skill.id}`,
-          label: `/skill-${skill.name}`,
-          description: skill.title,
-          type: 'skill',
-        })
+        if (skill.commands.length > 0) {
+          for (const cmd of skill.commands) {
+            commands.push({
+              id: `skill-${skill.id}-${cmd.name}`,
+              label: `/${cmd.name}`,
+              description: cmd.description,
+              type: 'skill',
+              skillId: skill.id,
+              ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+            })
+          }
+        }
+        else {
+          commands.push({
+            id: `skill-${skill.id}`,
+            label: `/skill-${skill.name}`,
+            description: skill.title,
+            type: 'skill',
+            skillId: skill.id,
+            ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+          })
+        }
       }
 
       allCommands.value = commands
@@ -157,6 +181,28 @@ export function useSlashCommand(
     })
   }
 
+  function insertSkillChip(entry: CommandEntry) {
+    const before = text.value.slice(0, slashStart.value)
+    const queryEnd = slashStart.value + 1 + slashQuery.value.length
+    const after = text.value.slice(queryEnd)
+    const chipText = `[skill:${entry.skillId}]`
+    const trailingSpace = /^\s/.test(after) ? '' : ' '
+
+    text.value = `${before}${chipText}${trailingSpace}${after}`
+    close()
+
+    nextTick(() => {
+      const el = textareaRef.value
+      if (!el)
+        return
+      const pos = before.length + chipText.length + trailingSpace.length
+      el.setSelectionRange(pos, pos)
+      el.focus()
+      el.style.height = 'auto'
+      el.style.height = `${Math.min(el.scrollHeight, 180)}px`
+    })
+  }
+
   function close(): void {
     isOpen.value = false
     slashStart.value = -1
@@ -174,6 +220,7 @@ export function useSlashCommand(
     setSelectedIdx,
     selectEntry,
     replaceWithText,
+    insertSkillChip,
     close,
   }
 }

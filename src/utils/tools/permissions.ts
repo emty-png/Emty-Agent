@@ -3,7 +3,7 @@ import { tool } from 'ai'
 
 export type ToolPermissionMode = 'ask' | 'auto'
 export type ToolPermissionDecision = 'allow-once' | 'allow-session' | 'deny'
-const NO_PERMISSION_TOOL_NAMES = new Set(['ask_questions', 'write_todo'])
+const NO_PERMISSION_TOOL_NAMES = new Set(['ask_questions', 'create_task', 'update_task', 'list_tasks', 'get_task', 'sleep', 'write_plan'])
 
 export interface ToolPermissionRequest {
   tabId: string
@@ -75,19 +75,23 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
   actionDetails: string[]
 } {
   switch (toolName) {
-    case 'list_directory':
+    case 'list_directory': {
+      const ignore = asStringList(args.ignore)
       return {
         actionTitle: `List ${formatPath(args.path)}`,
         actionDetails: [
           `Directory: ${formatPath(args.path)}`,
-          `Hidden entries: ${args.showHidden ? 'included' : 'excluded'}`,
+          ...(ignore.length > 0 ? [`Ignore: ${formatList(ignore)}`] : []),
         ],
       }
+    }
 
     case 'read_files': {
-      const paths = asStringList(args.paths)
-      const offset = typeof args.offset === 'number' ? args.offset : 0
-      const limit = typeof args.limit === 'number' ? args.limit : 500
+      const paths = Array.isArray(args.file_paths)
+        ? args.file_paths.filter((p): p is string => typeof p === 'string')
+        : []
+      const offset = typeof args.offset === 'number' ? args.offset : 1
+      const limit = typeof args.limit === 'number' ? args.limit : 300
       return {
         actionTitle: `Read ${paths.length === 1 ? paths[0] : `${paths.length} files`}`,
         actionDetails: [
@@ -97,12 +101,24 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
       }
     }
 
-    case 'write_files': {
+    case 'write_files':
+    case 'write_file': {
+      if (toolName === 'write_file') {
+        const path = typeof args.file_path === 'string' ? args.file_path : 'none specified'
+        return {
+          actionTitle: `Write ${path}`,
+          actionDetails: [
+            `Target: ${path}`,
+            'Action: create a new file or fully replace the existing contents',
+          ],
+        }
+      }
+
       const files = Array.isArray(args.files)
         ? args.files
-            .filter((file): file is { path: string } =>
+            .filter((file): file is { path: string; createOnly?: boolean } =>
               typeof file === 'object' && file != null && 'path' in file && typeof file.path === 'string')
-            .map(file => file.path)
+            .map(file => file.createOnly ? `${file.path} (create only)` : file.path)
         : []
       return {
         actionTitle: `Write ${files.length === 1 ? files[0] : `${files.length} files`}`,
@@ -115,35 +131,20 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
 
     case 'edit_files': {
       const edits = Array.isArray(args.edits)
-        ? args.edits.filter((edit): edit is { path: string } =>
-            typeof edit === 'object' && edit != null && 'path' in edit && typeof edit.path === 'string')
+        ? args.edits.filter((edit): edit is Record<string, unknown> =>
+            typeof edit === 'object' && edit != null)
         : []
-      const uniquePaths = [...new Set(edits.map(edit => edit.path))]
+      const uniquePaths = [...new Set(
+        edits
+          .map(edit => typeof edit.file_path === 'string' ? edit.file_path : '')
+          .filter(Boolean),
+      )]
       return {
         actionTitle: `Edit ${uniquePaths.length === 1 ? uniquePaths[0] : `${uniquePaths.length} files`}`,
         actionDetails: [
           `Targets: ${uniquePaths.length > 0 ? formatList(uniquePaths) : 'none specified'}`,
           `Edit operations: ${edits.length}`,
         ],
-      }
-    }
-
-    case 'modify_files': {
-      const operations = Array.isArray(args.operations)
-        ? args.operations.filter((operation): operation is Record<string, unknown> => typeof operation === 'object' && operation != null)
-        : []
-      return {
-        actionTitle: `Apply ${operations.length} filesystem operation${operations.length === 1 ? '' : 's'}`,
-        actionDetails: operations.slice(0, 5).map(operation => {
-          const op = String(operation.op ?? 'operation')
-          if (op === 'delete')
-            return `Delete ${formatPath(operation.path)}`
-          if (op === 'mkdir')
-            return `Create directory ${formatPath(operation.path)}`
-          if (op === 'copy' || op === 'move' || op === 'rename')
-            return `${op[0]?.toUpperCase() ?? ''}${op.slice(1)} ${formatPath(operation.from)} -> ${formatPath(operation.to)}`
-          return truncate(JSON.stringify(operation), 100)
-        }),
       }
     }
 
@@ -162,51 +163,78 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
         actionDetails: [
           `Pattern: ${quoted(args.pattern, 100)}`,
           `Search root: ${formatPath(args.path)}`,
-          ...(typeof args.fileGlob === 'string' ? [`File filter: ${args.fileGlob}`] : []),
-          ...(args.caseSensitive ? ['Case-sensitive search enabled'] : []),
-          ...(args.fuzzy ? ['Fuzzy matching enabled'] : []),
+          ...(typeof args.glob === 'string' ? [`File filter: ${args.glob}`] : []),
+          ...(args.case_sensitive === false ? ['Case-insensitive'] : []),
+          ...(args.files_only ? ['Files only'] : []),
         ],
       }
 
     case 'run_command': {
-      const commands = asStringList(args.commands)
+      const isBg = args.is_background === true
+      const command = typeof args.command === 'string' ? args.command : ''
+      const timeout = typeof args.timeout_ms === 'number' ? Math.round(args.timeout_ms / 1000) : 120
+
+      if (isBg) {
+        return {
+          actionTitle: 'Start background command',
+          actionDetails: [`Command: ${truncate(command, 140)}`],
+        }
+      }
+
       return {
-        actionTitle: `Run ${commands.length === 1 ? 'shell command' : `${commands.length} shell commands`}`,
-        actionDetails: commands.slice(0, 4).map((command, index) => `Step ${index + 1}: ${truncate(command, 120)}`),
+        actionTitle: 'Run shell command',
+        actionDetails: [
+          `Command: ${truncate(command, 120)}`,
+          ...(timeout !== 120 ? [`Timeout: ${timeout}s`] : []),
+        ],
       }
     }
 
     case 'git_command': {
-      const commands = Array.isArray(args.commands)
-        ? args.commands.filter((command): command is { args: string[] } =>
-            typeof command === 'object' && command != null && 'args' in command && Array.isArray(command.args))
-        : []
+      const action = typeof args.action === 'string' ? args.action : 'exec'
+      if (action === 'status') {
+        return {
+          actionTitle: 'Check git task status',
+          actionDetails: [`Task id: ${String(args.id ?? 'unknown')}`],
+        }
+      }
+      if (action === 'kill') {
+        return {
+          actionTitle: 'Stop git task',
+          actionDetails: [`Task id: ${String(args.id ?? 'unknown')}`],
+        }
+      }
+      if (action === 'list') {
+        return {
+          actionTitle: 'List command tasks',
+          actionDetails: ['Show all tracked shell and git tasks.'],
+        }
+      }
+
+      const commands = [
+        ...(typeof args.command === 'string'
+          ? [{ args: args.command.split(/\s+/).filter(Boolean) }]
+          : Array.isArray(args.command)
+            ? [{ args: args.command.filter((part: unknown): part is string => typeof part === 'string' && part.trim().length > 0) }]
+            : []),
+        ...(Array.isArray(args.commands)
+          ? args.commands.flatMap(command => {
+              if (typeof command === 'string')
+                return [{ args: command.split(/\s+/).filter(Boolean) }]
+              if (typeof command === 'object' && command != null && 'args' in command && Array.isArray(command.args))
+                return [{ args: command.args.filter((part: unknown): part is string => typeof part === 'string' && part.trim().length > 0) }]
+              return []
+            })
+          : []),
+      ].filter(command => command.args.length > 0)
       return {
         actionTitle: `Run ${commands.length === 1 ? 'git command' : `${commands.length} git commands`}`,
-        actionDetails: commands.slice(0, 4).map((command, index) => `Step ${index + 1}: git ${formatCommand(command.args)}`),
-      }
-    }
-
-    case 'run_bg_command':
-      return {
-        actionTitle: 'Start background command',
         actionDetails: [
-          `Command: ${truncate(String(args.command ?? ''), 140)}`,
-          ...(typeof args.label === 'string' && args.label.trim() ? [`Label: ${args.label.trim()}`] : []),
+          ...commands.slice(0, 4).map((command, index) => `Step ${index + 1}: git ${formatCommand(command.args)}`),
+          ...(typeof args.waitForMs === 'number' ? [`Wait before returning: ${args.waitForMs} ms`] : []),
         ],
       }
-
-    case 'bg_command_status':
-      return {
-        actionTitle: 'Check background command status',
-        actionDetails: [`Process id: ${String(args.id ?? 'unknown')}`],
-      }
-
-    case 'kill_bg_command':
-      return {
-        actionTitle: 'Stop background command',
-        actionDetails: [`Process id: ${String(args.id ?? 'unknown')}`],
-      }
+    }
 
     case 'web_search': {
       const queries = asStringList(args.queries)
@@ -327,16 +355,42 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
       }
     }
 
-    case 'write_todo': {
-      const items = Array.isArray(args.items)
-        ? args.items.filter((item): item is { text: string; done: boolean } =>
-            typeof item === 'object' && item != null && 'text' in item && typeof item.text === 'string')
-        : []
+    case 'create_task':
       return {
-        actionTitle: 'Update todo list',
-        actionDetails: items.slice(0, 6).map(item => `${item.done ? 'Done' : 'Open'}: ${truncate(item.text, 120)}`),
+        actionTitle: `Create task: ${truncate(String(args.subject ?? ''), 80)}`,
+        actionDetails: [
+          `Subject: ${truncate(String(args.subject ?? ''), 120)}`,
+          ...(typeof args.description === 'string'
+            ? [`Description: ${truncate(args.description, 120)}`]
+            : []),
+        ],
       }
-    }
+
+    case 'update_task':
+      return {
+        actionTitle: args.status === 'deleted'
+          ? `Delete task #${String(args.taskId ?? '?')}`
+          : `Update task #${String(args.taskId ?? '?')}`,
+        actionDetails: [
+          `Task: #${String(args.taskId ?? '?')}`,
+          ...(typeof args.status === 'string' ? [`Status → ${args.status}`] : []),
+          ...(typeof args.subject === 'string'
+            ? [`Subject: ${truncate(args.subject, 100)}`]
+            : []),
+        ],
+      }
+
+    case 'list_tasks':
+      return {
+        actionTitle: 'List all tasks',
+        actionDetails: ['Read the current task list.'],
+      }
+
+    case 'get_task':
+      return {
+        actionTitle: `Get task #${String(args.taskId ?? '?')}`,
+        actionDetails: [`Task: #${String(args.taskId ?? '?')}`],
+      }
 
     case 'remember_memory':
       return {
@@ -374,6 +428,11 @@ export function wrapToolSetWithPermissions(
     tabId: string
     requestPermission: RequestToolPermission
     getToolLabel: (toolName: string, args: Record<string, unknown>) => string
+    onToolExecutionStart?: (event: {
+      toolName: string
+      args: Record<string, unknown>
+      toolCallId?: string
+    }) => void
   },
 ): ToolSet {
   return Object.fromEntries(
@@ -383,10 +442,23 @@ export function wrapToolSetWithPermissions(
         description: toolDef.description ?? '',
         inputSchema: toolDef.inputSchema,
         execute: async (args, execOptions) => {
-          if (NO_PERMISSION_TOOL_NAMES.has(toolName))
-            return await toolDef.execute?.(args, execOptions)
-
           const normalizedArgs = (args ?? {}) as Record<string, unknown>
+          const toolCallId = typeof (execOptions as { toolCallId?: unknown }).toolCallId === 'string'
+            ? (execOptions as { toolCallId: string }).toolCallId
+            : undefined
+          const notifyExecutionStart = () => {
+            options.onToolExecutionStart?.({
+              toolName,
+              args: normalizedArgs,
+              ...(toolCallId ? { toolCallId } : {}),
+            })
+          }
+
+          if (NO_PERMISSION_TOOL_NAMES.has(toolName)) {
+            notifyExecutionStart()
+            return await toolDef.execute?.(args, execOptions)
+          }
+
           const preview = buildPermissionPreview(toolName, normalizedArgs)
           const decision = await options.requestPermission({
             tabId: options.tabId,
@@ -399,6 +471,7 @@ export function wrapToolSetWithPermissions(
           if (decision === 'deny')
             throw new ToolPermissionDeniedError(toolName)
 
+          notifyExecutionStart()
           return await toolDef.execute?.(args, execOptions)
         },
       }),

@@ -63,11 +63,11 @@ const MAX_ENTRIES = 500
 const MAX_VISIBLE = 60
 
 /**
- * Matches "@" followed by zero or more path-legal chars at the END of a string.
+ * Matches "@" or "@[" followed by zero or more path-legal chars at the END of a string.
  * Path chars: word chars (a-z A-Z 0-9 _), dot, forward slash, hyphen.
- * The capture group is the query text after "@".
+ * The capture group is the query text after "@" or "@[".
  */
-const AT_PATTERN = /@([\w./\-]*)$/
+const AT_PATTERN = /@\[?([\w./\-]*)$/
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -95,7 +95,7 @@ export function useAtMention(
   /** Character index of the "@" symbol in text.value. */
   const atStart = ref(-1)
 
-  /** Text typed after "@", up to the cursor. */
+  /** Text typed after "@" or "@[", up to the cursor. */
   const atQuery = ref('')
 
   /** Keyboard-nav cursor within filteredEntries. */
@@ -278,12 +278,12 @@ export function useAtMention(
 
   /** Replace the @<query> token in the textarea with the chosen path. */
   function selectEntry(entry: FsEntry): void {
-    // Build the full mention string e.g. "@src/components/"
-    const mention = `@${entry.path}`
+    // Build the full mention string e.g. "@[src/components/]"
+    const mention = `@[${entry.path}]`
 
     // Text before "@", text after the query (right of cursor)
     const before = text.value.slice(0, atStart.value)
-    const queryEnd = atStart.value + 1 + atQuery.value.length
+    const queryEnd = atStart.value + (text.value.slice(atStart.value).match(AT_PATTERN)?.[0].length ?? 0)
     const after = text.value.slice(queryEnd)
 
     // Add a trailing space so the user can keep typing naturally,

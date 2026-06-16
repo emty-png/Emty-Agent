@@ -3,6 +3,19 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { safePath, shouldSkipEntry } from './shared'
 
+/** Simple glob-to-regex converter for ignore patterns. */
+function globToRegex(glob: string): RegExp {
+  const escaped = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.')
+  return new RegExp(`^${escaped}$`)
+}
+
+function matchesIgnore(name: string, ignorePatterns: RegExp[]): boolean {
+  return ignorePatterns.some(re => re.test(name))
+}
+
 function formatListing(
   entries: { name: string; type: 'dir' | 'file' | 'symlink' }[],
   basePath: string,
@@ -19,28 +32,35 @@ function formatListing(
 
 export function createListDirectoryTool(projectPath: string) {
   return tool({
-    description: 'List files and directories in a project folder. Build artifacts (node_modules, dist, .git, etc.) skipped by default. Call this before making assumptions about project structure.',
+    description:
+      'Lists files and directories in a given path. The path parameter must be an absolute path, not a relative path. You can optionally provide an array of glob patterns to ignore with the ignore parameter. You should generally prefer the Glob and Grep tools, if you know which directories to search.',
     inputSchema: z.object({
-      path: z.string().describe('Directory path relative to the project root. Use "." for root.'),
-      showHidden: z.boolean().optional().describe('Include dotfiles/dotdirs. Default: false.'),
+      path: z.string().describe('The absolute path to the directory to list (must be absolute, not relative)'),
+      ignore: z.array(z.string()).optional().describe('List of glob patterns to ignore'),
     }),
-    execute: async ({ path: inputPath, showHidden = false }) => {
-      let fullPath: string
-      try { fullPath = await safePath(projectPath, inputPath) }
-      catch (e) { return { error: e instanceof Error ? e.message : String(e) } }
+    execute: async ({ path: inputPath, ignore }) => {
+      let resolvedPath: string
+      try {
+        resolvedPath = await safePath(projectPath, inputPath, { kind: 'list' })
+      }
+      catch (e) {
+        return { error: e instanceof Error ? e.message : String(e) }
+      }
 
       let raw: Awaited<ReturnType<typeof readDir>>
-      try { raw = await readDir(fullPath) }
+      try { raw = await readDir(resolvedPath) }
       catch (e) { return { error: `Cannot read "${inputPath}": ${e instanceof Error ? e.message : String(e)}` } }
 
+      const ignorePatterns = (ignore ?? []).map(globToRegex)
+
       const entries = raw
-        .filter(e => e.name && !shouldSkipEntry(e.name, showHidden))
+        .filter(e => e.name && !shouldSkipEntry(e.name, true) && !matchesIgnore(e.name, ignorePatterns))
         .map(e => ({
           name: e.name!,
           type: e.isDirectory ? 'dir' as const : e.isSymlink ? 'symlink' as const : 'file' as const,
         }))
 
-      return { result: formatListing(entries, inputPath), count: entries.length }
+      return { result: formatListing(entries, resolvedPath), count: entries.length }
     },
   })
 }

@@ -10,19 +10,25 @@ function getOllamaTagsUrl(baseURL: string): string {
   return `${root}/api/tags`
 }
 
-export async function fetchOpenAI(baseURL: string, apiKey: string): Promise<TestResult> {
+export async function fetchOpenAI(baseURL: string, apiKey: string, headers?: Record<string, string>): Promise<TestResult> {
   const url = `${baseURL.replace(/\/$/, '')}/models`
+  const customHeaders = headers ?? {}
   try {
     const res = await platformFetch(url, {
       method: 'GET',
       headers: {
         ...withOptionalBearer(apiKey),
         'Content-Type': 'application/json',
+        ...customHeaders,
       },
       signal: AbortSignal.timeout(8000),
     })
     if (res.ok)
       return { ok: true, message: 'Connected' }
+    // 404 means the server is reachable but doesn't serve /models (e.g. gateways)
+    // Since models are discovered from models.dev, this is still a successful connection
+    if (res.status === 404)
+      return { ok: true, message: 'Connected — no /models endpoint' }
     if (res.status === 401)
       return { ok: false, message: 'Invalid API key' }
     if (res.status === 403)
@@ -91,14 +97,17 @@ export async function fetchGoogle(apiKey: string): Promise<TestResult> {
 export async function fetchOllamaDownloadedModels(
   baseURL: string,
   apiKey: string,
+  headers?: Record<string, string>,
 ): Promise<TestResult & { rawModels: string[] }> {
   const url = getOllamaTagsUrl(baseURL)
+  const customHeaders = headers ?? {}
   try {
     const res = await platformFetch(url, {
       method: 'GET',
       headers: {
         ...withOptionalBearer(apiKey),
         'Content-Type': 'application/json',
+        ...customHeaders,
       },
       signal: AbortSignal.timeout(8000),
     })

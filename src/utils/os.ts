@@ -11,7 +11,9 @@
  * Requires: @tauri-apps/plugin-os (see SETUP.md)
  */
 
+import { exists } from '@tauri-apps/plugin-fs'
 import { arch, platform, version } from '@tauri-apps/plugin-os'
+import { Command } from '@tauri-apps/plugin-shell'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -31,6 +33,8 @@ export interface OsInfo {
   version: string
   /** Shell used by run_command: 'sh' on all Unix-like platforms, 'powershell' on Windows. */
   shell: 'sh' | 'powershell'
+  /** User-facing shell name for prompt injection. Git Bash is described as Bash. */
+  shellName: 'sh' | 'Bash' | 'PowerShell'
   /** Human-readable platform name for display and prompt injection. */
   displayName: string
 }
@@ -63,6 +67,50 @@ let _cache: OsInfo | null = null
  */
 let _inflight: Promise<OsInfo> | null = null
 
+async function hasWindowsBash(): Promise<boolean> {
+  try {
+    const result = await Command.create('sh', ['-c', 'exit 0']).execute()
+    if (result.code === 0)
+      return true
+  }
+  catch {
+    // Bash may still be available as Git's bundled bash.exe outside PATH.
+  }
+
+  const commonPaths = [
+    'C:\\Program Files\\Git\\bin\\bash.exe',
+    'C:\\Program Files (x86)\\Git\\bin\\bash.exe',
+  ]
+
+  for (const candidate of commonPaths) {
+    if (await exists(candidate))
+      return true
+  }
+
+  try {
+    const result = await Command.create('cmd', ['/d', '/s', '/c', 'where git']).execute()
+    if (result.code !== 0 || !result.stdout.trim())
+      return false
+
+    const gitPaths = result.stdout
+      .split(/\r?\n/g)
+      .map(line => line.trim())
+      .filter(Boolean)
+
+    for (const gitPath of gitPaths) {
+      const bashPath = gitPath.replace(/\//g, '\\').replace(/\\cmd\\git\.exe$/i, '\\bin\\bash.exe')
+      const isAllowedPath = commonPaths.some(path => path.toLowerCase() === bashPath.toLowerCase())
+      if (isAllowedPath && await exists(bashPath))
+        return true
+    }
+  }
+  catch {
+    return false
+  }
+
+  return false
+}
+
 // ── public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -81,11 +129,16 @@ export async function getOsInfo(): Promise<OsInfo> {
 
   _inflight = (async () => {
     const [p, a, v] = await Promise.all([platform(), arch(), version()])
+    let shellName: OsInfo['shellName'] = 'sh'
+    if (p === 'windows')
+      shellName = await hasWindowsBash() ? 'Bash' : 'PowerShell'
+
     const info: OsInfo = {
       platform: p as OsPlatform,
       arch: a,
       version: v,
       shell: p === 'windows' ? 'powershell' : 'sh',
+      shellName,
       displayName: PLATFORM_DISPLAY[p] ?? p,
     }
     _cache = info
@@ -103,23 +156,32 @@ export async function getOsInfo(): Promise<OsInfo> {
  */
 export function osPromptSection(info: OsInfo): string {
   const isWindows = info.platform === 'windows'
-  const sep = isWindows ? '\\' : '/'
+  const usesBash = info.shellName === 'Bash' || (!isWindows && info.shell === 'sh')
+  const sep = usesBash ? '/' : isWindows ? '\\' : '/'
 
-  const shellLine = isWindows
-    ? '- Shell: PowerShell (Windows) — use PowerShell syntax in run_command'
-    : '- Shell: sh (POSIX) — use POSIX sh syntax in run_command'
+  const shellLine = usesBash
+    ? `- Shell: Bash${isWindows ? ' (Windows)' : ''} — use Bash syntax in run_command`
+    : isWindows
+      ? '- Shell: PowerShell (Windows) — use PowerShell syntax in run_command'
+      : '- Shell: sh (POSIX) — use POSIX sh syntax in run_command'
 
-  const syntaxNote = isWindows
-    ? `- Command chaining: use semicolons (cmd1; cmd2) or -and / -or operators.
+  const syntaxNote = usesBash
+    ? `- Command chaining: use && (stop on failure) or ; (always continue) or | for pipes.
+- Environment variables: $VAR_NAME
+- Path separator in shell commands: /`
+    : isWindows
+      ? `- Command chaining: use semicolons (cmd1; cmd2) or -and / -or operators.
 - Environment variables: $env:VAR_NAME
 - Path separator: \\`
-    : `- Command chaining: use && (stop on failure) or ; (always continue) or | for pipes.
+      : `- Command chaining: use && (stop on failure) or ; (always continue) or | for pipes.
 - Environment variables: $VAR_NAME
 - Path separator: /`
 
-  const platformNote = isWindows
-    ? '- Prefer PowerShell-native commands (Get-ChildItem, Copy-Item) over Unix aliases when available.'
-    : '- Prefer POSIX-portable commands when writing scripts intended to run on CI.'
+  const platformNote = usesBash
+    ? '- Prefer portable Bash commands and relative paths when possible.'
+    : isWindows
+      ? '- Prefer PowerShell-native commands (Get-ChildItem, Copy-Item) over Unix aliases when available.'
+      : '- Prefer POSIX-portable commands when writing scripts intended to run on CI.'
 
   return `\
 ## Operating Environment

@@ -60,7 +60,9 @@ export const useGitPaneStore = defineStore('gitPane', () => {
   }
 
   function setSplitPercent(ownerId: string, percent: number): void {
-    ensureOwner(ownerId).splitPercent = percent
+    // Normalize and clamp percent to a valid range [0, 100]. Store as integer.
+    const normalized = Math.min(100, Math.max(0, Math.round(Number(percent) || 0)))
+    ensureOwner(ownerId).splitPercent = normalized
   }
 
   function disposeOwner(ownerId: string): void {

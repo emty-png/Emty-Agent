@@ -1,4 +1,4 @@
-import type { FilterCriteria, MDevData, MDevInterleaved, MDevModel, MDevProvider } from './types'
+import type { FilterCriteria, MDevCostTier, MDevData, MDevInterleaved, MDevModel, MDevProvider, MDevReasoningOption } from './types'
 
 const MODELS_DEV_API_URL = 'https://models.dev/api.json'
 const DEFAULT_FETCH_TIMEOUT_MS = 15000
@@ -201,6 +201,7 @@ function normalizeModelEntry(modelId: string, value: unknown): MDevModel | null 
   const modalities = normalizeModalities(value.modalities)
   const interleaved = normalizeInterleaved(value.interleaved)
   const status = normalizeStatus(value.status)
+  const reasoningOptions = normalizeReasoningOptions(value.reasoning_options)
 
   return {
     id: asNonEmptyString(value.id) ?? modelId,
@@ -218,6 +219,7 @@ function normalizeModelEntry(modelId: string, value: unknown): MDevModel | null 
     ...withOptional('cost', cost),
     ...withOptional('limit', limit),
     ...withOptional('reasoning', asBoolean(value.reasoning)),
+    ...withOptional('reasoning_options', reasoningOptions),
     ...withOptional('interleaved', interleaved),
     ...withOptional('status', status),
   }
@@ -234,15 +236,94 @@ function normalizeCost(value: unknown): MDevModel['cost'] {
   if (!isRecord(value))
     return undefined
 
+  const tiers = normalizeCostTiers(value.tiers)
+  const contextOver200k = normalizeContextOver200k(value.context_over_200k)
+
   const cost = {
     ...withOptional('input', asFiniteNumber(value.input)),
     ...withOptional('output', asFiniteNumber(value.output)),
     ...withOptional('cache_read', asFiniteNumber(value.cache_read)),
     ...withOptional('cache_write', asFiniteNumber(value.cache_write)),
     ...withOptional('reasoning', asFiniteNumber(value.reasoning)),
+    ...withOptional('input_audio', asFiniteNumber(value.input_audio)),
+    ...withOptional('output_audio', asFiniteNumber(value.output_audio)),
+    ...withOptional('context_over_200k', contextOver200k),
+    ...withOptional('tiers', tiers),
   }
 
   return hasDefinedValue(cost) ? cost : undefined
+}
+
+function normalizeCostTiers(value: unknown): MDevCostTier[] | undefined {
+  if (!Array.isArray(value))
+    return undefined
+
+  const tiers: MDevCostTier[] = []
+  for (const entry of value) {
+    if (!isRecord(entry) || !isRecord(entry.tier))
+      continue
+    const tier: MDevCostTier = {
+      tier: {
+        type: 'context',
+        size: asFiniteNumber(entry.tier.size) ?? 0,
+      },
+    }
+    const input = asFiniteNumber(entry.input)
+    if (input !== undefined)
+      tier.input = input
+    const output = asFiniteNumber(entry.output)
+    if (output !== undefined)
+      tier.output = output
+    const cacheRead = asFiniteNumber(entry.cache_read)
+    if (cacheRead !== undefined)
+      tier.cache_read = cacheRead
+    const cacheWrite = asFiniteNumber(entry.cache_write)
+    if (cacheWrite !== undefined)
+      tier.cache_write = cacheWrite
+    const reasoning = asFiniteNumber(entry.reasoning)
+    if (reasoning !== undefined)
+      tier.reasoning = reasoning
+    tiers.push(tier)
+  }
+
+  return tiers.length > 0 ? tiers : undefined
+}
+
+function normalizeContextOver200k(value: unknown): MDevModel['cost'] extends { context_over_200k?: infer T } ? T : never {
+  if (!isRecord(value))
+    return undefined as never
+
+  const result = {
+    ...withOptional('input', asFiniteNumber(value.input)),
+    ...withOptional('output', asFiniteNumber(value.output)),
+    ...withOptional('cache_read', asFiniteNumber(value.cache_read)),
+  }
+
+  return hasDefinedValue(result) ? result as never : undefined as never
+}
+
+function normalizeReasoningOptions(value: unknown): MDevReasoningOption[] | undefined {
+  if (!Array.isArray(value))
+    return undefined
+
+  const options: MDevReasoningOption[] = []
+  for (const entry of value) {
+    if (!isRecord(entry))
+      continue
+    const type = asNonEmptyString(entry.type)
+    if (type === 'effort' && Array.isArray(entry.values)) {
+      const values = entry.values.filter((v): v is string => typeof v === 'string' && v.length > 0)
+      if (values.length > 0)
+        options.push({ type: 'effort', values })
+    }
+    else if (type === 'budget_tokens') {
+      const min = asFiniteNumber(entry.min)
+      if (min !== undefined)
+        options.push({ type: 'budget_tokens', min })
+    }
+  }
+
+  return options.length > 0 ? options : undefined
 }
 
 function normalizeLimit(value: unknown): MDevModel['limit'] {

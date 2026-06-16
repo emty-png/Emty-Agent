@@ -6,7 +6,11 @@
   const INTERACTIVE_SELECTOR = 'a,button,input,textarea,select,summary,[role="button"],[role="link"],[contenteditable="true"],[tabindex]'
 
   function invoke(command, args) {
-    return window.__TAURI_INTERNALS__.invoke(command, args)
+    const internals = window.__TAURI_INTERNALS__
+    if (!internals || typeof internals.invoke !== 'function')
+      return Promise.reject(new Error('Tauri IPC is unavailable in this browser page.'))
+
+    return internals.invoke(command, args)
   }
 
   function emitToMain(event, payload) {
@@ -843,6 +847,10 @@
   }
 
   window.__EMTY_AGENT_BROWSER_BRIDGE__ = {
+    run(request) {
+      return dispatch(request)
+    },
+
     dispatch(request) {
       Promise.resolve()
         .then(() => dispatch(request))

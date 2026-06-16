@@ -4,12 +4,12 @@ import { ArrowDown, Square } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import BrowserPane from '@/components/browser/BrowserPane.vue'
-import AttachmentPreview from '@/components/chat/AttachmentPreview.vue'
-import ChatInput from '@/components/chat/ChatInput.vue'
-import WeatherBackground from '@/components/chat/Illu_1.vue'
-import MessageThread from '@/components/chat/MessageThread.vue'
-import SubAgentBanner from '@/components/chat/SubAgentBanner.vue'
-import TabBar from '@/components/chat/TabBar.vue'
+import AttachmentPreview from '@/components/chat/chat-input/AttachmentPreview.vue'
+import ChatInput from '@/components/chat/chat-input/ChatInput.vue'
+import WeatherBackground from '@/components/chat/layout/IllustrationBackground.vue'
+import SubAgentBanner from '@/components/chat/layout/SubAgentBanner.vue'
+import MessageThread from '@/components/chat/messages/MessageThread.vue'
+import TabBar from '@/components/chat/tabs/TabBar.vue'
 import GitPane from '@/components/git/GitPane.vue'
 import TerminalPane from '@/components/terminal/TerminalPane.vue'
 import { useBrowserStore } from '@/stores/browser'
@@ -389,7 +389,7 @@ const parentTabExists = computed(() => {
       </div>
 
       <div v-else-if="activeGitOwner.isPanelOpen && resolvedWorkspacePath" class="chat-git-panel">
-        <GitPane :cwd="resolvedWorkspacePath" @close="gitPane.closePanel(activeId)" />
+        <GitPane :cwd="resolvedWorkspacePath" :messages="activeTab.messages" @close="gitPane.closePanel(activeId)" />
       </div>
     </div>
 

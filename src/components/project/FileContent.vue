@@ -8,6 +8,11 @@ import { getHighlighter, langFromPath } from '@/utils/highlighter'
 const ft = useFileTreeStore()
 const { selectedPath, fileContent, loadingFile, error } = storeToRefs(ft)
 
+function clearSelection() {
+  selectedPath.value = null
+  fileContent.value = null
+}
+
 // ── highlighted HTML ──────────────────────────────────────────────────────────
 const highlighted = ref<string | null>(null)
 const highlighting = ref(false)
@@ -51,7 +56,7 @@ function breadcrumb(path: string): string[] {
 </script>
 
 <template>
-  <div class="content-root">
+  <div class="content-root" @click.self="clearSelection">
     <!-- ── empty state ─────────────────────────────────────────────── -->
     <div v-if="!selectedPath" class="content-empty">
       <File :size="28" :stroke-width="1.3" class="empty-icon" />

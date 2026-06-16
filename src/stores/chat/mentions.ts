@@ -1,3 +1,6 @@
+import type { FileReadRegistry } from '@/utils/tools/fs'
+import { sha256Text, updateReadRegistry } from '@/utils/tools/fs/shared'
+
 function extToLang(ext: string): string {
   const map: Record<string, string> = {
     ts: 'typescript',
@@ -41,7 +44,7 @@ function extToLang(ext: string): string {
 export function parseAtMentions(text: string): string[] {
   const seen = new Set<string>()
   const results: string[] = []
-  const regex = /@([\w./\-]+)/g
+  const regex = /@\[([\w./\-]+)\]/g
   let match: RegExpExecArray | null = regex.exec(text)
   while (match !== null) {
     const path = match[1]!
@@ -54,14 +57,14 @@ export function parseAtMentions(text: string): string[] {
   return results
 }
 
-export async function buildMentionContext(messageText: string, projectPath: string | null): Promise<string> {
+export async function buildMentionContext(messageText: string, projectPath: string | null, registry?: FileReadRegistry): Promise<string> {
   if (!projectPath)
     return ''
   const paths = parseAtMentions(messageText)
   if (paths.length === 0)
     return ''
 
-  const [{ readDir, readTextFile }, { join, normalize }] = await Promise.all([
+  const [{ readDir, readTextFile, stat }, { join, normalize }] = await Promise.all([
     import('@tauri-apps/plugin-fs'),
     import('@tauri-apps/api/path'),
   ])
@@ -103,10 +106,24 @@ export async function buildMentionContext(messageText: string, projectPath: stri
         const ext = cleanPath.split('.').pop() ?? ''
         const lang = extToLang(ext)
         const MAX = 40_000
-        const trimmed = content.length > MAX
+        const isTrimmed = content.length > MAX
+        const trimmed = isTrimmed
           ? `${content.slice(0, MAX / 2).trimEnd()}\n\n[... ${Math.round(content.length / 1024)} KB file trimmed ...]\n\n${content.slice(-(MAX / 2)).trimStart()}`
           : content
         blocks.push(`\n@${rawPath}:\n\`\`\`${lang}\n${trimmed}\n\`\`\``)
+
+        if (registry) {
+          const normalizedContent = content.replace(/\r\n?/g, '\n')
+          const info = await stat(norm).catch(() => null)
+          const entry = {
+            hash: await sha256Text(normalizedContent),
+            complete: !isTrimmed,
+            sizeBytes: info?.size ?? new TextEncoder().encode(content).length,
+            mtimeMs: info?.mtime?.getTime() ?? null,
+          }
+          updateReadRegistry(registry, norm, entry)
+          console.warn('[buildMentionContext] Registered @ mention:', { path: norm, ...entry, registrySize: registry.size })
+        }
       }
     }
     catch { continue }

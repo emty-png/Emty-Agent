@@ -1,10 +1,11 @@
 import type { Attachment } from './attachment-types'
 import type { ChatMode } from '@/utils/ai'
 import type { ChatPromptEstimate } from '@/utils/chatEstimate'
+import type { FileReadRegistry } from '@/utils/tools/fs/shared'
 import type { ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { PendingBatch } from '@/utils/tools/questions'
 import type { SubAgentInfo, SubAgentPersonality } from '@/utils/tools/subagent'
-import type { TodoItem } from '@/utils/tools/todos'
+import type { TaskItem } from '@/utils/tools/todos'
 import type { WorkspaceSnapshot } from '@/utils/worktrees'
 import { UsageStats } from '@/utils/contextCaching'
 
@@ -27,6 +28,14 @@ export interface ToolEvent {
    * Persisted so subsequent turns include the tool output in context.
    */
   result?: unknown
+  /**
+   * Incremental stdout/stderr captured while command-like tools are still
+   * running. This is UI review data only; model replay uses `result`.
+   */
+  liveOutput?: {
+    stdout?: string
+    stderr?: string
+  }
   /**
    * Arbitrary key-value metadata for tool-specific badge data.
    * spawn_subagent stores { subAgentTabId: string } here so the badge can
@@ -52,6 +61,8 @@ export interface Message {
   error?: string
   /** User-attached files/images (only present on user messages). */
   attachments?: Attachment[]
+  /** Tracks which skill generated this message (hidden from user display). */
+  skillId?: string
 }
 
 export interface ChatDraftState {
@@ -82,18 +93,26 @@ export interface ChatTab {
   workspaceMeta?: WorkspaceSnapshot | null
   workspaceLocked: boolean
   isStreaming: boolean
-  todos: TodoItem[]
+  todos: TaskItem[]
   modelUid?: string | null
   draft: ChatDraftState
   estimator: ChatEstimatorState
+  isCompacting?: boolean
   pendingQuestions?: PendingBatch | null
   pendingPermissions: PendingToolPermission[]
+  /**
+   * Per-tab file read registry. Tracks which files have been read (hash, mtime,
+   * completeness) so edit/write tools can verify freshness. Each tab (and
+   * sub-agent) gets its own registry — no cross-tab dedup interference.
+   */
+  readRegistry: FileReadRegistry
   /**
    * Present only on sub-agent tabs. Contains personality, mission, parent tab ID,
    * and live status. Sub-agent tabs never persist to the database — they are
    * ephemeral and reset when the app restarts.
    */
   subAgent?: SubAgentInfo
+  mode?: ChatMode
 }
 
-export type { Attachment, ChatMode, SubAgentInfo, SubAgentPersonality, TodoItem, ToolPermissionDecision }
+export type { Attachment, ChatMode, SubAgentInfo, SubAgentPersonality, TaskItem, ToolPermissionDecision }

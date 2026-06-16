@@ -1,3 +1,4 @@
+import type { MDevContextOver200k, MDevCostTier, MDevReasoningOption } from '@/utils/modelsdev'
 import type { SkillMetadata } from '@/utils/skills'
 import type { ToolPermissionMode } from '@/utils/tools/permissions'
 
@@ -27,12 +28,77 @@ export interface TavilyConfig {
   status: ConnectionStatus
   statusMessage: string
 }
+
+export type WebSearchProvider = 'duckduckgo' | 'tavily' | 'exa' | 'brave' | 'serper'
+
+export interface DuckDuckGoConfig {
+  status: ConnectionStatus
+  statusMessage: string
+}
+
+export interface ExaConfig {
+  apiKey: string
+  status: ConnectionStatus
+  statusMessage: string
+}
+
+export interface BraveConfig {
+  apiKey: string
+  status: ConnectionStatus
+  statusMessage: string
+}
+
+export interface SerperConfig {
+  apiKey: string
+  status: ConnectionStatus
+  statusMessage: string
+}
+
+// ── Image generation providers ────────────────────────────────────────────
+
+export type ImageGenProvider
+  = | 'google'
+    | 'openai'
+    | 'stability'
+    | 'fal'
+    | 'replicate'
+    | 'together'
+    | 'fireworks'
+    | 'custom'
+
+export interface ImageGenProviderConfig {
+  apiKey: string
+  baseURL?: string
+  model: string
+  status: ConnectionStatus
+  statusMessage: string
+  discoveredModels: DiscoveredImageModel[]
+}
+
+export interface DiscoveredImageModel {
+  id: string
+  name: string
+}
+
+export interface ImageGenModelOption {
+  id: string
+  name: string
+}
+
+export interface CompatibleProviderModel {
+  id: string // raw model ID sent to the API
+  name: string // display name
+  contextLimit?: number // manual context window override
+}
+
 export interface CompatibleProvider {
   id: string
   name: string
   baseURL: string
   apiKey: string
   mdevId?: string
+  headers?: Record<string, string>
+  models?: CompatibleProviderModel[]
   status: ConnectionStatus
   statusMessage: string
 }
@@ -84,10 +150,14 @@ export interface DiscoveredModel {
   costInput: number | null
   costOutput: number | null
   costReasoning: number | null
+  costTiers: MDevCostTier[] | null
+  costContextOver200k: MDevContextOver200k | null
   knowledgeCutoff: string | null
   releaseDate: string | null
   lastUpdated: string | null
   status: 'alpha' | 'beta' | 'deprecated' | null
+  reasoningOptions: MDevReasoningOption[] | null
+  sdkType: 'openai' | 'anthropic' | 'google' | null
 }
 
 export interface ContextCachingConfig {
@@ -105,19 +175,25 @@ export interface MemoryConfig {
   enabled: boolean
 }
 
+export interface AgentSubagentConfig {
+  isolation: 'inherit' | 'worktree'
+}
+
+export interface AgentSessionCompactionConfig {
+  auto: boolean
+  thresholdPercent: number
+  showManualButton: boolean
+}
+
 export interface AgentConfig {
   permissionMode: ToolPermissionMode
+  subagents: AgentSubagentConfig
+  sessionCompaction: AgentSessionCompactionConfig
+  gitCoAuthor: boolean
 }
 
 export interface ConfiguredSkill extends SkillMetadata {
   enabled: boolean
-}
-
-export interface ProviderPreset {
-  name: string
-  baseURL: string
-  requiresKey: boolean
-  description: string
 }
 
 export interface TestResult {

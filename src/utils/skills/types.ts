@@ -1,5 +1,10 @@
-export type SkillSource = 'builtin' | 'project'
+export type SkillSource = 'builtin' | 'project' | 'global'
 export type SkillResourceKind = 'script' | 'reference' | 'asset' | 'other'
+
+export interface SkillCommand {
+  name: string
+  description: string
+}
 
 export interface SkillMetadata {
   id: string
@@ -12,6 +17,11 @@ export interface SkillMetadata {
   triggers: string[]
   resourceCount: number
   rootPath?: string
+  commands: SkillCommand[]
+  whenToUse?: string
+  model?: string
+  allowedTools?: string[]
+  paths?: string[]
 }
 
 export interface SkillResource {
@@ -42,4 +52,9 @@ export interface ParsedSkillContent {
   title: string
   description: string
   tags: string[]
+  commands: SkillCommand[]
+  whenToUse?: string
+  model?: string
+  allowedTools?: string[]
+  paths?: string[]
 }

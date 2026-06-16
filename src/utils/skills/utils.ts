@@ -1,3 +1,4 @@
+import { homeDir } from '@tauri-apps/api/path'
 import { MAX_INLINE_RESOURCE_CHARS, MAX_PROMPT_CHARS } from './constants'
 
 export function trimSkillContent(content: string, maxChars = MAX_PROMPT_CHARS): string {
@@ -46,4 +47,11 @@ export function normalizeRelativePath(path: string): string {
     .replace(/\\/g, '/')
     .replace(/^\/+/, '')
     .replace(/\/+/g, '/')
+}
+
+export async function getGlobalSkillsRoot(): Promise<string | null> {
+  const home = await homeDir().catch(() => null)
+  if (!home)
+    return null
+  return joinSkillPath(home, '.emty', 'skills')
 }

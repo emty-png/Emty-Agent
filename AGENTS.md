@@ -26,6 +26,7 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 | `pnpm dev`           | Vite dev server (port **1420**, `strictPort: true`)              |
 | `pnpm build`         | `vue-tsc --noEmit && vite build`                                 |
 | `pnpm tauri dev`     | Tauri dev build (needs `pnpm dev` running first or concurrently) |
+| `pnpm tauri build`   | Production build for current platform                            |
 | `pnpm typecheck`     | `vue-tsc --noEmit`                                               |
 | `pnpm lint`          | `eslint .` (also runs in CI)                                     |
 | `pnpm lint:fix`      | ESLint autofix (runs via pre-commit)                             |
@@ -33,7 +34,8 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 | `pnpm test:run`      | `vitest run` (CI mode)                                           |
 | `pnpm test:coverage` | `vitest run --coverage` (provider `v8`)                          |
 
-> **CI order**: `lint:fix` → `lint` → `typecheck` → `test:run` → `build` (see `.github/workflows/ci.yml`).
+> **CI order** (`check.yml`): `lint:fix` → `lint` → `typecheck` (no tests run in CI).
+> **Build workflow** (`build.yml`): multi-platform Tauri build (Ubuntu deps: `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, etc.).
 > Pre-commit hooks run `lint:fix` via `lint-staged` on staged `src/**/*.{ts,vue}`.
 
 ---
@@ -61,10 +63,10 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 
 - **`src/main.ts`** — Vue bootstrap: `createApp`, Pinia with `pinia-plugin-persistedstate`, theme init, global error/rejection handlers.
 - **`src/App.vue`** — Root layout: `TitleBar`, `Sidebar`, three views (`chat` | `history` | `projects`), `SettingsModal`.
-- **`src/stores/themes.ts`** — Theme store with **20 themes**; persists active theme to localStorage. Applies `data-theme` to `<html>` and updates `theme-color` meta.
+- **`src/stores/themes.ts`** — Theme store with **5 built-in themes** (abyss, terracotta, chocolate, frost, moss) + custom themes; persists to localStorage.
 - **`src/db/database.ts`** — SQLite singleton + **versioned migrations** + typed query helpers. See “Gotchas / Database” below.
 - **`src/skills/builtin/<skill>/SKILL.md`** — Skill definitions (YAML frontmatter + workflow instructions).
-- **`src-tauri/src/lib.rs`** — Tauri command setup; registers plugins (`http`, `dialog`, `fs`, `window-state`, `opener`, `sql`, `shell`, `os`).
+- **`src-tauri/src/lib.rs`** — Tauri command setup; registers plugins (`http`, `dialog`, `fs`, `persisted-scope`, `window-state`, `opener`, `sql`, `shell`, `os`). Also includes custom commands for `browser`, `terminal`, `glob`, and `grep`.
 
 ---
 
@@ -97,10 +99,11 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 
 - Pre-commit (`lint-staged`) runs `eslint` on `src/**/*.{ts,vue}` and `prettier --write` on `src/**/*.{css,json,md}`.
 - ESLint ignores: `dist`, `src-tauri`, `coverage`, `node_modules`, `*.d.ts`, `vite.config.*`.
+- Vue-specific rules enforced: `vue/block-order` (`script`, `template`, `style`), `vue/component-name-in-template-casing` (PascalCase), `vue/define-macros-order` (`defineOptions` → `defineProps` → `defineEmits` → `defineSlots`).
 
 ### Testing
 
-- Test environment is `happy-dom`.
+- Test environment is `node`.
 - Test glob: `src/**/*.{test,spec}.{ts,tsx}`.
 - Tauri APIs are stubbed via `vitest.config.ts` aliases to `src/__mocks__/*`.
 

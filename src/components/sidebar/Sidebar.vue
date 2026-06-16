@@ -2,7 +2,7 @@
 import {
   FolderOpen,
   History,
-  MessageSquare,
+  MessageCircle,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -28,30 +28,27 @@ const { toggle } = sidebar
   <aside class="sidebar" :class="[{ 'sidebar--collapsed': collapsed }]">
     <!-- ── collapse toggle ──────────────────────────────────────────────── -->
     <div class="sidebar-section sidebar-section--top">
-      <div class="tooltip-wrap">
-        <button
-          class="sidebar-btn sidebar-btn--toggle"
-          :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
-          @click="toggle"
-        >
-          <span class="icon-swap">
-            <PanelLeftClose
-              :size="15"
-              :stroke-width="1.7"
-              class="icon-swap__icon"
-              :class="[{ 'icon-swap__icon--hidden': collapsed }]"
-            />
-            <PanelLeftOpen
-              :size="15"
-              :stroke-width="1.7"
-              class="icon-swap__icon icon-swap__icon--back"
-              :class="[{ 'icon-swap__icon--hidden': !collapsed }]"
-            />
-          </span>
-          <span class="sidebar-label">Collapse</span>
-        </button>
-        <span class="tooltip-box">{{ collapsed ? 'Expand' : 'Collapse' }}</span>
-      </div>
+      <button
+        class="sidebar-btn sidebar-btn--toggle"
+        :aria-label="collapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+        @click="toggle"
+      >
+        <span class="icon-swap">
+          <PanelLeftClose
+            :size="15"
+            :stroke-width="1.7"
+            class="icon-swap__icon"
+            :class="[{ 'icon-swap__icon--hidden': collapsed }]"
+          />
+          <PanelLeftOpen
+            :size="15"
+            :stroke-width="1.7"
+            class="icon-swap__icon icon-swap__icon--back"
+            :class="[{ 'icon-swap__icon--hidden': !collapsed }]"
+          />
+        </span>
+        <span class="sidebar-label">Collapse</span>
+      </button>
     </div>
 
     <!-- ── divider ───────────────────────────────────────────────────────── -->
@@ -59,46 +56,37 @@ const { toggle } = sidebar
 
     <!-- ── nav items ─────────────────────────────────────────── -->
     <nav class="sidebar-nav">
-      <div class="tooltip-wrap">
-        <button
-          class="sidebar-btn"
-          :class="{
-            'sidebar-btn--active': props.activeView !== 'projects' && props.activeView !== 'history',
-          }"
-          aria-label="Chat"
-          @click="emit('selectView', 'chat')"
-        >
-          <MessageSquare :size="15" :stroke-width="1.7" class="flex-shrink-0" />
-          <span class="sidebar-label">Chat</span>
-        </button>
-        <span class="tooltip-box">Chats</span>
-      </div>
+      <button
+        class="sidebar-btn"
+        :class="{
+          'sidebar-btn--active': props.activeView !== 'projects' && props.activeView !== 'history',
+        }"
+        aria-label="Chat"
+        @click="emit('selectView', 'chat')"
+      >
+        <MessageCircle :size="15" :stroke-width="1.7" class="flex-shrink-0" />
+        <span class="sidebar-label">Chat</span>
+      </button>
 
-      <div class="tooltip-wrap">
-        <button
-          class="sidebar-btn"
-          :class="{ 'sidebar-btn--active': props.activeView === 'history' }"
-          aria-label="History"
-          @click="emit('selectView', 'history')"
-        >
-          <History :size="15" :stroke-width="1.7" class="flex-shrink-0" />
-          <span class="sidebar-label">History</span>
-        </button>
-        <span class="tooltip-box">History</span>
-      </div>
+      <button
+        class="sidebar-btn"
+        :class="{ 'sidebar-btn--active': props.activeView === 'history' }"
+        aria-label="History"
+        @click="emit('selectView', 'history')"
+      >
+        <History :size="15" :stroke-width="1.7" class="flex-shrink-0" />
+        <span class="sidebar-label">History</span>
+      </button>
 
-      <div class="tooltip-wrap">
-        <button
-          class="sidebar-btn"
-          :class="{ 'sidebar-btn--active': props.activeView === 'projects' }"
-          aria-label="Projects"
-          @click="emit('selectView', 'projects')"
-        >
-          <FolderOpen :size="15" :stroke-width="1.7" class="flex-shrink-0" />
-          <span class="sidebar-label">Projects</span>
-        </button>
-        <span class="tooltip-box">Projects</span>
-      </div>
+      <button
+        class="sidebar-btn"
+        :class="{ 'sidebar-btn--active': props.activeView === 'projects' }"
+        aria-label="Projects"
+        @click="emit('selectView', 'projects')"
+      >
+        <FolderOpen :size="15" :stroke-width="1.7" class="flex-shrink-0" />
+        <span class="sidebar-label">Projects</span>
+      </button>
 
       <slot />
     </nav>
@@ -107,13 +95,10 @@ const { toggle } = sidebar
     <div class="sidebar-bottom">
       <div class="sidebar-divider" />
       <div class="sidebar-section--bottom">
-        <div class="tooltip-wrap">
-          <button class="sidebar-btn" aria-label="Settings" @click="emit('openSettings')">
-            <Settings :size="15" :stroke-width="1.7" class="flex-shrink-0" />
-            <span class="sidebar-label">Settings</span>
-          </button>
-          <span class="tooltip-box">Settings</span>
-        </div>
+        <button class="sidebar-btn" aria-label="Settings" @click="emit('openSettings')">
+          <Settings :size="15" :stroke-width="1.7" class="flex-shrink-0" />
+          <span class="sidebar-label">Settings</span>
+        </button>
       </div>
     </div>
   </aside>
@@ -260,51 +245,5 @@ const { toggle } = sidebar
   transition:
     max-width 200ms cubic-bezier(0.4, 0, 0.2, 1),
     opacity 80ms ease;
-}
-
-/* ── Tooltip ──────────────────────────────────────────────────────────────── */
-.tooltip-wrap {
-  position: relative;
-  display: flex;
-  width: 100%;
-}
-
-.tooltip-box {
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-bright);
-  border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  box-shadow: var(--color-shadow-floating);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 10001;
-  transition:
-    opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* caret pointing left toward the sidebar */
-.tooltip-box::after {
-  content: '';
-  position: absolute;
-  right: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  border: 5px solid transparent;
-  border-right-color: var(--color-border-bright);
-}
-
-/* only show tooltips when collapsed (labels are hidden) */
-.sidebar--collapsed .tooltip-wrap:hover .tooltip-box {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0);
 }
 </style>

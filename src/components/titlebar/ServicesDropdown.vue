@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Check, Server } from 'lucide-vue-next'
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const s = useSettingsStore()
@@ -16,12 +16,12 @@ function closeDropdown() {
   isOpen.value = false
 }
 
-// ── status logic ────────────────────────────────────────────────────────────
-const activeMcpCount = computed(() => s.mcpServers.filter(srv => srv.enabled).length)
-const activeSkillsCount = computed(() => s.availableSkills.filter(sk => sk.enabled).length)
-const hasActive = computed(() => activeMcpCount.value > 0 || activeSkillsCount.value > 0)
+const activeMcpCount = computed(() => s.mcpServers.filter(server => server.enabled).length)
+const activeSkillsCount = computed(() => s.availableSkills.filter(skill => skill.enabled).length)
+const hasActive = computed(() =>
+  activeMcpCount.value > 0 || activeSkillsCount.value > 0,
+)
 
-// ── actions ──────────────────────────────────────────────────────────────────
 function toggleMcp(id: string, currentlyEnabled: boolean) {
   s.updateMcpServer(id, { enabled: !currentlyEnabled })
 }
@@ -30,22 +30,20 @@ function toggleSkill(id: string, currentlyEnabled: boolean) {
   s.setSkillEnabled(id, !currentlyEnabled)
 }
 
-// ── global close ─────────────────────────────────────────────────────────────
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape')
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape')
     closeDropdown()
 }
+
 window.addEventListener('keydown', onKeydown)
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
   <div class="services-dropdown">
-    <!-- Trigger -->
     <button
       class="trigger-btn"
       :class="{ 'trigger-btn--open': isOpen }"
-      title="Services & Skills"
+      title="Services and Skills"
       @click.stop="toggleDropdown"
     >
       <div class="icon-wrap">
@@ -54,10 +52,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       </div>
     </button>
 
-    <!-- Dropdown -->
     <Transition name="picker">
       <div v-if="isOpen" class="picker-panel">
-        <!-- Tabs -->
         <div class="picker-tabs">
           <button
             class="picker-tab"
@@ -65,7 +61,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             @click="activeTab = 'mcp'"
           >
             MCP Servers
-            <span class="tab-badge">{{ s.mcpServers.length }}</span>
           </button>
           <button
             class="picker-tab"
@@ -73,12 +68,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             @click="activeTab = 'skills'"
           >
             Skills
-            <span class="tab-badge">{{ s.availableSkills.length }}</span>
           </button>
         </div>
 
         <div class="picker-content">
-          <!-- MCP List -->
           <div v-if="activeTab === 'mcp'" class="picker-list">
             <div v-if="s.mcpServers.length === 0" class="picker-empty">
               <p class="picker-empty-title">
@@ -109,7 +102,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             </button>
           </div>
 
-          <!-- Skills List -->
           <div v-if="activeTab === 'skills'" class="picker-list">
             <div v-if="s.availableSkills.length === 0" class="picker-empty">
               <p class="picker-empty-title">
@@ -117,12 +109,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               </p>
             </div>
             <template v-else>
-              <!-- Built-in Skills -->
-              <div v-if="s.availableSkills.some(sk => sk.source === 'builtin')" class="group-label">
+              <div v-if="s.availableSkills.some(skill => skill.source === 'builtin')" class="group-label">
                 Built-in
               </div>
               <button
-                v-for="skill in s.availableSkills.filter(sk => sk.source === 'builtin')"
+                v-for="skill in s.availableSkills.filter(skill => skill.source === 'builtin')"
                 :key="skill.id"
                 class="list-item"
                 :class="{ 'list-item--enabled': skill.enabled }"
@@ -135,12 +126,28 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <Check v-if="skill.enabled" :size="14" class="item-check" />
               </button>
 
-              <!-- Project Skills -->
-              <div v-if="s.availableSkills.some(sk => sk.source === 'project')" class="group-label project-group">
+              <div v-if="s.availableSkills.some(skill => skill.source === 'global')" class="group-label project-group">
+                Global Skills
+              </div>
+              <button
+                v-for="skill in s.availableSkills.filter(skill => skill.source === 'global')"
+                :key="skill.id"
+                class="list-item"
+                :class="{ 'list-item--enabled': skill.enabled }"
+                @click="toggleSkill(skill.id, skill.enabled)"
+              >
+                <div class="item-left">
+                  <span class="item-dot" :class="{ 'item-dot--active': skill.enabled }" />
+                  <span class="item-name">{{ skill.title || skill.name }}</span>
+                </div>
+                <Check v-if="skill.enabled" :size="14" class="item-check" />
+              </button>
+
+              <div v-if="s.availableSkills.some(skill => skill.source === 'project')" class="group-label project-group">
                 Project Skills
               </div>
               <button
-                v-for="skill in s.availableSkills.filter(sk => sk.source === 'project')"
+                v-for="skill in s.availableSkills.filter(skill => skill.source === 'project')"
                 :key="skill.id"
                 class="list-item"
                 :class="{ 'list-item--enabled': skill.enabled }"
@@ -158,12 +165,24 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       </div>
     </Transition>
 
-    <!-- Backdrop -->
     <div v-if="isOpen" class="global-backdrop" @click="closeDropdown" />
   </div>
 </template>
 
 <style scoped>
+/*
+  Design system (matches component library + ModelPicker):
+  ─────────────────────────────────────────────────────────────
+  Border radius  → xs=3  sm=4  md=6  lg=8  xl=12  pill=9999
+  Ease out expo  → cubic-bezier(0.16, 1, 0.3, 1)    snappy open
+  Ease in expo   → cubic-bezier(0.7,  0, 0.84, 0)   fast close
+  Ease smooth    → cubic-bezier(0.4,  0, 0.2,  1)   state change
+  Ease spring    → cubic-bezier(0.34, 1.56, 0.64, 1) pop/bounce
+
+  Durations → instant 80ms  micro 100ms  fast 150ms  normal 220ms
+*/
+
+/* ── Wrapper ──────────────────────────────────────────────────────────────── */
 .services-dropdown {
   position: relative;
   display: flex;
@@ -172,7 +191,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   -webkit-app-region: no-drag;
 }
 
-/* ── Trigger ────────────────────────────────────────────────────────────────── */
+/* ── Trigger button ───────────────────────────────────────────────────────── */
 .trigger-btn {
   display: flex;
   align-items: center;
@@ -185,8 +204,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   color: var(--color-text-tertiary);
   cursor: pointer;
   transition:
-    background 120ms ease,
-    color 120ms ease;
+    background 120ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 120ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .trigger-btn:hover,
@@ -218,15 +237,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   box-shadow: 0 0 4px var(--color-success-muted);
 }
 
-/* ── Panel ──────────────────────────────────────────────────────────────────── */
+/* ── Dropdown shell ───────────────────────────────────────────────────────── */
 .picker-panel {
   position: absolute;
   top: calc(100% + 8px);
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% - 20px));
   transform-origin: top center;
-  width: 300px;
-  height: 165px; /* Fixed consistent height */
+  width: 350px;
+  height: 200px;
   background: var(--color-bg-elevated);
   border: 1px solid var(--color-border-bright);
   border-radius: var(--radius-lg);
@@ -235,16 +254,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   flex-direction: column;
   overflow: hidden;
   z-index: 10000;
+  will-change: transform, opacity;
 }
 
-/* ── Tabs ───────────────────────────────────────────────────────────────────── */
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
 .picker-tabs {
   position: relative;
   display: flex;
   padding: 8px 12px 0;
-  gap: 16px; /* Spacing between inline tabs */
+  gap: 16px;
   background: transparent;
-  box-shadow: inset 0 -1px 0 var(--color-border-mid); /* Ensures consistent bottom border */
+  box-shadow: inset 0 -1px 0 var(--color-border-mid);
   flex-shrink: 0;
 }
 
@@ -262,7 +282,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: color 150ms ease;
+  transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0 2px 2px;
 }
 
@@ -298,11 +318,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   background: var(--color-state-hover);
   color: var(--color-text-secondary);
   padding: 1.5px 7px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   font-size: 10px;
   font-weight: 600;
   line-height: 1.4;
-  transition: all 150ms ease;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .picker-tab--active .tab-badge {
@@ -310,13 +330,27 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   color: var(--color-accent-text);
 }
 
-/* ── Content ────────────────────────────────────────────────────────────────── */
+/* ── Content & scrollable list ────────────────────────────────────────────── */
 .picker-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px 0 8px;
   display: flex;
   flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-bright) transparent;
+}
+
+.picker-content::-webkit-scrollbar {
+  width: 4px;
+}
+.picker-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.picker-content::-webkit-scrollbar-thumb {
+  background: var(--color-border-bright);
+  border-radius: var(--radius-md);
 }
 
 .picker-list {
@@ -327,26 +361,26 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 .group-label {
   display: block;
-  padding: 12px 14px 6px;
+  padding: 10px 16px 5px;
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-dim);
+  user-select: none;
 }
 
 .project-group {
   margin-top: 4px;
 }
 
-/* ── List Item ──────────────────────────────────────────────────────────────── */
+/* ── List item ────────────────────────────────────────────────────────────── */
 .list-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: calc(100% - 12px);
   margin: 1px 6px;
-  height: auto;
   min-height: 34px;
   padding: 7px 10px;
   border: 1px solid transparent;
@@ -355,10 +389,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   color: var(--color-text-secondary);
   cursor: pointer;
   text-align: left;
+  box-sizing: border-box;
   transition:
-    background 100ms ease,
-    border-color 100ms ease,
-    color 100ms ease;
+    background 100ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 100ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 100ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .list-item:hover {
@@ -385,7 +420,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   border-radius: 50%;
   background: var(--color-text-dim);
   flex-shrink: 0;
-  transition: all 200ms ease;
+  transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .item-dot--active {
@@ -396,6 +431,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .item-name {
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -412,31 +448,45 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   flex-shrink: 0;
 }
 
-/* ── Empty State ────────────────────────────────────────────────────────────── */
+/* ── Empty states ─────────────────────────────────────────────────────────── */
 .picker-empty {
-  margin: auto; /* Centers perfectly in the flex container */
-  padding: 10px 20px;
+  margin: auto;
+  padding: 32px 20px;
   text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
 
 .picker-empty-title {
   margin: 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
 }
 
 .picker-empty-hint {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--color-text-tertiary);
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-/* ── Transitions & Backdrop ─────────────────────────────────────────────────── */
+/* ── Backdrop ─────────────────────────────────────────────────────────────── */
+.global-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: transparent;
+}
+
+/* ── Transition ───────────────────────────────────────────────────────────── */
+/*
+  Opens from TOP (picker appears below the trigger).
+  Enter: 150ms ease-out-expo (snappy)
+  Leave: 100ms ease-in-expo  (fast, non-intrusive)
+*/
 .picker-enter-active {
   transition:
     opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
@@ -452,18 +502,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .picker-enter-from,
 .picker-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(-8px) scale(0.96);
+  transform: translateX(calc(-50% - 20px)) translateY(-8px) scale(0.96);
 }
 
 .picker-enter-to,
 .picker-leave-from {
-  transform: translateX(-50%) translateY(0) scale(1);
-}
-
-.global-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: transparent;
+  transform: translateX(calc(-50% - 20px)) translateY(0) scale(1);
 }
 </style>

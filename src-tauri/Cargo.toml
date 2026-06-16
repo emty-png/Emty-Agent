@@ -30,6 +30,14 @@ tauri-plugin-shell = "2.3.2"
 tauri-plugin-os = "2.3.2"
 tauri-plugin-http = "2"
 portable-pty = "0.9"
+ignore = "0.4"
+globset = "0.4"
+reqwest = { version = "0.12", features = ["rustls-tls"] }
+scraper = "0.22"
+urlencoding = "2"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2"

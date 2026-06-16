@@ -1,9 +1,10 @@
 import type { ChatTab, Message, SubAgentPersonality } from './types'
-import type { LanguageModel, StreamChatOptions, ToolCallEvent, ToolResultEvent, ToolSet } from '@/utils/ai'
+import type { LanguageModel, ProviderCredentials, StreamChatOptions, ToolSet } from '@/utils/ai'
 import type { OsInfo } from '@/utils/os'
-import type { FilesystemTools } from '@/utils/tools/filesystem'
+import type { BeforeFileWriteCallback, FileReadRegistry, FilesystemTools } from '@/utils/tools/fs'
 import type { RequestToolPermission, ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { SubAgentOutcome } from '@/utils/tools/subagent'
+import { dbInsertConversation, dbInsertMessage, dbUpdateMessage } from '@/db/database'
 import { buildAgentSystemPrompt } from '@/utils/agentContext'
 import { buildProviderOptions, mergeProviderOptions } from '@/utils/ai'
 import {
@@ -12,9 +13,13 @@ import {
   extractUsageStats,
 } from '@/utils/contextCaching'
 import { filterDisabledTools } from '@/utils/tools/catalog'
-import { createMcpTools, mcpToolDisplayLabel } from '@/utils/tools/mcp'
+import { createMcpTools } from '@/utils/tools/mcp'
 import { wrapToolSetWithPermissions } from '@/utils/tools/permissions'
-import { createSkillTools, skillToolDisplayLabel } from '@/utils/tools/skills'
+import { SequentialToolQueue, wrapToolSetSequentially } from '@/utils/tools/sequential'
+import { createSkillTools } from '@/utils/tools/skills'
+import { resolveLanguageModel, resolveMaxTokens } from './models'
+import { createStreamHandlers } from './streamHandlers'
+import { getCoreToolDisplayLabel } from './toolLabels'
 import { makeId } from './utils'
 
 export interface SubAgentStreamParams {
@@ -22,21 +27,19 @@ export interface SubAgentStreamParams {
   personality: SubAgentPersonality
   mission: string
   signal: AbortSignal
-  // These are passed in to avoid circular dependencies or redundant dynamic imports
+  // Core AI functions passed in to avoid circular dependencies
   buildLanguageModel: (creds: ProviderCredentials, modelId: string) => LanguageModel
   streamChat: (opts: StreamChatOptions) => Promise<void>
   buildSubAgentSystemPrompt: (p: SubAgentPersonality, path: string | null, osInfo?: OsInfo) => string
   settings: SettingsSnapshot
   project: ProjectSnapshot
   osInfo: OsInfo | undefined
-  toolDisplayLabel: (name: string, args: Record<string, unknown>) => string
-  shellToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
-  webToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
-  browserToolDisplayLabel: (name: string, args: Record<string, unknown>) => string
-  createFilesystemTools: (path: string) => FilesystemTools
-  createShellTools: (path: string, shell?: 'sh' | 'powershell') => unknown
+  // Tool factories
+  createFilesystemTools: (projectPath: string, onBeforeFileWrite?: BeforeFileWriteCallback, registry?: FileReadRegistry) => FilesystemTools
+  createShellTools: (path: string, shell?: 'sh' | 'powershell', coAuthor?: boolean) => unknown
   createWebTools: () => unknown
   createBrowserTools: (ownerId: string) => unknown
+  // Permission and lifecycle
   requestToolPermission: (tabId: string, request: Parameters<RequestToolPermission>[0]) => Promise<ToolPermissionDecision>
   onAbort: (tabId: string) => void
 }
@@ -47,6 +50,7 @@ interface ProviderSnapshot {
   apiKey: string
   baseURL: string
   name: string
+  headers?: Record<string, string>
 }
 
 interface SettingsSnapshot {
@@ -55,6 +59,7 @@ interface SettingsSnapshot {
     providerId: string
     supportsThinking: boolean
     thinkingEffort: 'low' | 'medium' | 'high'
+    sdkType?: 'openai' | 'anthropic' | 'google' | null
   } | null
   openai: { apiKey: string; baseURL?: string; organizationId?: string }
   anthropic: { apiKey: string; baseURL?: string }
@@ -73,6 +78,10 @@ interface SettingsSnapshot {
   }
   agent: {
     permissionMode: 'ask' | 'auto'
+    subagents: {
+      isolation: 'inherit' | 'worktree'
+    }
+    gitCoAuthor: boolean
   }
   disabledToolIds: string[]
   disabledSkillIds: string[]
@@ -92,14 +101,6 @@ interface ProjectSnapshot {
   projectPath: string | null
 }
 
-interface ProviderCredentials {
-  type: 'openai' | 'anthropic' | 'google' | 'compatible'
-  apiKey?: string | undefined
-  baseURL?: string | undefined
-  organizationId?: string | undefined
-  name?: string | undefined
-}
-
 export async function runSubAgentStream(params: SubAgentStreamParams): Promise<SubAgentOutcome> {
   const {
     subTab,
@@ -112,10 +113,6 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     settings,
     project,
     osInfo,
-    toolDisplayLabel,
-    shellToolDisplayLabel,
-    webToolDisplayLabel,
-    browserToolDisplayLabel,
     createFilesystemTools,
     createShellTools,
     createWebTools,
@@ -123,6 +120,9 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     requestToolPermission,
     onAbort,
   } = params
+
+  // Each sub-agent gets its own file read registry — no cross-tab dedup interference
+  const readRegistry: FileReadRegistry = new Map()
 
   const activeModel = settings.activeModel
   if (!activeModel) {
@@ -139,37 +139,10 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     return { text: '', status: 'error' }
   }
 
-  // Build language model — same as parent
+  // ── Model initialization ───────────────────────────────────────────────
   let languageModel: LanguageModel
   try {
-    const pid = activeModel.providerId
-    if (pid === 'openai') {
-      languageModel = buildLanguageModel(
-        { type: 'openai', apiKey: settings.openai.apiKey, baseURL: settings.openai.baseURL, organizationId: settings.openai.organizationId },
-        activeModel.id,
-      )
-    }
-    else if (pid === 'anthropic') {
-      languageModel = buildLanguageModel(
-        { type: 'anthropic', apiKey: settings.anthropic.apiKey, baseURL: settings.anthropic.baseURL },
-        activeModel.id,
-      )
-    }
-    else if (pid === 'google') {
-      languageModel = buildLanguageModel(
-        { type: 'google', apiKey: settings.google.apiKey },
-        activeModel.id,
-      )
-    }
-    else {
-      const compat = settings.compatibleProviders?.find((p: ProviderSnapshot) => p.id === pid)
-      if (!compat)
-        throw new Error(`Provider "${pid}" not found`)
-      languageModel = buildLanguageModel(
-        { type: 'compatible', apiKey: compat.apiKey, baseURL: compat.baseURL, name: compat.name },
-        activeModel.id,
-      )
-    }
+    languageModel = resolveLanguageModel(activeModel, settings, buildLanguageModel)
   }
   catch (e) {
     const errMsg = `Failed to initialise model: ${e instanceof Error ? e.message : String(e)}`
@@ -180,24 +153,41 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     return { text: '', status: 'error' }
   }
 
-  const maxOutputTokens = activeModel.supportsThinking
-    ? activeModel.thinkingEffort === 'high'
-      ? 16000
-      : activeModel.thinkingEffort === 'low'
-        ? 2048
-        : 8000
-    : 4096
+  const maxOutputTokens = resolveMaxTokens(activeModel, 4096)
 
   // Tool set scoped by personality
   const projectPath = project.projectPath
   const [
-    { inspectWorkspace, buildWorkspacePromptContext },
+    { inspectWorkspace, buildWorkspacePromptContext, createAgentWorktree, cleanupAgentWorktree },
     { buildMemoryPromptContext },
   ] = await Promise.all([
     import('@/utils/worktrees'),
     import('@/utils/memory'),
   ])
-  const workspace = await inspectWorkspace(projectPath)
+  let effectiveProjectPath = projectPath
+  let isolationNote = ''
+  let isolatedWorktree: Awaited<ReturnType<typeof createAgentWorktree>> = null
+
+  if (
+    projectPath
+    && settings.agent.subagents.isolation === 'worktree'
+    && (personality === 'general' || personality === 'debugger')
+  ) {
+    try {
+      isolatedWorktree = await createAgentWorktree(projectPath, `${personality}-${subTab.id}`)
+      if (isolatedWorktree) {
+        effectiveProjectPath = isolatedWorktree.path
+        subTab.workspacePath = isolatedWorktree.path
+        isolationNote = `\n\n[Sub-agent workspace isolated in git worktree: ${isolatedWorktree.path} (${isolatedWorktree.branch})]`
+      }
+    }
+    catch (error) {
+      isolationNote = `\n\n[Sub-agent worktree isolation unavailable: ${error instanceof Error ? error.message : String(error)}]`
+    }
+  }
+
+  const workspace = await inspectWorkspace(effectiveProjectPath)
+  subTab.workspaceMeta = workspace
   let tools: Record<string, unknown> = {}
   const browserTools = filterDisabledTools(
     createBrowserTools(subTab.id) as Record<string, unknown>,
@@ -207,9 +197,9 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   switch (personality) {
     case 'explorer': {
       tools = { ...browserTools }
-      if (projectPath) {
+      if (effectiveProjectPath) {
         const fsTools = filterDisabledTools(
-          createFilesystemTools(projectPath) as Record<string, unknown>,
+          createFilesystemTools(effectiveProjectPath, undefined, readRegistry),
           settings.disabledToolIds,
         )
         tools = {
@@ -233,9 +223,9 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     }
 
     case 'debugger': {
-      if (projectPath) {
+      if (effectiveProjectPath) {
         const fsTools = filterDisabledTools(
-          createFilesystemTools(projectPath) as Record<string, unknown>,
+          createFilesystemTools(effectiveProjectPath, undefined, readRegistry),
           settings.disabledToolIds,
         )
         tools = {
@@ -259,42 +249,19 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
         settings.disabledToolIds,
       )
       tools = { ...webTools, ...browserTools }
-      if (projectPath) {
+      if (effectiveProjectPath) {
         const fsTools = filterDisabledTools(
-          createFilesystemTools(projectPath) as Record<string, unknown>,
+          createFilesystemTools(effectiveProjectPath, undefined, readRegistry),
           settings.disabledToolIds,
         )
         const shellTools = filterDisabledTools(
-          createShellTools(projectPath, osInfo?.shell) as Record<string, unknown>,
+          createShellTools(effectiveProjectPath, osInfo?.shell, settings.agent.gitCoAuthor) as Record<string, unknown>,
           settings.disabledToolIds,
         )
         tools = { ...tools, ...fsTools, ...shellTools }
       }
       break
     }
-  }
-
-  // Label chain for sub-agent tool events
-  function subAgentDisplayLabel(name: string, args: Record<string, unknown>): string {
-    const fsLabel = toolDisplayLabel(name, args)
-    if (fsLabel !== `Called ${name}`)
-      return fsLabel
-    const shellLabel = shellToolDisplayLabel(name, args)
-    if (shellLabel !== `Called ${name}`)
-      return shellLabel
-    const skillLabel = skillToolDisplayLabel(name, args)
-    if (skillLabel !== `Called ${name}`)
-      return skillLabel
-    const webLabel = webToolDisplayLabel(name, args)
-    if (webLabel !== `Called ${name}`)
-      return webLabel
-    const browserLabel = browserToolDisplayLabel(name, args)
-    if (browserLabel !== `Called ${name}`)
-      return browserLabel
-    const mcpLabel = mcpToolDisplayLabel(name)
-    if (mcpLabel !== `Called ${name}`)
-      return mcpLabel
-    return `Called ${name}`
   }
 
   async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
@@ -325,31 +292,51 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   }
   subTab.messages.push(assistantMsg)
 
-  const liveMsg = assistantMsg
+  // IMPORTANT: retrieve liveMsg from the reactive array — NOT the raw object.
+  // Vue wraps array elements in a Proxy; writing to the raw object bypasses
+  // reactivity and the UI never re-renders during streaming.
+  const liveMsg = subTab.messages[subTab.messages.length - 1]!
 
-  const handleToolCall = (event: ToolCallEvent) => {
-    liveMsg.toolEvents ??= []
-    liveMsg.toolEvents.push({
-      id: event.id,
-      name: event.name,
-      label: subAgentDisplayLabel(event.name, event.args),
-      status: 'running',
-      toolName: event.name,
-      startedAt: Date.now(),
-      args: event.args,
-    })
-    liveMsg.parts ??= []
-    liveMsg.parts.push({ type: 'tool', toolCallId: event.id })
-  }
-
-  const handleToolResult = (event: ToolResultEvent) => {
-    const te = liveMsg.toolEvents?.find(e => e.id === event.id)
-    if (te) {
-      te.status = event.ok ? 'done' : 'error'
-      te.finishedAt = Date.now()
-      te.result = event.result
+  // Create DB conversation and initial messages in the background
+  const convId = makeId()
+  subTab.conversationId = convId
+  void (async () => {
+    try {
+      await dbInsertConversation({
+        id: convId,
+        title: subTab.title,
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        workspace_path: effectiveProjectPath,
+        workspace_meta: workspace ? JSON.stringify(workspace) : null,
+        is_subagent: 1,
+      })
+      await dbInsertMessage({
+        id: missionMsg.id,
+        conversation_id: convId,
+        role: 'user',
+        content: missionMsg.content,
+        created_at: missionMsg.timestamp.getTime(),
+        is_complete: 1,
+      })
+      await dbInsertMessage({
+        id: liveMsg.id,
+        conversation_id: convId,
+        role: 'assistant',
+        content: liveMsg.content,
+        created_at: liveMsg.timestamp.getTime(),
+        is_complete: 0,
+      })
     }
-  }
+    catch (e) {
+      console.error('[subagent] Failed to insert conversation/messages into DB', e)
+    }
+  })()
+
+  const streamHandlers = createStreamHandlers({
+    liveMsg,
+    getToolLabel: getCoreToolDisplayLabel,
+  })
 
   const cacheRuntime = {
     settings: settings.contextCaching,
@@ -363,19 +350,25 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     await createMcpTools(settings.mcpServers ?? []),
     settings.disabledToolIds,
   )
-  const skillTools = filterDisabledTools(createSkillTools(projectPath), settings.disabledToolIds)
+  const skillTools = filterDisabledTools(createSkillTools(effectiveProjectPath), settings.disabledToolIds)
   const mergedTools = filterDisabledTools({ ...tools, ...skillTools, ...mcpTools }, settings.disabledToolIds)
-  const runtimeTools = Object.keys(mergedTools).length > 0
+  const permissionWrappedTools = Object.keys(mergedTools).length > 0
     ? wrapToolSetWithPermissions(mergedTools as ToolSet, {
         tabId: subTab.id,
         requestPermission: requestPermissionForTool,
-        getToolLabel: subAgentDisplayLabel,
+        getToolLabel: getCoreToolDisplayLabel,
+        onToolExecutionStart: streamHandlers.onToolExecutionStart,
       })
     : undefined
 
+  const toolQueue = new SequentialToolQueue()
+  const runtimeTools = permissionWrappedTools
+    ? wrapToolSetSequentially(permissionWrappedTools, toolQueue)
+    : undefined
+
   const promptBuild = await buildAgentSystemPrompt({
-    basePrompt: buildSubAgentSystemPrompt(personality, projectPath, osInfo),
-    projectPath,
+    basePrompt: buildSubAgentSystemPrompt(personality, effectiveProjectPath, osInfo),
+    projectPath: effectiveProjectPath,
     requestText: mission,
     autoContext: settings.autoContext,
     disabledSkillIds: settings.disabledSkillIds,
@@ -409,17 +402,12 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       maxOutputTokens,
       supportsToolCalls: Object.keys(mergedTools).length > 0,
       tools: runtimeTools,
-      onDelta: (delta: string) => {
-        liveMsg.content += delta
-        liveMsg.parts ??= []
-        const last = liveMsg.parts.at(-1)
-        if (last?.type === 'text') { last.text += delta }
-        else { liveMsg.parts.push({ type: 'text', text: delta }) }
-      },
-      onToolCall: handleToolCall,
-      onToolResult: handleToolResult,
+      onDelta: streamHandlers.onDelta,
+      onReasoningDelta: streamHandlers.onReasoningDelta,
+      onToolCall: streamHandlers.onToolCall,
+      onToolResult: streamHandlers.onToolResult,
       onFinish: ({ fullText, usage }) => {
-        liveMsg.content = fullText
+        liveMsg.content = `${fullText}${isolationNote}`.trim()
         const usageStats = extractUsageStats(usage, activeModel.providerId)
         if (usageStats)
           liveMsg.cacheStats = usageStats
@@ -428,24 +416,65 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
         subTab.isStreaming = false
         if (subTab.subAgent)
           subTab.subAgent.status = 'done'
-        onAbort(subTab.id)
-        resolve({ text: fullText, status: 'done' })
+        void (async () => {
+          let cleanupNote = ''
+          if (isolatedWorktree) {
+            const cleanup = await cleanupAgentWorktree(isolatedWorktree)
+            if (cleanup.removed) {
+              subTab.workspacePath = projectPath
+              subTab.workspaceMeta = await inspectWorkspace(projectPath)
+            }
+            if (cleanup.reason)
+              cleanupNote = `\n\n[${cleanup.reason}]`
+          }
+          if (cleanupNote)
+            liveMsg.content = `${liveMsg.content}${cleanupNote}`.trim()
+
+          await dbUpdateMessage(liveMsg.id, {
+            content: liveMsg.content,
+            parts: JSON.stringify(liveMsg.parts),
+            tool_events: JSON.stringify(liveMsg.toolEvents),
+            cache_stats: liveMsg.cacheStats ? JSON.stringify(liveMsg.cacheStats) : null,
+            is_complete: 1,
+          }).catch(e => console.error('[subagent] final update failed', e))
+
+          onAbort(subTab.id)
+          resolve({ text: liveMsg.content, status: 'done' })
+        })()
       },
       onError: (error: Error) => {
         liveMsg.error = error.message
         subTab.isStreaming = false
         if (subTab.subAgent)
           subTab.subAgent.status = 'error'
-        onAbort(subTab.id)
-        resolve({ text: '', status: 'error' })
+        void (async () => {
+          if (isolatedWorktree)
+            await cleanupAgentWorktree(isolatedWorktree)
+
+          await dbUpdateMessage(liveMsg.id, {
+            is_complete: 1,
+          }).catch(() => {})
+
+          onAbort(subTab.id)
+          resolve({ text: '', status: 'error' })
+        })()
       },
       signal,
     }).catch(() => {
       subTab.isStreaming = false
       if (subTab.subAgent)
         subTab.subAgent.status = 'error'
-      onAbort(subTab.id)
-      resolve({ text: '', status: 'error' })
+      void (async () => {
+        if (isolatedWorktree)
+          await cleanupAgentWorktree(isolatedWorktree)
+
+        await dbUpdateMessage(liveMsg.id, {
+          is_complete: 1,
+        }).catch(() => {})
+
+        onAbort(subTab.id)
+        resolve({ text: '', status: 'error' })
+      })()
     })
   })
 }

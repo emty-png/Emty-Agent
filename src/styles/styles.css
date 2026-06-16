@@ -176,7 +176,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-border-mid);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
 }
 
 ::-webkit-scrollbar-thumb:hover {
