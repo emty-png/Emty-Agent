@@ -13,6 +13,8 @@ import { Command } from '@tauri-apps/plugin-shell'
 // ── constants ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_TIMEOUT_MS = 15_000
+const COMMIT_TIMEOUT_MS = 0
+const REMOTE_TIMEOUT_MS = 2 * 60_000
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,20 @@ export interface GitCommandResult {
   stdout: string
   stderr: string
   exitCode: number | null
+  timedOut?: boolean
+}
+
+export interface GitCommitOptions {
+  amend?: boolean
+  skipHooks?: boolean
+  timeoutMs?: number
+}
+
+export interface GitStashEntry {
+  index: number
+  ref: string
+  branch: string
+  message: string
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -62,15 +78,17 @@ async function runGit(
 ): Promise<GitCommandResult> {
   const cmd = Command.create('git', args, { cwd })
   try {
-    const output = await Promise.race([
-      cmd.execute(),
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Git timed out after ${timeoutMs / 1000}s: git ${args.join(' ')}`)),
-          timeoutMs,
-        ),
-      ),
-    ])
+    const output = timeoutMs <= 0
+      ? await cmd.execute()
+      : await Promise.race([
+          cmd.execute(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Git timed out after ${timeoutMs / 1000}s: git ${args.join(' ')}`)),
+              timeoutMs,
+            ),
+          ),
+        ])
     return {
       ok: output.code === 0,
       stdout: output.stdout.trim(),
@@ -84,6 +102,7 @@ async function runGit(
       stdout: '',
       stderr: error instanceof Error ? error.message : String(error),
       exitCode: null,
+      timedOut: error instanceof Error && error.message.startsWith('Git timed out after'),
     }
   }
 }
@@ -277,6 +296,21 @@ export async function gitDiff(
   return result.stdout
 }
 
+/**
+ * Produce a diff for an untracked file by diffing it against /dev/null.
+ * This is used to display the contents of files that are not in the index.
+ */
+export async function gitDiffNoIndex(
+  cwd: string,
+  file: string,
+): Promise<string> {
+  // Compare against /dev/null so the output looks like a new file diff.
+  // `--no-index` allows diffing arbitrary files even outside a git repo.
+  const args = ['diff', '--no-index', '--', '/dev/null', file]
+  const result = await runGit(cwd, args)
+  return result.stdout
+}
+
 /** Get diff stat summary for the working tree. */
 export async function gitDiffStat(cwd: string): Promise<string> {
   const result = await runGit(cwd, ['diff', '--stat'])
@@ -285,7 +319,13 @@ export async function gitDiffStat(cwd: string): Promise<string> {
 
 /** Get the diff of all staged files. */
 export async function gitDiffStaged(cwd: string): Promise<string> {
-  const result = await runGit(cwd, ['diff', '--cached'])
+  const result = await runGit(cwd, ['diff', '--cached'], 60_000)
+  return result.stdout
+}
+
+/** Get a compact staged diff stat for commit review and prompt context. */
+export async function gitDiffStagedStat(cwd: string): Promise<string> {
+  const result = await runGit(cwd, ['diff', '--cached', '--stat'], 60_000)
   return result.stdout
 }
 
@@ -313,12 +353,17 @@ export async function gitUnstageAll(cwd: string): Promise<GitCommandResult> {
 export async function gitCommit(
   cwd: string,
   message: string,
-  amend = false,
+  options: GitCommitOptions | boolean = {},
 ): Promise<GitCommandResult> {
+  const normalized: GitCommitOptions = typeof options === 'boolean'
+    ? { amend: options }
+    : options
   const args = ['commit', '-m', message]
-  if (amend)
+  if (normalized.amend)
     args.push('--amend')
-  return runGit(cwd, args)
+  if (normalized.skipHooks)
+    args.push('--no-verify')
+  return runGit(cwd, args, normalized.timeoutMs ?? COMMIT_TIMEOUT_MS)
 }
 
 /**
@@ -349,25 +394,56 @@ export async function gitDiscardUntracked(cwd: string, files: string[], includeD
 
 /** Push to upstream. */
 export async function gitPush(cwd: string): Promise<GitCommandResult> {
-  return runGit(cwd, ['push'], 30_000)
+  return runGit(cwd, ['push'], REMOTE_TIMEOUT_MS)
 }
 
 /** Pull from upstream. */
 export async function gitPull(cwd: string): Promise<GitCommandResult> {
-  return runGit(cwd, ['pull'], 30_000)
+  return runGit(cwd, ['pull', '--ff-only'], REMOTE_TIMEOUT_MS)
+}
+
+/** Fetch remote refs and prune deleted upstream branches. */
+export async function gitFetch(cwd: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['fetch', '--prune'], REMOTE_TIMEOUT_MS)
 }
 
 /** Stash working changes. */
-export async function gitStash(cwd: string, message?: string): Promise<GitCommandResult> {
-  const args = message
-    ? ['stash', 'push', '-m', message]
-    : ['stash']
+export async function gitStash(cwd: string, message?: string, includeUntracked = true): Promise<GitCommandResult> {
+  const args = ['stash', 'push']
+  if (includeUntracked)
+    args.push('--include-untracked')
+  if (message)
+    args.push('-m', message)
   return runGit(cwd, args)
 }
 
 /** Pop the most recent stash. */
 export async function gitStashPop(cwd: string): Promise<GitCommandResult> {
   return runGit(cwd, ['stash', 'pop'])
+}
+
+/** List recent stashes. */
+export async function gitStashList(cwd: string): Promise<GitStashEntry[]> {
+  const result = await runGit(cwd, ['stash', 'list', '--format=%gd%x09%gs'], 10_000)
+  if (!result.ok)
+    return []
+
+  return result.stdout
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map(line => {
+      const [ref = '', message = ''] = line.split('\t')
+      const match = ref.match(/^stash@\{(\d+)\}$/)
+      const branchPrefix = 'On '
+      const branchSeparator = message.indexOf(': ')
+      const hasBranch = message.startsWith(branchPrefix) && branchSeparator > branchPrefix.length
+      return {
+        index: match ? Number.parseInt(match[1]!, 10) : 0,
+        ref,
+        branch: hasBranch ? message.slice(branchPrefix.length, branchSeparator) : '',
+        message: hasBranch ? message.slice(branchSeparator + 2) : message,
+      }
+    })
 }
 
 /** Get recent commit log. */

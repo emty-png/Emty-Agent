@@ -1,37 +1,108 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { open } from '@tauri-apps/plugin-dialog'
-import { Copy, FolderOpen, Minus, Square, SquareTerminal, X } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useChatStore } from '@/stores/chat'
-import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
-import { useProjectStore } from '@/stores/project'
-import { useTerminalStore } from '@/stores/terminal'
-import ServicesDropdown from './ServicesDropdown.vue'
+import { Copy, Menu, Minus, Square, X } from 'lucide-vue-next'
+import { storeToRefs } from 'pinia'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useSidebarStore } from '@/stores/sidebar'
+import Sidebar from '../sidebar/Sidebar.vue'
 
 interface Props {
   title?: string
+  activeView?: 'chat' | 'history' | 'projects'
 }
 const props = withDefaults(defineProps<Props>(), {
-  title: 'App',
+  activeView: 'chat',
 })
 const emit = defineEmits<{
-  toggleTerminal: []
+  selectView: [view: 'chat' | 'history' | 'projects']
+  openSettings: []
 }>()
 
-const project = useProjectStore()
-const chat = useChatStore()
-const terminal = useTerminalStore()
-const displayProjectPath = computed(() => resolveTabWorkspacePath(chat.activeTab, project.projectPath))
-const displayProjectName = computed(() => {
-  const path = displayProjectPath.value
-  if (!path)
-    return null
-  return path.replace(/[\\/]+$/, '').split(/[/\\]/).pop() ?? null
-})
-const terminalActive = computed(() => terminal.getOwner(chat.activeId).isPanelOpen)
+const sidebar = useSidebarStore()
+const { collapsed: sidebarCollapsed } = storeToRefs(sidebar)
 
-// ── window state ──────────────────────────────────────────────────────────────
+const sidebarFlyoutOpen = ref(false)
+const sidebarTriggerRef = ref<HTMLElement | null>(null)
+const sidebarFlyoutRef = ref<HTMLElement | null>(null)
+const sidebarFlyoutPos = ref({ top: 0, left: 0 })
+let flyoutCloseTimer: ReturnType<typeof setTimeout> | null = null
+
+function updateSidebarFlyoutPos() {
+  const trigger = sidebarTriggerRef.value
+  if (!trigger)
+    return
+  const rect = trigger.getBoundingClientRect()
+  sidebarFlyoutPos.value = {
+    top: rect.bottom + 6,
+    left: rect.left,
+  }
+}
+
+function cancelCloseSidebarFlyout() {
+  if (flyoutCloseTimer) {
+    clearTimeout(flyoutCloseTimer)
+    flyoutCloseTimer = null
+  }
+}
+
+function closeSidebarFlyoutNow() {
+  cancelCloseSidebarFlyout()
+  sidebarFlyoutOpen.value = false
+}
+
+function scheduleCloseSidebarFlyout() {
+  cancelCloseSidebarFlyout()
+  flyoutCloseTimer = setTimeout(() => {
+    sidebarFlyoutOpen.value = false
+  }, 150)
+}
+
+async function openSidebarFlyout() {
+  if (!sidebarCollapsed.value)
+    return
+  cancelCloseSidebarFlyout()
+  updateSidebarFlyoutPos()
+  sidebarFlyoutOpen.value = true
+  await nextTick()
+  updateSidebarFlyoutPos()
+}
+
+function onSidebarSelectView(view: 'chat' | 'history' | 'projects') {
+  emit('selectView', view)
+  closeSidebarFlyoutNow()
+}
+
+function onSidebarOpenSettings() {
+  emit('openSettings')
+  closeSidebarFlyoutNow()
+}
+
+watch(sidebarCollapsed, collapsed => {
+  if (!collapsed)
+    closeSidebarFlyoutNow()
+})
+
+function onSidebarFlyoutPointerDown(event: PointerEvent) {
+  if (!sidebarFlyoutOpen.value)
+    return
+  const target = event.target as Node
+  if (sidebarTriggerRef.value?.contains(target))
+    return
+  if (sidebarFlyoutRef.value?.contains(target))
+    return
+  closeSidebarFlyoutNow()
+}
+
+function onSidebarFlyoutKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && sidebarFlyoutOpen.value)
+    closeSidebarFlyoutNow()
+}
+
+function onSidebarFlyoutResize() {
+  if (sidebarFlyoutOpen.value)
+    updateSidebarFlyoutPos()
+}
+
 const appWindow = getCurrentWindow()
 const maximized = ref(false)
 
@@ -43,10 +114,19 @@ let unlisten: (() => void) | null = null
 onMounted(async () => {
   await syncMaximized()
   unlisten = await appWindow.onResized(syncMaximized)
-})
-onUnmounted(() => unlisten?.())
 
-// ── window controls ───────────────────────────────────────────────────────────
+  document.addEventListener('pointerdown', onSidebarFlyoutPointerDown)
+  document.addEventListener('keydown', onSidebarFlyoutKeydown)
+  window.addEventListener('resize', onSidebarFlyoutResize)
+})
+onUnmounted(() => {
+  unlisten?.()
+  cancelCloseSidebarFlyout()
+  document.removeEventListener('pointerdown', onSidebarFlyoutPointerDown)
+  document.removeEventListener('keydown', onSidebarFlyoutKeydown)
+  window.removeEventListener('resize', onSidebarFlyoutResize)
+})
+
 async function minimize() {
   await appWindow.minimize()
 }
@@ -62,245 +142,79 @@ async function close() {
   await appWindow.close()
 }
 
-// ── project picker ────────────────────────────────────────────────────────────
-const picking = ref(false)
-
-async function pickProject() {
-  if (picking.value)
-    return
-  picking.value = true
-
-  try {
-    const selected = await open({
-      directory: true,
-      recursive: true,
-      multiple: false,
-      title: 'Open project folder',
-    })
-
-    // open() returns string | string[] | null
-    if (typeof selected === 'string') {
-      project.setProject(selected)
-      window.location.reload()
-    }
-  }
-  finally {
-    picking.value = false
-  }
-}
+// Reusable tailwind string constants
+const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-none bg-transparent text-[var(--color-text-secondary)] cursor-default [-webkit-app-region:no-drag] transition-colors duration-[120ms] ease-in-out hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] active:bg-[var(--color-bg-elevated)]'
 </script>
 
 <template>
-  <header class="titlebar">
-    <!-- ── left: app name + project ──────────────────────────────────── -->
-    <div class="titlebar-left">
+  <header class="flex items-center h-[26px] min-h-[26px] max-h-[26px] bg-[var(--color-bg-surface)] border-b border-[var(--color-border-mid)] select-none relative z-[9999] shrink-0 [-webkit-app-region:drag]">
+    <div class="flex items-center gap-1.5 flex-none min-w-0 max-w-[40%]">
+      <div
+        ref="sidebarTriggerRef"
+        class="flex items-center shrink-0 [-webkit-app-region:no-drag]"
+        @mouseenter="openSidebarFlyout"
+        @mouseleave="scheduleCloseSidebarFlyout"
+      >
+        <button
+          class="flex items-center justify-center w-[46px] h-[26px] border-none rounded-none bg-transparent text-[var(--color-text-tertiary)] cursor-pointer shrink-0 transition-colors duration-[120ms] ease-in-out active:bg-[var(--color-bg-elevated)]"
+          :class="sidebarFlyoutOpen ? 'text-[var(--color-accent-text)] bg-[var(--color-accent-muted)]' : 'hover:text-[var(--color-accent-text)] hover:bg-[var(--color-accent-muted)]'"
+          :aria-label="sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'"
+          :title="sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'"
+          aria-haspopup="true"
+          :aria-expanded="sidebarFlyoutOpen"
+          @click.stop="sidebar.toggle"
+        >
+          <Menu :size="15" :stroke-width="1.8" />
+        </button>
+      </div>
+
       <slot name="icon" />
-
-      <span class="titlebar-title">{{ props.title }}</span>
-
-      <template v-if="displayProjectName">
-        <div class="title-divider" aria-hidden="true" />
-        <span class="titlebar-project" :title="displayProjectPath ?? ''">
-          {{ displayProjectName }}
-        </span>
-      </template>
     </div>
 
-    <!-- ── center: optional slot ─────────────────────────────────────── -->
-    <div class="titlebar-center">
+    <div class="flex-1 flex items-center justify-center min-w-0">
       <slot name="center" />
     </div>
 
-    <!-- ── controls ──────────────────────────────────────────────────── -->
-    <div class="titlebar-controls">
-      <!-- open project -->
-      <button
-        class="ctrl-btn ctrl-btn--project"
-        :class="{ 'ctrl-btn--picking': picking }"
-        aria-label="Open project folder"
-        @click.stop="pickProject"
-      >
-        <FolderOpen :size="15" :stroke-width="1.8" />
-      </button>
+    <div class="flex items-stretch flex-none h-[29px] ml-auto [-webkit-app-region:no-drag]">
+      <div class="w-[1px] h-3 self-center bg-[var(--color-border-mid)] shrink-0" aria-hidden="true" />
 
-      <button
-        class="ctrl-btn ctrl-btn--terminal"
-        :class="{ 'ctrl-btn--active': terminalActive }"
-        aria-label="Toggle terminal panel"
-        title="Toggle terminal panel"
-        @click.stop="emit('toggleTerminal')"
-      >
-        <SquareTerminal :size="15" :stroke-width="1.8" />
-      </button>
-
-      <ServicesDropdown />
-
-      <div class="divider" aria-hidden="true" />
-
-      <!-- minimize -->
-      <button class="ctrl-btn" aria-label="Minimize" @click.stop="minimize">
+      <button :class="ctrlBtnClass" aria-label="Minimize" @click.stop="minimize">
         <Minus :size="15" :stroke-width="1.8" />
       </button>
 
-      <!-- maximize / restore -->
-      <button class="ctrl-btn" aria-label="Toggle maximise" @click.stop="toggleMaximize">
-        <Copy v-if="maximized" :size="13" :stroke-width="1.8" style="transform: rotate(90deg)" />
+      <button :class="ctrlBtnClass" aria-label="Toggle maximise" @click.stop="toggleMaximize">
+        <Copy v-if="maximized" :size="13" :stroke-width="1.8" class="rotate-90" />
         <Square v-else :size="13" :stroke-width="1.8" />
       </button>
 
-      <!-- close -->
-      <button class="ctrl-btn ctrl-btn--close" aria-label="Close" @click.stop="close">
+      <button class="hover:bg-[var(--color-danger)] hover:text-[var(--color-text-primary)] active:bg-[var(--color-danger-text)] active:text-[var(--color-text-primary)]" :class="[ctrlBtnClass]" aria-label="Close" @click.stop="close">
         <X :size="15" :stroke-width="1.8" />
       </button>
     </div>
   </header>
+
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]"
+      leave-active-class="transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]"
+      enter-from-class="opacity-0 -translate-y-1.5 scale-95"
+      leave-to-class="opacity-0 -translate-y-1.5 scale-95"
+    >
+      <div
+        v-if="sidebarFlyoutOpen"
+        ref="sidebarFlyoutRef"
+        class="fixed w-[196px] bg-[var(--color-bg-surface)] border border-[var(--color-border-mid)] rounded-[var(--radius-md)] shadow-[0_8px_24px_rgba(0,0,0,0.4),0_2px_6px_rgba(0,0,0,0.28)] overflow-hidden z-[10000] origin-top-left"
+        :style="{ top: `${sidebarFlyoutPos.top}px`, left: `${sidebarFlyoutPos.left}px` }"
+        @mouseenter="cancelCloseSidebarFlyout"
+        @mouseleave="scheduleCloseSidebarFlyout"
+      >
+        <Sidebar
+          flyout
+          :active-view="props.activeView"
+          @select-view="onSidebarSelectView"
+          @open-settings="onSidebarOpenSettings"
+        />
+      </div>
+    </Transition>
+  </Teleport>
 </template>
-
-<style scoped>
-/* ── shell ───────────────────────────────────────────────────────────────────── */
-.titlebar {
-  display: flex;
-  align-items: center;
-  height: 29px;
-  min-height: 29px;
-  max-height: 29px;
-  padding-inline: 10px 0;
-  background: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-mid);
-  user-select: none;
-  -webkit-user-select: none;
-  position: relative;
-  z-index: 9999;
-  flex-shrink: 0;
-  -webkit-app-region: drag;
-}
-
-/* ── left ────────────────────────────────────────────────────────────────────── */
-.titlebar-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: 40%; /* prevent squishing controls on long project names */
-}
-
-.titlebar-title {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--color-text-secondary);
-  line-height: 1;
-  pointer-events: none;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* divider between app name and project name */
-.title-divider {
-  width: 1px;
-  height: 10px;
-  background: var(--color-border-mid);
-  flex-shrink: 0;
-  margin-inline: 2px;
-}
-
-.titlebar-project {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.01em;
-  line-height: 1;
-  pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-/* ── center ──────────────────────────────────────────────────────────────────── */
-.titlebar-center {
-  flex: 1 1 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-}
-
-/* ── controls ────────────────────────────────────────────────────────────────── */
-.titlebar-controls {
-  display: flex;
-  align-items: stretch;
-  flex: 0 0 auto;
-  height: 29px;
-  margin-left: auto;
-  -webkit-app-region: no-drag;
-}
-
-.divider {
-  width: 1px;
-  height: 12px;
-  align-self: center;
-  background: var(--color-border-mid);
-  flex-shrink: 0;
-}
-
-/* ── buttons ─────────────────────────────────────────────────────────────────── */
-.ctrl-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 100%;
-  border: none;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: default;
-  -webkit-app-region: no-drag;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
-}
-
-.ctrl-btn:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-}
-
-.ctrl-btn:active {
-  background: var(--color-bg-elevated);
-}
-
-/* project button — subtle ember tint when a project is loaded */
-.ctrl-btn--project {
-  color: var(--color-text-tertiary);
-}
-
-.ctrl-btn--project:hover {
-  color: var(--color-accent-text);
-  background: var(--color-accent-muted);
-}
-
-.ctrl-btn--terminal:hover,
-.ctrl-btn--active {
-  color: var(--color-accent-text);
-  background: var(--color-accent-muted);
-}
-
-/* spinner state while dialog is open */
-.ctrl-btn--picking {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-/* close */
-.ctrl-btn--close:hover {
-  background: var(--color-danger);
-  color: var(--color-text-primary);
-}
-
-.ctrl-btn--close:active {
-  background: var(--color-danger-text);
-  color: var(--color-text-primary);
-}
-</style>

@@ -1,5 +1,4 @@
 import type { Attachment } from './attachment-types'
-import type { ChatMode } from '@/utils/ai'
 import type { ChatPromptEstimate } from '@/utils/chatEstimate'
 import type { FileReadRegistry } from '@/utils/tools/fs/shared'
 import type { ToolPermissionDecision } from '@/utils/tools/permissions'
@@ -9,6 +8,46 @@ import type { TaskItem } from '@/utils/tools/todos'
 import type { WorkspaceSnapshot } from '@/utils/worktrees'
 import { UsageStats } from '@/utils/contextCaching'
 
+// Internal helper — used by agentLifecycle and chat.ts
+import { isStreamingStatus } from './agentStatus'
+
+// ── Chat mode ─────────────────────────────────────────────────────────────────
+
+export type ChatMode
+  = | 'build' // Full agent — all tools
+    | 'plan' // Read-only agent — write/shell tools return error stubs
+    | 'chat' // Minimal streaming — questions, sleep, web, memory only
+    | 'design' // Isolated HTML/CSS/JS sandbox — browser, imageGen, web (no user fs/shell)
+
+// ── Agent status ──────────────────────────────────────────────────────────────
+
+export type AgentToolCategory
+  = | 'fs'
+    | 'shell'
+    | 'web'
+    | 'browser'
+    | 'memory'
+    | 'mcp'
+    | 'subagent'
+    | 'image'
+    | 'plan'
+    | 'questions'
+    | 'tasks'
+    | 'system'
+
+export type AgentStatus
+  = | { type: 'idle' }
+    | { type: 'initializing' }
+    | { type: 'streaming' }
+    | { type: 'tool-running'; toolName: string; category: AgentToolCategory }
+    | { type: 'sleeping'; untilMs?: number }
+    | { type: 'waiting-questions' }
+    | { type: 'waiting-permission'; toolName: string }
+    | { type: 'compacting' }
+    | { type: 'error'; message: string }
+
+// ── Tool events ───────────────────────────────────────────────────────────────
+
 export interface ToolEvent {
   id: string
   name: string
@@ -17,32 +56,20 @@ export interface ToolEvent {
   toolName: string
   startedAt: number
   finishedAt?: number
-  /**
-   * Parsed input arguments the model sent to the tool.
-   * Persisted so subsequent turns can reconstruct the full
-   * tool-call → tool-result message sequence for the AI SDK.
-   */
+  /** Input args from the model. Persisted for tool-call → result replay. */
   args?: Record<string, unknown>
-  /**
-   * The value returned by the tool's execute() function.
-   * Persisted so subsequent turns include the tool output in context.
-   */
+  /** Return value from execute(). Persisted for context reconstruction. */
   result?: unknown
-  /**
-   * Incremental stdout/stderr captured while command-like tools are still
-   * running. This is UI review data only; model replay uses `result`.
-   */
+  /** Live stdout/stderr for command tools (UI only — model uses `result`). */
   liveOutput?: {
     stdout?: string
     stderr?: string
   }
-  /**
-   * Arbitrary key-value metadata for tool-specific badge data.
-   * spawn_subagent stores { subAgentTabId: string } here so the badge can
-   * navigate to the sub-agent tab on click.
-   */
+  /** Tool-specific badge metadata, e.g. subAgentTabId for spawn_subagent. */
   metadata?: Record<string, unknown>
 }
+
+// ── Message ───────────────────────────────────────────────────────────────────
 
 export type MessagePart
   = | { type: 'text'; text: string }
@@ -59,11 +86,12 @@ export interface Message {
   parts?: MessagePart[]
   cacheStats?: UsageStats
   error?: string
-  /** User-attached files/images (only present on user messages). */
   attachments?: Attachment[]
-  /** Tracks which skill generated this message (hidden from user display). */
   skillId?: string
+  elapsedSec?: number | null
 }
+
+// ── Draft / estimator ─────────────────────────────────────────────────────────
 
 export interface ChatDraftState {
   text: string
@@ -76,6 +104,8 @@ export interface ChatEstimatorState {
   estimating: boolean
 }
 
+// ── Permissions ───────────────────────────────────────────────────────────────
+
 export interface PendingToolPermission {
   requestId: string
   toolName: string
@@ -83,6 +113,8 @@ export interface PendingToolPermission {
   actionTitle: string
   actionDetails: string[]
 }
+
+// ── Chat tab ──────────────────────────────────────────────────────────────────
 
 export interface ChatTab {
   id: string
@@ -92,27 +124,23 @@ export interface ChatTab {
   workspacePath: string | null
   workspaceMeta?: WorkspaceSnapshot | null
   workspaceLocked: boolean
-  isStreaming: boolean
+  /** Authoritative agent lifecycle status. */
+  agentStatus: AgentStatus
   todos: TaskItem[]
   modelUid?: string | null
+  disabledSkillIds?: string[]
+  disabledMcpServerIds?: string[]
   draft: ChatDraftState
   estimator: ChatEstimatorState
   isCompacting?: boolean
   pendingQuestions?: PendingBatch | null
   pendingPermissions: PendingToolPermission[]
-  /**
-   * Per-tab file read registry. Tracks which files have been read (hash, mtime,
-   * completeness) so edit/write tools can verify freshness. Each tab (and
-   * sub-agent) gets its own registry — no cross-tab dedup interference.
-   */
+  /** Per-tab file read registry — no cross-tab dedup interference. */
   readRegistry: FileReadRegistry
-  /**
-   * Present only on sub-agent tabs. Contains personality, mission, parent tab ID,
-   * and live status. Sub-agent tabs never persist to the database — they are
-   * ephemeral and reset when the app restarts.
-   */
+  /** Present only on sub-agent tabs (ephemeral, not persisted). */
   subAgent?: SubAgentInfo
   mode?: ChatMode
 }
 
-export type { Attachment, ChatMode, SubAgentInfo, SubAgentPersonality, TaskItem, ToolPermissionDecision }
+export type { Attachment, SubAgentInfo, SubAgentPersonality, TaskItem, ToolPermissionDecision }
+export { isStreamingStatus }

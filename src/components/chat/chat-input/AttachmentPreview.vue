@@ -21,183 +21,57 @@ function onKeydown(e: KeyboardEvent) {
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+
+// ── Tailwind Class Extractions ──────────────────────────────────────────────
+const backdropClasses = 'fixed inset-0 z-[99999] flex items-center justify-center bg-[color-mix(in_srgb,var(--color-bg-base)_65%,transparent)] p-8'
+const panelClasses = 'flex flex-col max-w-[90vw] max-h-[85vh] min-w-[320px] bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)] overflow-hidden'
+const headerClasses = 'flex items-center justify-between gap-3 py-3 px-[14px] border-b border-(--color-border-mid) shrink-0'
+const infoClasses = 'flex flex-col gap-0.5 min-w-0'
+const filenameClasses = 'text-[13px] font-semibold text-(--color-text-primary) whitespace-nowrap overflow-hidden text-ellipsis'
+const metaClasses = 'text-[11px] text-(--color-text-tertiary)'
+const closeClasses = 'flex items-center justify-center w-7 h-7 border border-(--color-border-mid) rounded-(--radius-sm) bg-transparent text-(--color-text-tertiary) cursor-pointer shrink-0 transition-[background,color,border-color] duration-[110ms] ease hover:bg-(--color-state-hover) hover:text-(--color-text-primary) hover:border-(--color-border-bright)'
+const bodyClasses = 'flex-1 overflow-auto p-4 flex items-center justify-center'
+const imageClasses = 'max-w-full max-h-[calc(85vh-80px)] object-contain rounded-(--radius-md) shadow-[0_4px_24px_rgba(0,0,0,0.3)]'
+const textClasses = 'w-full max-h-[calc(85vh-80px)] overflow-auto m-0 p-4 bg-(--color-bg-card) border border-(--color-border-mid) rounded-(--radius-md) text-(--color-text-primary) font-mono text-[12.5px] leading-[1.6] whitespace-pre-wrap break-words [tab-size:2]'
+const codeClasses = 'text-[inherit] bg-transparent p-0 font-[inherit]'
+
+// Replaces the `@keyframes preview-slide-up` using standard Vue enter transitions
+const panelTransitions = {
+  enterActiveClass: 'transition-[opacity,transform] duration-200 ease-out',
+  enterFromClass: 'opacity-0 translate-y-3 scale-[0.98]',
+  enterToClass: 'opacity-100 translate-y-0 scale-100',
+}
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition name="preview-fade">
-      <div v-if="attachment" class="preview-backdrop" @click.self="$emit('close')">
-        <div class="preview-panel">
-          <div class="preview-header">
-            <div class="preview-file-info">
-              <span class="preview-filename">{{ attachment.name }}</span>
-              <span class="preview-meta">{{ formatFileSize(attachment.size) }} · {{ attachment.mimeType }}</span>
+    <div :class="backdropClasses" @click.self="$emit('close')">
+      <Transition appear v-bind="panelTransitions">
+        <div :class="panelClasses">
+          <div :class="headerClasses">
+            <div :class="infoClasses">
+              <span :class="filenameClasses">{{ attachment.name }}</span>
+              <span :class="metaClasses">{{ formatFileSize(attachment.size) }} · {{ attachment.mimeType }}</span>
             </div>
-            <button class="preview-close" aria-label="Close preview" @click="$emit('close')">
+            <button :class="closeClasses" aria-label="Close preview" @click="$emit('close')">
               <X :size="16" :stroke-width="2" />
             </button>
           </div>
 
-          <div class="preview-body">
+          <div :class="bodyClasses">
             <!-- Image preview -->
             <img
               v-if="isImage"
               :src="attachment.dataUrl"
               :alt="attachment.name"
-              class="preview-image"
+              :class="imageClasses"
             >
 
             <!-- Text/code file preview -->
-            <pre v-else class="preview-text"><code>{{ attachment.dataUrl }}</code></pre>
+            <pre v-else :class="textClasses"><code :class="codeClasses">{{ attachment.dataUrl }}</code></pre>
           </div>
         </div>
-      </div>
-    </Transition>
+      </Transition>
+    </div>
   </Teleport>
 </template>
-
-<style scoped>
-.preview-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 99999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--color-bg-base) 65%, transparent);
-  padding: 32px;
-}
-
-.preview-panel {
-  display: flex;
-  flex-direction: column;
-  max-width: 90vw;
-  max-height: 85vh;
-  min-width: 320px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-bright);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--color-shadow-floating);
-  overflow: hidden;
-  animation: preview-slide-up 200ms ease;
-}
-
-@keyframes preview-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--color-border-mid);
-  flex-shrink: 0;
-}
-
-.preview-file-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.preview-filename {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.preview-meta {
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-}
-
-.preview-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 110ms ease,
-    color 110ms ease,
-    border-color 110ms ease;
-}
-
-.preview-close:hover {
-  background: var(--color-state-hover);
-  color: var(--color-text-primary);
-  border-color: var(--color-border-bright);
-}
-
-.preview-body {
-  flex: 1;
-  overflow: auto;
-  padding: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.preview-image {
-  max-width: 100%;
-  max-height: calc(85vh - 80px);
-  object-fit: contain;
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
-}
-
-.preview-text {
-  width: 100%;
-  max-height: calc(85vh - 80px);
-  overflow: auto;
-  margin: 0;
-  padding: 16px;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 12.5px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-  tab-size: 2;
-}
-
-.preview-text code {
-  color: inherit;
-  background: none;
-  padding: 0;
-  font-size: inherit;
-  font-family: inherit;
-}
-
-/* Transition */
-.preview-fade-enter-active,
-.preview-fade-leave-active {
-  transition: opacity 180ms ease;
-}
-.preview-fade-enter-from,
-.preview-fade-leave-to {
-  opacity: 0;
-}
-</style>

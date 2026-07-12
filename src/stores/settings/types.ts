@@ -196,6 +196,12 @@ export interface ConfiguredSkill extends SkillMetadata {
   enabled: boolean
 }
 
+export interface SoundConfig {
+  completionEnabled: boolean
+  errorEnabled: boolean
+  volume: number // 0–100
+}
+
 export interface TestResult {
   ok: boolean
   message: string

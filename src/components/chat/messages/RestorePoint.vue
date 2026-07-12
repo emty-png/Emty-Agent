@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { Checkpoint } from '@/stores/checkpoints'
 import { History, RotateCcw } from 'lucide-vue-next'
-import { onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   checkpoint: Checkpoint
   disabled: boolean
 }>()
@@ -57,34 +57,64 @@ onBeforeUnmount(() => {
   if (_restoreTimer)
     clearTimeout(_restoreTimer)
 })
+
+// ── Tailwind Class Extractions ──────────────────────────────────────────────
+const rootClasses = computed(() => {
+  const base = 'flex items-center gap-0 w-full min-w-0 py-0.5 select-none transition-opacity duration-200 ease-[ease] hover:opacity-100'
+  if (props.disabled)
+    return `${base} pointer-events-none opacity-25`
+  if (confirming.value)
+    return `${base} opacity-100`
+  return `${base} opacity-45`
+})
+
+const restoreLineClasses = 'flex-1 min-w-0 h-px border-t border-dashed border-(--color-border-mid) opacity-50'
+const restoreLabelClasses = 'flex items-center gap-[5px] px-2.5 text-(--color-text-dim) shrink min-w-0'
+const restoreLabelTextClasses = 'text-[11px] font-semibold tracking-[0.04em] uppercase overflow-hidden text-ellipsis'
+const restoreWrapperClasses = 'relative flex items-center justify-end pl-1.5 min-w-0 overflow-hidden'
+
+function getWrapperStateClasses(hidden: boolean): string {
+  const base = '[transition:opacity_150ms_ease,transform_150ms_ease,visibility_150ms] [transform-origin:center_right]'
+  return hidden ? `${base} opacity-0 pointer-events-none absolute top-0 right-0 scale-[0.96] invisible` : base
+}
+
+function getActionsClasses(hidden: boolean): string {
+  return `flex items-center ${getWrapperStateClasses(hidden)}`
+}
+
+function getConfirmClasses(hidden: boolean): string {
+  return `flex items-center gap-1.5 flex-wrap min-w-0 ${getWrapperStateClasses(hidden)}`
+}
+
+const restoreBtnClasses = 'flex items-center gap-1 h-[22px] px-2 border border-transparent rounded-(--radius-sm) bg-transparent text-(--color-text-dim) text-[11px] font-semibold font-[inherit] cursor-pointer tracking-[0.02em] whitespace-nowrap transition-[color,background,border-color] duration-150 ease-[ease] enabled:hover:text-(--color-accent-text) enabled:hover:bg-(--color-accent-muted) enabled:hover:border-(--color-accent-dim) disabled:cursor-not-allowed disabled:opacity-40'
+
+const restoreConfirmTextClasses = 'text-[11px] text-(--color-text-secondary) whitespace-normal min-w-0'
+
+const restoreConfirmYesClasses = 'flex items-center h-[22px] px-2.5 border border-[color-mix(in_srgb,var(--color-accent)_40%,transparent)] rounded-(--radius-sm) bg-(--color-accent-muted) text-(--color-accent-text) text-[11px] font-bold font-[inherit] cursor-pointer whitespace-nowrap transition-[background,border-color] duration-[120ms] ease-[ease] enabled:hover:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)] enabled:hover:border-[color-mix(in_srgb,var(--color-accent)_60%,transparent)] disabled:opacity-60 disabled:cursor-wait'
+
+const restoreConfirmNoClasses = 'flex items-center h-[22px] px-2 border border-transparent rounded-(--radius-sm) bg-transparent text-(--color-text-tertiary) text-[11px] font-medium font-[inherit] cursor-pointer whitespace-nowrap transition-[color,background] duration-[120ms] ease-[ease] enabled:hover:text-(--color-text-secondary) enabled:hover:bg-(--color-state-hover)'
 </script>
 
 <template>
-  <div
-    class="restore-point"
-    :class="{
-      'restore-point--confirming': confirming,
-      'restore-point--disabled': disabled,
-    }"
-  >
-    <div class="restore-line-left" />
+  <div :class="rootClasses">
+    <div :class="restoreLineClasses" />
 
-    <div class="restore-label">
+    <div :class="restoreLabelClasses">
       <History :size="12" :stroke-width="2" />
-      <span class="restore-label-text">Checkpoint</span>
+      <span :class="restoreLabelTextClasses">Checkpoint</span>
     </div>
 
-    <div class="restore-line-right" />
+    <div :class="restoreLineClasses" />
 
     <!--
       Replaced Vue <Transition> with pure CSS.
       This prevents the component from blocking Vue's unmount lifecycle during tab switches.
     -->
-    <div class="restore-wrapper">
+    <div :class="restoreWrapperClasses">
       <!-- Default state: subtle Restore button -->
-      <div class="restore-actions" :class="{ 'is-hidden': confirming }">
+      <div :class="getActionsClasses(confirming)">
         <button
-          class="restore-btn"
+          :class="restoreBtnClasses"
           :disabled="disabled"
           :title="disabled ? 'Cannot restore while streaming' : 'Restore to this checkpoint'"
           @click="requestRestore(checkpoint.id)"
@@ -95,17 +125,17 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Confirmation state -->
-      <div class="restore-confirm" :class="{ 'is-hidden': !confirming }">
-        <span class="restore-confirm-text">Restore files &amp; remove messages after this point?</span>
+      <div :class="getConfirmClasses(!confirming)">
+        <span :class="restoreConfirmTextClasses">Restore files &amp; remove messages after this point?</span>
         <button
-          class="restore-confirm-yes"
+          :class="restoreConfirmYesClasses"
           :disabled="restoring"
           @click="confirmRestore(checkpoint.id)"
         >
           {{ restoring ? 'Restoring…' : 'Yes, restore' }}
         </button>
         <button
-          class="restore-confirm-no"
+          :class="restoreConfirmNoClasses"
           :disabled="restoring"
           @click="cancelConfirm"
         >
@@ -115,189 +145,3 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.restore-point {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  width: 100%;
-  min-width: 0;
-  padding: 2px 0;
-  user-select: none;
-  opacity: 0.45;
-  transition: opacity 200ms ease;
-}
-
-.restore-point:hover,
-.restore-point--confirming {
-  opacity: 1;
-}
-
-.restore-point--disabled {
-  pointer-events: none;
-  opacity: 0.25;
-}
-
-/* ── dotted lines ──────────────────────────────────────────────────────────── */
-.restore-line-left,
-.restore-line-right {
-  flex: 1;
-  min-width: 0;
-  height: 1px;
-  border-top: 1px dashed var(--color-border-mid);
-  opacity: 0.5;
-}
-
-/* ── center label ──────────────────────────────────────────────────────────── */
-.restore-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 10px;
-  color: var(--color-text-dim);
-  flex-shrink: 1;
-  min-width: 0;
-}
-
-.restore-label-text {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ── css transition wrappers ───────────────────────────────────────────────── */
-.restore-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-left: 6px;
-  min-width: 0;
-}
-
-.restore-actions,
-.restore-confirm {
-  display: flex;
-  align-items: center;
-  transition:
-    opacity 150ms ease,
-    transform 150ms ease,
-    visibility 150ms;
-  transform-origin: center right;
-}
-
-.restore-confirm {
-  gap: 6px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-/* Instead of vue transitioning, we absolutely position the hidden element */
-.is-hidden {
-  opacity: 0;
-  pointer-events: none;
-  position: absolute;
-  right: 0;
-  transform: scale(0.96);
-  visibility: hidden;
-}
-
-/* ── restore button ────────────────────────────────────────────────────────── */
-.restore-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-dim);
-  font-size: 11px;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  transition:
-    color 150ms ease,
-    background 150ms ease,
-    border-color 150ms ease;
-}
-
-.restore-btn:hover:not(:disabled) {
-  color: var(--color-accent-text);
-  background: var(--color-accent-muted);
-  border-color: var(--color-accent-dim);
-}
-
-.restore-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-/* ── confirmation bar ──────────────────────────────────────────────────────── */
-.restore-confirm-text {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-  white-space: normal;
-  min-width: 0;
-}
-
-.restore-confirm-yes {
-  display: flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 10px;
-  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
-  border-radius: var(--radius-sm);
-  background: var(--color-accent-muted);
-  color: var(--color-accent-text);
-  font-size: 11px;
-  font-weight: 700;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease;
-}
-
-.restore-confirm-yes:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
-  border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
-}
-
-.restore-confirm-yes:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-.restore-confirm-no {
-  display: flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    color 120ms ease,
-    background 120ms ease;
-}
-
-.restore-confirm-no:hover:not(:disabled) {
-  color: var(--color-text-secondary);
-  background: var(--color-state-hover);
-}
-</style>

@@ -44,9 +44,16 @@ export interface TaskItem {
  *                  Chat store writes it to the active tab; Vue reactivity updates
  *                  TaskOverlay automatically.
  */
-export function createTaskTools(onUpdate: (items: TaskItem[]) => void) {
-  let tasks: TaskItem[] = []
+export function createTaskTools(
+  onUpdate: (items: TaskItem[]) => void,
+  initialTasks?: TaskItem[],
+) {
+  let tasks: TaskItem[] = initialTasks ? initialTasks.map(t => ({ ...t })) : []
   let nextId = 1
+  if (tasks.length > 0) {
+    const maxId = Math.max(...tasks.map(t => Number.parseInt(t.id, 10) || 0))
+    nextId = maxId + 1
+  }
 
   function notify(): void {
     onUpdate([...tasks])

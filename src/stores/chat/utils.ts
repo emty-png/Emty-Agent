@@ -31,7 +31,7 @@ export function newTab(): ChatTab {
     workspacePath: null,
     workspaceMeta: null,
     workspaceLocked: false,
-    isStreaming: false,
+    agentStatus: { type: 'idle' },
     todos: [],
     modelUid: null,
     draft: createEmptyDraft(),

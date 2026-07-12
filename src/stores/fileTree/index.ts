@@ -2,7 +2,7 @@ import { join } from '@tauri-apps/api/path'
 import { readDir, readTextFile } from '@tauri-apps/plugin-fs'
 import { defineStore, storeToRefs } from 'pinia'
 import { ref } from 'vue'
-import { useProjectStore } from './project'
+import { useProjectStore } from '@/stores/project'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 export interface FileNode {

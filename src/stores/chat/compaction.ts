@@ -310,7 +310,7 @@ function isCompactionDivider(message: Message): boolean {
 }
 
 function findLiveAssistantIndex(tab: ChatTab): number {
-  if (!tab.isStreaming)
+  if (tab.agentStatus.type === 'idle' || tab.agentStatus.type === 'error')
     return -1
 
   for (let i = tab.messages.length - 1; i >= 0; i--) {

@@ -1,3 +1,4 @@
+import { APICallError, RetryError } from 'ai'
 import {
   dbInsertFailureEvent,
   dbListFailureEvents,
@@ -39,6 +40,65 @@ export function classifyFailure(error: unknown): FailureDescriptor {
       summary: message,
       recoveryHint: 'Approve the required tool call or switch permission mode before retrying.',
       severity: 'warning',
+    }
+  }
+
+  // ── AI SDK: typed error unwrapping ──────────────────────────────────────────
+  if (RetryError.isInstance(error)) {
+    // Use the last attempt for status-code classification
+    const lastErr = error.errors?.[error.errors.length - 1]
+    if (APICallError.isInstance(lastErr)) {
+      const status = lastErr.statusCode
+      if (status === 401 || status === 403) {
+        return {
+          category: 'model_init',
+          summary: message,
+          recoveryHint: `Authentication failed (HTTP ${status}). Check your API key and provider credentials.`,
+          severity: 'error',
+        }
+      }
+      if (status === 429) {
+        return {
+          category: 'stream_error',
+          summary: message,
+          recoveryHint: 'Rate limit reached. Wait a moment then retry, or switch to a model with a higher quota.',
+          severity: 'warning',
+        }
+      }
+      if (status != null && status >= 500) {
+        return {
+          category: 'stream_error',
+          summary: message,
+          recoveryHint: `Provider returned a server error (HTTP ${status}). This is usually transient — retry in a moment.`,
+          severity: 'error',
+        }
+      }
+    }
+    return {
+      category: 'stream_error',
+      summary: message,
+      recoveryHint: 'Request failed after multiple retries. Check your network connection and provider status, then retry.',
+      severity: 'error',
+    }
+  }
+
+  if (APICallError.isInstance(error)) {
+    const status = error.statusCode
+    if (status === 401 || status === 403) {
+      return {
+        category: 'model_init',
+        summary: message,
+        recoveryHint: `Authentication failed (HTTP ${status}). Check your API key and provider credentials.`,
+        severity: 'error',
+      }
+    }
+    if (status === 429) {
+      return {
+        category: 'stream_error',
+        summary: message,
+        recoveryHint: 'Rate limit reached. Wait a moment then retry, or switch to a model with a higher quota.',
+        severity: 'warning',
+      }
     }
   }
 

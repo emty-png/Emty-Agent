@@ -1,7 +1,18 @@
+<script setup lang="ts">
+// ── Tailwind Class Extractions ──────────────────────────────────────────────
+const bgClasses = 'absolute inset-0 bg-(--color-bg-base) overflow-hidden z-0 pointer-events-none'
+
+const svgClasses = 'absolute top-0 left-0 w-full h-full [transition:fill_0.3s_ease,stroke_0.3s_ease] [&_path]:[transition:fill_0.3s_ease,stroke_0.3s_ease] [&_circle]:[transition:fill_0.3s_ease,stroke_0.3s_ease] [&_ellipse]:[transition:fill_0.3s_ease,stroke_0.3s_ease]'
+
+const bearGroupClasses = '[transform-origin:1100px_735px] animate-[bear-breathe_6s_ease-in-out_infinite]'
+
+const starsGroupClasses = '[&>*]:animate-[star-twinkle_4s_ease-in-out_infinite] [&>*:nth-child(2n)]:[animation-duration:3s] [&>*:nth-child(2n)]:[animation-delay:-1.5s] [&>*:nth-child(3n)]:[animation-duration:5s] [&>*:nth-child(3n)]:[animation-delay:-3s] [&>*:nth-child(5n)]:[animation-duration:7s] [&>*:nth-child(5n)]:[animation-delay:-5s] [&>*:nth-child(7n)]:[animation-duration:4.5s] [&>*:nth-child(7n)]:[animation-delay:-2s]'
+</script>
+
 <template>
-  <div class="monochrome-art-bg">
+  <div :class="bgClasses">
     <!-- The SVG Scene -->
-    <svg class="scene-svg" viewBox="0 0 1675 939" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+    <svg :class="svgClasses" viewBox="0 0 1675 939" fill="none" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
       <g clip-path="url(#a)">
         <!-- Horizon line -->
         <path d="M0 737h1675" stroke="var(--color-text-primary)" stroke-width="7" />
@@ -34,7 +45,7 @@
         <path d="M392.5 568c10.435-.241 20.433.146 30 1.091m-30-1.091q-2.955 0-5.809.201M392.5 568q-2.934.067-5.809.201M586 735l-28-.5m28 .5c2.634-6.247 3.524-14.478 2.617-23.94M586 735c1.916-8.573 2.723-16.553 2.617-23.94M394.5 735H393m1.5 0c-1.826-26.322 6.682-77.756 52-90.473M394.5 735H444m57-94.5h13c38.5 0 49.127 10.774 61.994 29.321M501 640.5c-57 8.5-61.167 68-57 94.5m57-94.5h-14.5l-26 1.5c-5.017.453-9 1.124-14 2.527M444 735h26.5m-247.524-39c-3.399 13.62-4.976 26.899-4.976 39h39.5m-34.524-39 37.524.434M222.976 696c3.186-12.765 7.972-25.829 14.561-38.5M393 735l3-37-47.5-.549M393 735h-46m46 0h77.5M347 735l1.5-37.549M347 735h-89.5m91-37.549-57.5-.665M257.5 735l3-38.566m0 0 30.5.352m0 0L299.5 659m0 0-25.5-.617m25.5.617 55-.617m-116.963-.883 36.463.883m-36.463-.883c6.954-13.375 15.916-26.312 27.124-38M274 658.383l22-36.883m0 0-31.339-2m31.339 2 28 1.5m37.5 0-7 35.383m7-35.383h60m-60 0H324m30.5 35.383 64 .617 14-8.766 6.769-3.234 7.231-2.473m0 0L444 623m0 0h-22.5m22.5 0 45.679-3m-225.018-.5c12.417-12.948 27.589-24.363 45.839-33.14m33 3.64H415m-71.5 0c-11.5-.333-32.6-3.528-33-3.64m33 3.64L332 607.5l-8 15.5m19.5-33c9.958-13.127 24.998-20.517 43.191-21.799M415 590l6.5 33m-6.5-33 47.5-1.5m72.857 28.5-45.678 3m45.678-3c-13.239-11.804-29-22.415-47.357-30.725M535.357 617c18.291 16.307 31.77 34.889 40.637 52.821M489.679 620c-3.393-6.167-13.579-21.1-27.179-31.5m0 0c-13.6-10.4-28.5-17.98-40-19.409m40 19.409 25.5-2.225m-65.5-17.184c24.676 2.435 46.482 8.574 65.5 17.184m-177.5.085c21.111-10.152 46.342-16.775 76.191-18.159M470.5 735c-2.648-18.814.111-53.429 26.576-64.5M470.5 735l53.5-.5m34 0c4-15 7.5-67.5-42.5-67.5-7.143 0-13.238 1.331-18.424 3.5m60.924 64h-34m0 0c4.051-15.167 3.937-50.4-26.924-64m78.918-.679c7.405 10.675 12.381 24.421 12.623 41.239m-12.623-41.239c7.28 14.725 11.452 29.011 12.623 41.239" stroke="var(--color-bg-base)" stroke-width="3" />
 
         <!-- Polar Creature Grouped for Animation -->
-        <g class="bear-group">
+        <g :class="bearGroupClasses">
           <!-- Large Polar Creature -->
           <path d="M1112 735c5-29.667 12.2-55 19.5-128 3.2-32 3-21.5 6-105 0 0-1.5-70.5-4-86.5s-11-25.5-23.5-28-14.5-8.167-14.5-12c-.33-4.5 4.4-15.8 26-25 3.5-2-1.5 2.5 4-3s1.5-12 21-16.5c16.4 2 22 10.5 23.5 14l12 24c5.33 10.333 19.2 37.5 32 63.5 16 32.5 30.5 100 34 127s14 101 7 175.5h-46c2.5-21.833 4.3-67-10.5-67s-17.5 45.167-17 67z" fill="var(--color-text-primary)" stroke="var(--color-text-primary)" stroke-width="3" />
           <!-- Creature Eye -->
@@ -42,7 +53,7 @@
         </g>
 
         <!-- Stars Grouped for Twinkling Animation (Now all uniform circles, max 8x8) -->
-        <g class="stars-group">
+        <g :class="starsGroupClasses">
           <circle cx="54" cy="52" r="1" fill="var(--color-accent-text)" />
           <circle cx="161" cy="240" r="4" fill="var(--color-accent-text)" />
           <circle cx="583.5" cy="189.5" r="2.5" fill="var(--color-accent-text)" />
@@ -76,40 +87,12 @@
 </template>
 
 <style scoped>
-/* Styles remain identical to previous version */
-.monochrome-art-bg {
-  position: absolute;
-  inset: 0;
-  background-color: var(--color-bg-base);
-  overflow: hidden;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.scene-svg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  transition:
-    fill 0.3s ease,
-    stroke 0.3s ease;
-}
-
-.scene-svg path,
-.scene-svg circle,
-.scene-svg ellipse {
-  transition:
-    fill 0.3s ease,
-    stroke 0.3s ease;
-}
-
-.bear-group {
-  transform-origin: 1100px 735px;
-  animation: bear-breathe 6s ease-in-out infinite;
-}
-
+/*
+ * Custom keyframes referenced by the `animate-[...]` arbitrary-value
+ * utilities above (bear-breathe, star-twinkle). Tailwind utility classes
+ * can't declare @keyframes themselves, so these stay as raw CSS — every
+ * other rule from the previous stylesheet has moved to the template.
+ */
 @keyframes bear-breathe {
   0%,
   100% {
@@ -118,27 +101,6 @@
   50% {
     transform: scale(1.008, 1.015);
   }
-}
-
-.stars-group > * {
-  animation: star-twinkle 4s ease-in-out infinite;
-}
-
-.stars-group > *:nth-child(2n) {
-  animation-duration: 3s;
-  animation-delay: -1.5s;
-}
-.stars-group > *:nth-child(3n) {
-  animation-duration: 5s;
-  animation-delay: -3s;
-}
-.stars-group > *:nth-child(5n) {
-  animation-duration: 7s;
-  animation-delay: -5s;
-}
-.stars-group > *:nth-child(7n) {
-  animation-duration: 4.5s;
-  animation-delay: -2s;
 }
 
 @keyframes star-twinkle {

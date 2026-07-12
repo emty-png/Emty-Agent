@@ -17,6 +17,7 @@ import { createMcpTools } from '@/utils/tools/mcp'
 import { wrapToolSetWithPermissions } from '@/utils/tools/permissions'
 import { SequentialToolQueue, wrapToolSetSequentially } from '@/utils/tools/sequential'
 import { createSkillTools } from '@/utils/tools/skills'
+import { statusToolRunning, statusWaitingPermission } from './agentStatus'
 import { resolveLanguageModel, resolveMaxTokens } from './models'
 import { createStreamHandlers } from './streamHandlers'
 import { getCoreToolDisplayLabel } from './toolLabels'
@@ -133,7 +134,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       timestamp: new Date(),
       error: 'No model selected. Open Settings → Providers to connect a model.',
     })
-    subTab.isStreaming = false
+    subTab.agentStatus = { type: 'error', message: 'No model selected' }
     if (subTab.subAgent)
       subTab.subAgent.status = 'error'
     return { text: '', status: 'error' }
@@ -147,7 +148,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   catch (e) {
     const errMsg = `Failed to initialise model: ${e instanceof Error ? e.message : String(e)}`
     subTab.messages.push({ id: makeId(), role: 'assistant', content: '', timestamp: new Date(), error: errMsg })
-    subTab.isStreaming = false
+    subTab.agentStatus = { type: 'error', message: errMsg }
     if (subTab.subAgent)
       subTab.subAgent.status = 'error'
     return { text: '', status: 'error' }
@@ -188,80 +189,46 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
 
   const workspace = await inspectWorkspace(effectiveProjectPath)
   subTab.workspaceMeta = workspace
-  let tools: Record<string, unknown> = {}
+  const fsTools: Record<string, unknown> = effectiveProjectPath
+    ? filterDisabledTools(
+        createFilesystemTools(effectiveProjectPath, undefined, readRegistry),
+        settings.disabledToolIds,
+      )
+    : {}
+  const webTools = filterDisabledTools(
+    createWebTools() as Record<string, unknown>,
+    settings.disabledToolIds,
+  )
+  const shellTools: Record<string, unknown> = effectiveProjectPath
+    ? filterDisabledTools(
+        createShellTools(effectiveProjectPath, osInfo?.shell, settings.agent.gitCoAuthor) as Record<string, unknown>,
+        settings.disabledToolIds,
+      )
+    : {}
+
   const browserTools = filterDisabledTools(
     createBrowserTools(subTab.id) as Record<string, unknown>,
     settings.disabledToolIds,
   )
 
-  switch (personality) {
-    case 'explorer': {
-      tools = { ...browserTools }
-      if (effectiveProjectPath) {
-        const fsTools = filterDisabledTools(
-          createFilesystemTools(effectiveProjectPath, undefined, readRegistry),
-          settings.disabledToolIds,
-        )
-        tools = {
-          ...tools,
-          list_directory: fsTools.list_directory,
-          read_files: fsTools.read_files,
-          glob: fsTools.glob,
-          grep: fsTools.grep,
-        }
-      }
-      break
-    }
+  let tools: Record<string, unknown> = { ...browserTools }
 
-    case 'researcher': {
-      const webTools = filterDisabledTools(
-        createWebTools() as Record<string, unknown>,
-        settings.disabledToolIds,
-      )
-      tools = { ...webTools, ...browserTools }
-      break
+  if (personality === 'explorer' || personality === 'debugger') {
+    tools = {
+      ...tools,
+      list_directory: fsTools.list_directory,
+      read_files: fsTools.read_files,
+      glob: fsTools.glob,
+      grep: fsTools.grep,
     }
+  }
 
-    case 'debugger': {
-      if (effectiveProjectPath) {
-        const fsTools = filterDisabledTools(
-          createFilesystemTools(effectiveProjectPath, undefined, readRegistry),
-          settings.disabledToolIds,
-        )
-        tools = {
-          list_directory: fsTools.list_directory,
-          read_files: fsTools.read_files,
-          glob: fsTools.glob,
-          grep: fsTools.grep,
-        }
-      }
-      const webTools = filterDisabledTools(
-        createWebTools() as Record<string, unknown>,
-        settings.disabledToolIds,
-      )
-      tools = { ...tools, ...webTools, ...browserTools }
-      break
-    }
+  if (personality !== 'explorer') {
+    tools = { ...tools, ...webTools }
+  }
 
-    case 'general': {
-      const webTools = filterDisabledTools(
-        createWebTools() as Record<string, unknown>,
-        settings.disabledToolIds,
-      )
-      tools = { ...webTools, ...browserTools }
-      if (effectiveProjectPath) {
-        const fsTools = filterDisabledTools(
-          createFilesystemTools(effectiveProjectPath, undefined, readRegistry),
-          settings.disabledToolIds,
-        )
-        const shellTools = filterDisabledTools(
-          createShellTools(effectiveProjectPath, osInfo?.shell, settings.agent.gitCoAuthor) as Record<string, unknown>,
-          settings.disabledToolIds,
-        )
-        tools = { ...tools, ...fsTools, ...shellTools }
-      }
-      break
-    }
+  if (personality === 'general') {
+    tools = { ...tools, ...fsTools, ...shellTools }
   }
 
   async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
@@ -291,6 +258,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     parts: [],
   }
   subTab.messages.push(assistantMsg)
+  subTab.agentStatus = { type: 'initializing' }
 
   // IMPORTANT: retrieve liveMsg from the reactive array — NOT the raw object.
   // Vue wraps array elements in a Proxy; writing to the raw object bypasses
@@ -298,8 +266,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   const liveMsg = subTab.messages[subTab.messages.length - 1]!
 
   // Create DB conversation and initial messages in the background
-  const convId = makeId()
-  subTab.conversationId = convId
+  const convId = subTab.conversationId!
   void (async () => {
     try {
       await dbInsertConversation({
@@ -336,6 +303,23 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   const streamHandlers = createStreamHandlers({
     liveMsg,
     getToolLabel: getCoreToolDisplayLabel,
+    onStatusChange: (status, meta) => {
+      if (status === 'tool-running' && meta?.toolName) {
+        subTab.agentStatus = statusToolRunning(meta.toolName)
+      }
+      else if (status === 'streaming') {
+        subTab.agentStatus = { type: 'streaming' }
+      }
+      else if (status === 'sleeping') {
+        subTab.agentStatus = { type: 'sleeping' }
+      }
+      else if (status === 'waiting-permission' && meta?.toolName) {
+        subTab.agentStatus = statusWaitingPermission(meta.toolName)
+      }
+      else if (status === 'waiting-questions') {
+        subTab.agentStatus = { type: 'waiting-questions' }
+      }
+    },
   })
 
   const cacheRuntime = {
@@ -413,7 +397,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
           liveMsg.cacheStats = usageStats
         else
           delete liveMsg.cacheStats
-        subTab.isStreaming = false
+        subTab.agentStatus = { type: 'idle' }
         if (subTab.subAgent)
           subTab.subAgent.status = 'done'
         void (async () => {
@@ -436,6 +420,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
             tool_events: JSON.stringify(liveMsg.toolEvents),
             cache_stats: liveMsg.cacheStats ? JSON.stringify(liveMsg.cacheStats) : null,
             is_complete: 1,
+            ...(liveMsg.elapsedSec != null ? { elapsed_sec: liveMsg.elapsedSec } : {}),
           }).catch(e => console.error('[subagent] final update failed', e))
 
           onAbort(subTab.id)
@@ -444,7 +429,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       },
       onError: (error: Error) => {
         liveMsg.error = error.message
-        subTab.isStreaming = false
+        subTab.agentStatus = { type: 'error', message: error.message }
         if (subTab.subAgent)
           subTab.subAgent.status = 'error'
         void (async () => {
@@ -461,7 +446,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       },
       signal,
     }).catch(() => {
-      subTab.isStreaming = false
+      subTab.agentStatus = { type: 'error', message: 'Stream failed' }
       if (subTab.subAgent)
         subTab.subAgent.status = 'error'
       void (async () => {

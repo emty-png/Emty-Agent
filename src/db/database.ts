@@ -2,21 +2,6 @@
  * src/db/database.ts
  *
  * SQLite persistence layer via @tauri-apps/plugin-sql.
- *
- * Design decisions:
- * - Single DB singleton, initialised once, re-used everywhere.
- * - Migrations are append-only; never mutate existing statements.
- * - All column additions guard with PRAGMA table_info() so they are safe
- *   to run against pre-existing databases from any prior schema version.
- * - Public helpers throw descriptive errors on failure so callers can
- *   surface them in the UI instead of silently corrupting state.
- *
- * Live-streaming persistence:
- * - Assistant messages are inserted immediately when streaming begins with
- *   is_complete = 0. They are updated incrementally via dbUpdateMessage()
- *   during the stream, and marked is_complete = 1 in onFinish.
- * - On app restart, any message with is_complete = 0 was interrupted mid-stream.
- *   Callers can detect this and render a truncation indicator if desired.
  */
 
 import Database from '@tauri-apps/plugin-sql'
@@ -187,6 +172,9 @@ const MIGRATIONS: string[] = [
 
   // v8 — sub-agent conversations
   'ALTER TABLE conversations ADD COLUMN is_subagent INTEGER NOT NULL DEFAULT 0',
+
+  // v9 — elapsed seconds for assistant messages
+  'ALTER TABLE messages ADD COLUMN elapsed_sec INTEGER',
 ]
 
 // ── column existence helper ───────────────────────────────────────────────────
@@ -304,6 +292,7 @@ export interface MessageRow {
    * indicator when is_complete === 0.
    */
   is_complete?: number
+  elapsed_sec?: number | null
 }
 
 export interface CheckpointRow {
@@ -477,6 +466,34 @@ export async function dbGetConversation(id: string): Promise<ConversationRow | u
   return rows[0]
 }
 
+export async function dbFindSubAgentConversation(
+  title: string,
+  nearTimestamp?: number,
+): Promise<ConversationRow | undefined> {
+  const d = await getDb()
+
+  if (nearTimestamp && nearTimestamp > 0) {
+    const rows = await d.select<ConversationRow[]>(
+      `SELECT * FROM conversations
+       WHERE is_subagent = 1 AND title = ?
+       ORDER BY ABS(created_at - ?) ASC LIMIT 1`,
+      [title, nearTimestamp],
+    )
+    if (rows.length > 0) {
+      return rows[0]
+    }
+  }
+
+  // Fallback: just get the most recent one with this title
+  const rows = await d.select<ConversationRow[]>(
+    `SELECT * FROM conversations
+     WHERE is_subagent = 1 AND title = ?
+     ORDER BY created_at DESC LIMIT 1`,
+    [title],
+  )
+  return rows[0]
+}
+
 export async function dbSearchConversations(
   query: string,
   limit = 50,
@@ -519,8 +536,8 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
   await d.execute(
     `INSERT INTO messages
         (id, conversation_id, role, content, created_at,
-         mention_context, tool_events, parts, attachments, cache_stats, is_complete)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         mention_context, tool_events, parts, attachments, cache_stats, is_complete, elapsed_sec)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       msg.id,
       msg.conversation_id,
@@ -533,6 +550,7 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
       msg.attachments ?? null,
       msg.cache_stats ?? null,
       msg.is_complete ?? 1,
+      msg.elapsed_sec ?? null,
     ],
   )
 }
@@ -556,6 +574,7 @@ export async function dbUpdateMessage(
     tool_events?: string | null
     cache_stats?: string | null
     is_complete?: number
+    elapsed_sec?: number | null
   },
 ): Promise<void> {
   if (!id)
@@ -583,6 +602,10 @@ export async function dbUpdateMessage(
   if (patch.is_complete !== undefined) {
     sets.push('is_complete = ?')
     values.push(patch.is_complete)
+  }
+  if ('elapsed_sec' in patch) {
+    sets.push('elapsed_sec = ?')
+    values.push(patch.elapsed_sec ?? null)
   }
 
   if (sets.length === 0)
@@ -926,6 +949,82 @@ export async function dbUpdateReplayRun(
 
   const d = await getDb()
   await d.execute(`UPDATE replay_runs SET ${sets.join(', ')} WHERE id = ?`, values)
+}
+
+// ── project sidebar helpers ──────────────────────────────────────────────────
+
+export interface ProjectWithLatestChat {
+  workspace_path: string
+  project_name: string
+  latest_chat_id: string
+  latest_chat_title: string
+  latest_chat_updated_at: number
+}
+
+export async function dbListProjectsWithLatestChat(
+  limit = 10,
+): Promise<ProjectWithLatestChat[]> {
+  const d = await getDb()
+  const rows = await d.select<Array<{
+    workspace_path: string
+    latest_chat_id: string
+    latest_chat_title: string
+    latest_chat_updated_at: number
+  }>>(
+    `SELECT c.workspace_path,
+           c.id          AS latest_chat_id,
+           c.title       AS latest_chat_title,
+           c.updated_at  AS latest_chat_updated_at
+     FROM conversations c
+     INNER JOIN (
+       SELECT workspace_path, MAX(updated_at) AS max_updated
+       FROM conversations
+       WHERE is_subagent = 0
+         AND workspace_path IS NOT NULL
+         AND workspace_path != ''
+       GROUP BY workspace_path
+     ) latest
+       ON c.workspace_path = latest.workspace_path
+      AND c.updated_at = latest.max_updated
+     WHERE c.is_subagent = 0
+     ORDER BY c.updated_at DESC
+     LIMIT ?`,
+    [Math.max(1, limit)],
+  )
+  return rows.map(r => ({
+    ...r,
+    project_name:
+      r.workspace_path
+        .replace(/[/\\]+$/, '')
+        .split(/[/\\]/)
+        .pop() ?? r.workspace_path,
+  }))
+}
+
+export async function dbListConversationsByWorkspace(
+  workspacePath: string,
+  limit = 5,
+): Promise<ConversationRow[]> {
+  const d = await getDb()
+  return d.select<ConversationRow[]>(
+    `SELECT * FROM conversations
+     WHERE workspace_path = ? AND is_subagent = 0
+     ORDER BY updated_at DESC
+     LIMIT ?`,
+    [workspacePath, Math.max(1, limit)],
+  )
+}
+
+export async function dbCountConversationsByWorkspace(
+  workspacePath: string,
+): Promise<number> {
+  const d = await getDb()
+  const rows = await d.select<Array<{ cnt: number }>>(
+    `SELECT COUNT(*) AS cnt FROM conversations
+     WHERE workspace_path = ? AND is_subagent = 0`,
+    [workspacePath],
+  )
+  return rows[0]?.cnt ?? 0
 }
 
 // —— failure recovery helpers ————————————————————————————————————————————————————————

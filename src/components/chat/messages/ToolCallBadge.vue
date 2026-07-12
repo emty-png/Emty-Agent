@@ -3,7 +3,7 @@ import type { Message, ToolEvent } from '@/stores/chat'
 import type { SubAgentPersonality } from '@/utils/tools/subagent'
 import { CircleX, Loader2 } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { dbGetConversation, dbLoadMessages } from '@/db/database'
+import { dbFindSubAgentConversation, dbGetConversation, dbLoadMessages } from '@/db/database'
 import { useChatStore } from '@/stores/chat'
 
 const props = defineProps<{
@@ -53,17 +53,22 @@ onUnmounted(() => {
 
 // ── shell tool exit badge ─────────────────────────────────────────────────────
 
+const shellResult = computed(() => {
+  const r = props.event.result
+  if (r && typeof r === 'object' && !Array.isArray(r))
+    return r as Record<string, unknown>
+  return null
+})
+
 const exitCode = computed(() => {
-  const result = props.event.result as Record<string, unknown> | undefined
-  if (result && typeof result === 'object' && 'exit_code' in result)
-    return typeof result.exit_code === 'number' ? result.exit_code : null
+  if (shellResult.value && 'exit_code' in shellResult.value)
+    return typeof shellResult.value.exit_code === 'number' ? shellResult.value.exit_code : null
   return null
 })
 
 const exitLabel = computed(() => {
-  const result = props.event.result as Record<string, unknown> | undefined
-  const durMs = result && typeof result === 'object' && typeof result.duration_ms === 'number'
-    ? result.duration_ms
+  const durMs = shellResult.value && typeof shellResult.value.duration_ms === 'number'
+    ? shellResult.value.duration_ms
     : null
   const duration = durMs !== null ? ` (${(durMs / 1000).toFixed(1)}s)` : ''
 
@@ -160,15 +165,6 @@ const subAgentTabExists = computed(() =>
   !!subAgentTabId.value && chat.tabs.some(t => t.id === subAgentTabId.value),
 )
 
-const subAgentStatus = computed(() => {
-  if (subAgentTabExists.value) {
-    const t = chat.tabs.find(t => t.id === subAgentTabId.value)
-    if (t?.subAgent?.status)
-      return t.subAgent.status
-  }
-  return props.event.status
-})
-
 const personality = computed<SubAgentPersonality | null>(() => {
   const label = props.event.label.toLowerCase()
   if (label.startsWith('explorer'))
@@ -190,16 +186,42 @@ async function openSubAgentTab() {
     return
   }
 
-  if (!subAgentConversationId.value)
+  let convId = subAgentConversationId.value
+
+  if (!convId) {
+    // Attempt to recover old subagent conversations by title and timestamp
+    const args = props.event.args
+    if (args?.personality && args?.mission) {
+      const { PERSONALITY_META } = await import('@/utils/tools/subagent')
+      const meta = PERSONALITY_META[args.personality as keyof typeof PERSONALITY_META]
+      if (meta) {
+        const missionStr = String(args.mission)
+        const titleMission = missionStr.length > 40 ? `${missionStr.slice(0, 40)}\u2026` : missionStr
+        const title = `${meta.label} \u00B7 ${titleMission}`
+
+        try {
+          const recovered = await dbFindSubAgentConversation(title, props.event.startedAt)
+          if (recovered) {
+            convId = recovered.id
+          }
+        }
+        catch (err) {
+          console.error('Failed to recover subagent conversation:', err)
+        }
+      }
+    }
+  }
+
+  if (!convId)
     return
 
   try {
     isOpening.value = true
-    const conv = await dbGetConversation(subAgentConversationId.value)
+    const conv = await dbGetConversation(convId)
     if (!conv)
       return
 
-    const rawMsgs = await dbLoadMessages(subAgentConversationId.value)
+    const rawMsgs = await dbLoadMessages(conv.id)
     const messages: Message[] = rawMsgs.map(r => ({
       id: r.id,
       role: r.role,
@@ -246,376 +268,52 @@ async function openSubAgentTab() {
 
 <template>
   <component
-    :is="isSubAgent && (subAgentTabExists || subAgentConversationId) ? 'button' : 'span'"
-    class="tool-wrap"
-    :class="{ 'tool-wrap--clickable': isSubAgent && (subAgentTabExists || subAgentConversationId) }"
+    :is="isSubAgent ? 'button' : 'span'"
+    class="group/tool m-0 inline-flex items-baseline gap-1.5 whitespace-nowrap select-none border-none bg-transparent p-0 text-inherit [font:inherit] [text-align:inherit]"
+    :class="[
+      (subAgentTabExists || subAgentConversationId || isSubAgent) ? 'cursor-pointer' : '',
+    ]"
     :disabled="isSubAgent && isOpening"
-    :title="isSubAgent
-      ? (subAgentTabExists
-        ? 'Click to view sub-agent'
-        : subAgentConversationId
-          ? 'Click to load sub-agent history'
-          : 'Sub-agent is initialising\u2026')
-      : undefined"
+    :title="isSubAgent ? 'Click to view sub-agent history' : undefined"
     @click="isSubAgent ? openSubAgentTab() : undefined"
   >
     <!-- Running shell tool: spinner + "Running" -->
     <template v-if="isShellTool && isRunning">
-      <Loader2 :size="10" class="tool-spinner animate-spin inline-block" />
-      <span v-if="executionStartedAt !== null" class="tool-running-label">
+      <Loader2 :size="10" class="inline-block text-[var(--color-accent-text)]" />
+      <span v-if="executionStartedAt !== null" class="ml-1 text-[11px] font-medium text-[var(--color-accent-text)] opacity-70">
         Running {{ runningElapsedLabel }}
       </span>
-      <span v-else class="tool-running-label">Waiting</span>
+      <span v-else class="ml-1 text-[11px] font-medium text-[var(--color-accent-text)] opacity-70">Waiting</span>
     </template>
     <!-- Completed shell tool: show exit code + duration -->
     <span
       v-else-if="isShellTool && !isRunning"
-      class="tool-exit"
-      :class="exitCode === 0 ? 'tool-exit--ok' : 'tool-exit--fail'"
+      class="text-[11px] font-medium tabular-nums tracking-[0.02em] leading-[1.6]"
+      :class="exitCode === 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'"
     >
       {{ exitLabel }}
     </span>
 
-    <template v-else-if="isSubAgent">
-      <span class="tool-timer">
-        <template v-if="isOpening">
-          <Loader2 :size="10" class="animate-spin inline-block mr-1" />Loading
-        </template>
-        <template v-else-if="subAgentStatus === 'running'">
-          <Loader2 :size="10" class="animate-spin inline-block mr-1" />Running
-        </template>
-        <template v-else-if="subAgentStatus === 'done'">
-          Done
-        </template>
-        <template v-else>
-          Error
-        </template>
-      </span>
-    </template>
+    <CircleX v-if="showFailIcon" :size="12" class="shrink-0 text-[var(--color-danger)]" />
 
-    <CircleX v-if="showFailIcon && !isSubAgent" :size="12" class="tool-fail-icon" />
-
-    <span v-if="hasAnnotations" class="tool-text">
+    <span
+      v-if="hasAnnotations"
+      class="inline-block text-[12px] font-semibold leading-[1.6] tracking-[0.01em] text-[var(--color-text-tertiary)] [text-shadow:0_0_1px_color-mix(in_srgb,var(--color-bg-base)_6%,transparent),0_0_10px_color-mix(in_srgb,var(--color-accent)_8%,transparent)]"
+      :class="(subAgentTabExists || subAgentConversationId || isSubAgent) ? 'group-hover/tool:opacity-80' : ''"
+    >
       <template v-for="(seg, i) in labelSegments" :key="i">
-        <span v-if="seg.kind === 'range'" class="tt-range">{{ seg.text }}</span>
-        <span v-else-if="seg.kind === 'diff-add'" class="tt-diff tt-diff--add">{{ seg.text }}</span>
-        <span v-else-if="seg.kind === 'diff-remove'" class="tt-diff tt-diff--remove">{{ seg.text }}</span>
+        <span v-if="seg.kind === 'range'" class="animate-none text-[11px] font-bold tabular-nums tracking-[0.03em] text-[var(--color-success)] [-webkit-background-clip:unset] [-webkit-text-fill-color:var(--color-success)] [background-clip:unset] [background:none]">{{ seg.text }}</span>
+        <span v-else-if="seg.kind === 'diff-add'" class="animate-none text-[11px] font-bold tabular-nums tracking-[0.03em] text-[var(--color-success)] [-webkit-background-clip:unset] [-webkit-text-fill-color:var(--color-success)] [background-clip:unset] [background:none]">{{ seg.text }}</span>
+        <span v-else-if="seg.kind === 'diff-remove'" class="animate-none text-[11px] font-bold tabular-nums tracking-[0.03em] text-[var(--color-danger)] [-webkit-background-clip:unset] [-webkit-text-fill-color:var(--color-danger)] [background-clip:unset] [background:none]">{{ seg.text }}</span>
         <template v-else>{{ seg.text }}</template>
       </template>
     </span>
-    <span v-else class="tool-text">
-      {{ event.label }}
+    <span
+      v-else
+      class="inline-block text-[12px] font-semibold leading-[1.6] tracking-[0.01em] text-[var(--color-text-tertiary)] [text-shadow:0_0_1px_color-mix(in_srgb,var(--color-bg-base)_6%,transparent),0_0_10px_color-mix(in_srgb,var(--color-accent)_8%,transparent)]"
+      :class="(subAgentTabExists || subAgentConversationId || isSubAgent) ? 'group-hover/tool:opacity-80' : ''"
+    >
+      {{ isOpening ? 'Loading sub-agent...' : event.label }}
     </span>
   </component>
 </template>
-
-<style scoped>
-/* ── standard tool badge ─────────────────────────────────────────────────── */
-
-.tool-wrap {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.tool-timer {
-  font-size: 11px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  line-height: 1.6;
-  color: var(--color-accent-text);
-  opacity: 0.75;
-  transition:
-    opacity 400ms ease,
-    color 400ms ease;
-}
-.tool-timer--done {
-  color: var(--color-text-dim);
-  opacity: 0.55;
-}
-
-.tool-exit {
-  font-size: 11px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  line-height: 1.6;
-}
-.tool-exit--ok {
-  color: var(--color-success);
-}
-.tool-exit--fail {
-  color: var(--color-danger);
-}
-
-.tool-spinner {
-  color: var(--color-accent-text);
-}
-
-.tool-running-label {
-  font-size: 11px;
-  font-weight: 500;
-  margin-left: 4px;
-  opacity: 0.7;
-  color: var(--color-accent-text);
-}
-
-.tool-fail-icon {
-  flex-shrink: 0;
-  color: var(--color-danger);
-}
-
-/*
- * The primary label element.
- * Applies a sweeping gloss gradient to all plain text children.
- * Coloured child spans (tt-diff, tt-range) must opt out of this gradient
- * by resetting background-clip and -webkit-text-fill-color.
- */
-.tool-text {
-  display: inline-block;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.6;
-  letter-spacing: 0.01em;
-  text-shadow:
-    0 0 1px color-mix(in srgb, var(--color-bg-base) 6%, transparent),
-    0 0 10px color-mix(in srgb, var(--color-accent) 8%, transparent);
-  background: linear-gradient(
-    110deg,
-    var(--color-text-tertiary) 0%,
-    var(--color-text-tertiary) 65%,
-    color-mix(in srgb, var(--color-bg-base) 95%, transparent) 75%,
-    var(--color-text-tertiary) 85%,
-    var(--color-text-tertiary) 100%
-  );
-  background-size: 200% auto;
-  color: transparent;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: gloss-sweep 2.5s linear infinite;
-}
-
-@keyframes gloss-sweep {
-  0% {
-    background-position: 200% center;
-  }
-  100% {
-    background-position: 0% center;
-  }
-}
-
-/* ── range annotation: "#0–499" ─────────────────────────────────────────── */
-
-/*
- * Escapes the parent gradient (same technique as .tt-diff) so it renders
- * as a solid colour instead of an invisible dimmed gradient fragment.
- * Uses --color-success-text (green) at reduced opacity to read as metadata
- * rather than competing with the diff-add "+" tokens.
- */
-.tt-range {
-  /* Escape parent gradient */
-  background: none;
-  -webkit-background-clip: unset;
-  background-clip: unset;
-  animation: none;
-  /* Typography */
-  font-size: 11px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.03em;
-  /* Colour */
-  -webkit-text-fill-color: var(--color-success);
-  color: var(--color-success);
-}
-
-/* ── diff stat tokens: "+22" / "-5" ─────────────────────────────────────── */
-
-/*
- * Must escape the parent's `background-clip: text` + `-webkit-text-fill-color: transparent`
- * gradient to render a solid colour. We do this by:
- *   1. Clearing the background so background-clip has nothing to clip.
- *   2. Setting -webkit-text-fill-color to a solid value, overriding transparent.
- *   3. Setting color as a fallback for non-WebKit engines.
- * animation: none prevents the parent keyframe from touching these spans.
- */
-.tt-diff {
-  /* Escape parent gradient */
-  background: none;
-  -webkit-background-clip: unset;
-  background-clip: unset;
-  animation: none;
-  /* Typography */
-  font-size: 11px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.03em;
-}
-
-.tt-diff--add {
-  -webkit-text-fill-color: var(--color-success);
-  color: var(--color-success);
-}
-
-.tt-diff--remove {
-  -webkit-text-fill-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-/* ── sub-agent badge ─────────────────────────────────────────────────────── */
-
-.subagent-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 26px;
-  padding-inline: 6px 8px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-mid);
-  background: var(--color-bg-elevated);
-  cursor: default;
-  user-select: none;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease;
-  font-family: inherit;
-  text-align: left;
-  white-space: nowrap;
-  max-width: 420px;
-}
-
-.subagent-badge--clickable {
-  cursor: pointer;
-}
-.subagent-badge--clickable:hover {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-bright);
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
-}
-
-.subagent-badge--closed {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Personality colour theming */
-.subagent-badge--info {
-  border-color: color-mix(in srgb, var(--color-info) 30%, var(--color-border-mid));
-}
-.subagent-badge--info:hover {
-  border-color: color-mix(in srgb, var(--color-info) 55%, transparent);
-}
-.subagent-badge--success {
-  border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-border-mid));
-}
-.subagent-badge--success:hover {
-  border-color: color-mix(in srgb, var(--color-success) 55%, transparent);
-}
-.subagent-badge--warning {
-  border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-border-mid));
-}
-.subagent-badge--warning:hover {
-  border-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
-}
-.subagent-badge--accent {
-  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--color-border-mid));
-}
-.subagent-badge--accent:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent);
-}
-
-/* Personality icon */
-.sa-icon-wrap {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-xs);
-  flex-shrink: 0;
-}
-.sa-icon-wrap--info {
-  background: var(--color-info-muted);
-  color: var(--color-info-text);
-}
-.sa-icon-wrap--success {
-  background: var(--color-success-muted);
-  color: var(--color-success-text);
-}
-.sa-icon-wrap--warning {
-  background: color-mix(in srgb, var(--color-warning) 14%, transparent);
-  color: var(--color-warning-text);
-}
-.sa-icon-wrap--accent {
-  background: var(--color-accent-muted);
-  color: var(--color-accent-text);
-}
-
-/* Label */
-.sa-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  letter-spacing: 0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
-}
-
-/* Status chip */
-.sa-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 1px 6px;
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-}
-.sa-status--running {
-  background: color-mix(in srgb, var(--color-info) 12%, transparent);
-  color: var(--color-info-text);
-}
-.sa-status--done {
-  background: var(--color-success-muted);
-  color: var(--color-success-text);
-}
-.sa-status--error {
-  background: var(--color-danger-muted);
-  color: var(--color-danger-text);
-}
-
-.sa-status-text {
-  line-height: 1;
-}
-
-/* Running pulse dot */
-.sa-pulse {
-  display: inline-block;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--color-info);
-  animation: sa-pulse 1.4s ease-in-out infinite;
-  flex-shrink: 0;
-}
-
-@keyframes sa-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.35;
-    transform: scale(0.6);
-  }
-}
-</style>

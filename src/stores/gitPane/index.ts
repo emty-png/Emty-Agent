@@ -11,11 +11,15 @@
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { useBrowserStore } from './browser'
+import { useBrowserStore } from '@/stores/browser'
 
 export interface GitPaneOwnerState {
   isPanelOpen: boolean
   splitPercent: number
+  includeUnstagedOnCommit: boolean
+  skipCommitHooks: boolean
+  amendCommit: boolean
+  closedPanes: string[]
 }
 
 const DEFAULT_SPLIT_PERCENT = 50
@@ -24,6 +28,10 @@ function createOwnerState(): GitPaneOwnerState {
   return {
     isPanelOpen: false,
     splitPercent: DEFAULT_SPLIT_PERCENT,
+    includeUnstagedOnCommit: true,
+    skipCommitHooks: false,
+    amendCommit: false,
+    closedPanes: [],
   }
 }
 
@@ -65,6 +73,17 @@ export const useGitPaneStore = defineStore('gitPane', () => {
     ensureOwner(ownerId).splitPercent = normalized
   }
 
+  function setCommitOptions(ownerId: string, patch: Partial<Pick<GitPaneOwnerState, 'includeUnstagedOnCommit' | 'skipCommitHooks' | 'amendCommit'>>): void {
+    const owner = ensureOwner(ownerId)
+    owner.includeUnstagedOnCommit = patch.includeUnstagedOnCommit ?? owner.includeUnstagedOnCommit
+    owner.skipCommitHooks = patch.skipCommitHooks ?? owner.skipCommitHooks
+    owner.amendCommit = patch.amendCommit ?? owner.amendCommit
+  }
+
+  function setClosedPanes(ownerId: string, panes: string[]): void {
+    ensureOwner(ownerId).closedPanes = panes
+  }
+
   function disposeOwner(ownerId: string): void {
     delete owners.value[ownerId]
   }
@@ -76,6 +95,8 @@ export const useGitPaneStore = defineStore('gitPane', () => {
     closePanel,
     togglePanel,
     setSplitPercent,
+    setCommitOptions,
+    setClosedPanes,
     disposeOwner,
   }
 })

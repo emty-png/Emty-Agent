@@ -1,19 +1,3 @@
-/**
- * src/utils/ai.ts
- *
- * Central AI execution layer for Emty Agent.
- * Compatible with: ai ^6.x (AI SDK v5 published as v6 on npm)
- *
- * AI SDK v6 fullStream events:
- *   text-delta      → part.text
- *   tool-call       → part.input   (NOT args)
- *   tool-result     → part.output  (NOT result/content)
- *   error           → part.error
- *
- * Tool looping uses stopWhen: isLoopFinished() so the agent runs until the
- * model stops calling tools naturally — no arbitrary step cap.
- */
-
 import type {
   LanguageModel,
   LanguageModelUsage,
@@ -27,16 +11,15 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { isLoopFinished, streamText } from 'ai'
+import { APICallError, isLoopFinished, RetryError, streamText } from 'ai'
 import { buildPrompt } from '@/prompts/build'
-
 import { platformFetch } from '@/utils/platformFetch'
 
 export type { LanguageModel, ToolSet }
-export type ChatMode = 'build' | 'plan'
+export type ChatMode = 'build' | 'plan' | 'chat' | 'design'
 export type ThinkingEffort = 'low' | 'medium' | 'high'
 
-// ── provider credentials ──────────────────────────────────────────────────────
+// ── Provider credentials ──────────────────────────────────────────────────────
 
 export interface ProviderCredentials {
   type: 'openai' | 'anthropic' | 'google' | 'compatible'
@@ -47,16 +30,9 @@ export interface ProviderCredentials {
   headers?: Record<string, string> | undefined
 }
 
-// ── model factory ─────────────────────────────────────────────────────────────
+// ── Model factory ─────────────────────────────────────────────────────────────
 
-/**
- * Instantiate a LanguageModel from provider credentials.
- * Throws a descriptive Error when required fields are missing.
- */
-export function buildLanguageModel(
-  credentials: ProviderCredentials,
-  modelId: string,
-): LanguageModel {
+export function buildLanguageModel(credentials: ProviderCredentials, modelId: string): LanguageModel {
   if (!modelId?.trim())
     throw new Error('buildLanguageModel: modelId is required')
 
@@ -64,40 +40,37 @@ export function buildLanguageModel(
     case 'openai': {
       if (!credentials.apiKey?.trim())
         throw new Error('OpenAI provider requires an API key')
-      const provider = createOpenAI({
+      return createOpenAI({
         apiKey: credentials.apiKey,
         ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
         ...(credentials.organizationId ? { organization: credentials.organizationId } : {}),
         fetch: platformFetch,
-      })
-      return provider(modelId)
+      })(modelId)
     }
 
     case 'anthropic': {
       if (!credentials.apiKey?.trim())
         throw new Error('Anthropic provider requires an API key')
-      const provider = createAnthropic({
+      return createAnthropic({
         apiKey: credentials.apiKey,
         ...(credentials.baseURL ? { baseURL: credentials.baseURL } : {}),
         fetch: platformFetch,
-      })
-      return provider(modelId)
+      })(modelId)
     }
 
     case 'google': {
       if (!credentials.apiKey?.trim())
         throw new Error('Google provider requires an API key')
-      const provider = createGoogleGenerativeAI({
+      return createGoogleGenerativeAI({
         apiKey: credentials.apiKey,
         fetch: platformFetch,
-      })
-      return provider(modelId)
+      })(modelId)
     }
 
     case 'compatible': {
       if (!credentials.baseURL?.trim())
         throw new Error('Compatible provider requires a baseURL')
-      const provider = createOpenAICompatible({
+      return createOpenAICompatible({
         name: credentials.name ?? 'custom',
         apiKey: credentials.apiKey ?? '',
         baseURL: credentials.baseURL,
@@ -106,8 +79,7 @@ export function buildLanguageModel(
         ...(credentials.headers && Object.keys(credentials.headers).length > 0
           ? { headers: credentials.headers }
           : {}),
-      })
-      return provider(modelId)
+      })(modelId)
     }
 
     default: {
@@ -117,7 +89,7 @@ export function buildLanguageModel(
   }
 }
 
-// ── thinking budget helper ────────────────────────────────────────────────────
+// ── Thinking budget ───────────────────────────────────────────────────────────
 
 export function thinkingBudgetTokens(effort: ThinkingEffort): number {
   switch (effort) {
@@ -127,14 +99,9 @@ export function thinkingBudgetTokens(effort: ThinkingEffort): number {
   }
 }
 
-// ── provider options builder ──────────────────────────────────────────────────
+// ── Provider options ──────────────────────────────────────────────────────────
 
-type JSONValue = string
-  | number
-  | boolean
-  | null
-  | JSONValue[]
-  | { [key: string]: JSONValue | undefined }
+type JSONValue = string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue | undefined }
 
 export interface ThinkingConfig {
   providerId: string
@@ -143,10 +110,6 @@ export interface ThinkingConfig {
   thinkingEffort: ThinkingEffort
 }
 
-/**
- * Build provider-specific options for streamText based on thinking config.
- * Returns undefined when thinking is disabled so call sites can skip the key.
- */
 export function buildProviderOptions(
   config: ThinkingConfig,
 ): Record<string, Record<string, JSONValue>> | undefined {
@@ -155,132 +118,76 @@ export function buildProviderOptions(
 
   const id = config.modelId.toLowerCase()
 
-  // ── Anthropic extended thinking ──────────────────────────────────────────
-  // Claude 4.6+ uses adaptive thinking (model decides depth automatically).
-  // Earlier Claude 4.x models use budget-based thinking with explicit token limits.
-  // Opus 4.7+ omits reasoning text by default — display: 'summarized' is required.
+  // Anthropic: Claude 4.6+ adaptive, earlier budget-based, Opus 4.7+ needs display:summarized
   if (config.providerId === 'anthropic' && /claude-3-7|opus-4|sonnet-4|haiku-4/.test(id)) {
     const isAdaptive = /claude-(?:opus|sonnet)-4-(?:[6-9]|\d{2,})/.test(id)
     const needsDisplay = /claude-opus-4-(?:[7-9]|\d{2,})/.test(id)
 
     if (isAdaptive) {
       const anthropicOpts: Record<string, JSONValue> = {
-        thinking: { type: 'adaptive' },
+        thinking: needsDisplay ? { type: 'adaptive', display: 'summarized' } : { type: 'adaptive' },
         effort: config.thinkingEffort === 'high' ? 'max' : config.thinkingEffort,
       }
-      if (needsDisplay)
-        anthropicOpts.thinking = { type: 'adaptive', display: 'summarized' }
-
       return { anthropic: anthropicOpts }
     }
 
-    return {
-      anthropic: {
-        thinking: {
-          type: 'enabled',
-          budgetTokens: thinkingBudgetTokens(config.thinkingEffort),
-        },
-      },
-    }
+    return { anthropic: { thinking: { type: 'enabled', budgetTokens: thinkingBudgetTokens(config.thinkingEffort) } } }
   }
 
-  // ── Google Gemini thinking ───────────────────────────────────────────────
-  // Gemini 3+ models use level-based thinking (low/medium/high).
-  // Gemini 2.5 models use budget-based thinking with explicit token limits.
-  // Both support includeThoughts to surface reasoning in the response.
+  // Google: Gemini 3+ uses level-based, Gemini 2.5 uses budget-based
   if (config.providerId === 'google') {
-    const isGemini3Plus = /gemini-3/.test(id)
-
-    if (isGemini3Plus) {
+    if (/gemini-3/.test(id)) {
       return {
         google: {
           thinkingConfig: {
-            thinkingLevel: config.thinkingEffort === 'low'
-              ? 'low'
-              : config.thinkingEffort === 'high'
-                ? 'high'
-                : 'medium',
+            thinkingLevel: config.thinkingEffort === 'low' ? 'low' : config.thinkingEffort === 'high' ? 'high' : 'medium',
             includeThoughts: true,
           },
         },
       }
     }
-
-    // Gemini 2.5 — budget-based with effort mapping
-    const budgetMap: Record<ThinkingEffort, number> = {
-      low: 2048,
-      medium: 8192,
-      high: 32_768,
-    }
-    return {
-      google: {
-        thinkingConfig: {
-          thinkingBudget: budgetMap[config.thinkingEffort],
-          includeThoughts: true,
-        },
-      },
-    }
+    const budgetMap: Record<ThinkingEffort, number> = { low: 2048, medium: 8192, high: 32_768 }
+    return { google: { thinkingConfig: { thinkingBudget: budgetMap[config.thinkingEffort], includeThoughts: true } } }
   }
 
-  // ── OpenAI reasoning (o-series + GPT-5 codex) ───────────────────────────
-  // Reasoning models support reasoningEffort and reasoningSummary.
-  // reasoningSummary: 'auto' surfaces reasoning text in the stream.
-  const isReasoningModel = /^o[1-9]/.test(id)
-    || id.startsWith('o3')
-    || id.startsWith('o4')
-    || /gpt-5[\d.]*-codex/.test(id)
+  // OpenAI: o-series and GPT-5 codex reasoning models
+  const isReasoningModel = /^o[1-9]/.test(id) || id.startsWith('o3') || id.startsWith('o4') || /gpt-5[\d.]*-codex/.test(id)
   if (config.providerId === 'openai' && isReasoningModel) {
-    return {
-      openai: {
-        reasoningEffort: config.thinkingEffort,
-        reasoningSummary: 'auto',
-      },
-    }
+    return { openai: { reasoningEffort: config.thinkingEffort, reasoningSummary: 'auto' } }
   }
 
   return undefined
 }
 
-/**
- * Deep-merge multiple providerOptions objects.
- * Later entries override earlier ones at the key level within each provider.
- */
 export function mergeProviderOptions(
   ...options: Array<Record<string, Record<string, JSONValue>> | undefined>
 ): Record<string, Record<string, JSONValue>> | undefined {
   const merged: Record<string, Record<string, JSONValue>> = {}
-
   for (const option of options) {
     if (!option)
       continue
-    for (const [providerId, providerValues] of Object.entries(option)) {
+    for (const [providerId, providerValues] of Object.entries(option))
       merged[providerId] = { ...(merged[providerId] ?? {}), ...providerValues }
-    }
   }
-
   return Object.keys(merged).length > 0 ? merged : undefined
 }
 
-// ── tool event types ──────────────────────────────────────────────────────────
+// ── Tool event types ──────────────────────────────────────────────────────────
 
 export interface ToolCallEvent {
-  /** Tool call ID from the model (matches the subsequent result event). */
   id: string
   name: string
-  /** Parsed input args from the model — always an object. */
   args: Record<string, unknown>
 }
 
 export interface ToolResultEvent {
   id: string
   name: string
-  /** true = execute() returned normally; false = threw or stream errored. */
   ok: boolean
-  /** The value returned by execute(). */
   result?: Record<string, unknown>
 }
 
-// ── stream options ────────────────────────────────────────────────────────────
+// ── Stream options ────────────────────────────────────────────────────────────
 
 export interface StreamChatOptions {
   model: LanguageModel
@@ -306,23 +213,72 @@ export interface StreamChatFinishEvent {
   usage: LanguageModelUsage
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// ── Tool failure guard ────────────────────────────────────────────────────────
 
-/** Extract a clean error message regardless of the thrown value's type. */
-function extractErrorMessage(error: unknown): string {
-  if (error instanceof Error)
-    return error.message
-  if (typeof error === 'string')
-    return error
-  try {
-    return JSON.stringify(error)
-  }
-  catch {
-    return 'An unknown error occurred'
+class ToolFailureGuard {
+  private counts = new Map<string, number>()
+
+  constructor(private readonly threshold = 3) {}
+
+  record(toolName: string): void {
+    const next = (this.counts.get(toolName) ?? 0) + 1
+    this.counts.set(toolName, next)
+    if (next >= this.threshold) {
+      throw new Error(
+        `Repeated tool call failure detected for "${toolName}". Please provide further instructions.`,
+      )
+    }
   }
 }
 
-/** Return true if the error represents a user-initiated abort. */
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+function describeAPICallError(err: APICallError): string {
+  const parts: string[] = []
+  if (err.url)
+    parts.push(`url=${err.url}`)
+  if (err.statusCode != null)
+    parts.push(`status=${err.statusCode}`)
+  if (err.responseBody) {
+    // Truncate very long bodies (e.g. HTML error pages)
+    const body = String(err.responseBody).slice(0, 500)
+    parts.push(`body=${body}`)
+  }
+  if (err.cause instanceof Error)
+    parts.push(`cause=${err.cause.message}`)
+  const detail = parts.length ? ` (${parts.join(', ')})` : ''
+  return `${err.message}${detail}`
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (RetryError.isInstance(error)) {
+    const allErrors = (error.errors ?? []).map((e: unknown) => {
+      if (APICallError.isInstance(e))
+        return describeAPICallError(e)
+      if (e instanceof Error)
+        return e.message
+      return String(e)
+    })
+    const suffix = allErrors.length
+      ? `\n  Attempts:\n${allErrors.map((m, i) => `    [${i + 1}] ${m}`).join('\n')}`
+      : ''
+    return `${error.message}${suffix}`
+  }
+  if (APICallError.isInstance(error))
+    return describeAPICallError(error)
+  if (error instanceof Error) {
+    // Unwrap generic .cause chains
+    const cause = (error as Error & { cause?: unknown }).cause
+    if (cause instanceof Error)
+      return `${error.message} → ${extractErrorMessage(cause)}`
+    return error.message
+  }
+  if (typeof error === 'string')
+    return error
+  try { return JSON.stringify(error) }
+  catch { return 'An unknown error occurred' }
+}
+
 function isAbortError(error: unknown): boolean {
   if (error instanceof Error)
     return error.name === 'AbortError' || error.message.includes('aborted')
@@ -331,24 +287,10 @@ function isAbortError(error: unknown): boolean {
 
 // ── streamChat ────────────────────────────────────────────────────────────────
 
-/**
- * Stream a chat response from the AI model.
- *
- * When tools are provided AND the model supports them, stopWhen:
- * isLoopFinished() lets the agent call tools as many times as needed,
- * stopping only when the model produces a final text response.
- *
- * Stream part mapping (AI SDK v5/v6):
- *   text-delta      → part.text
- *   reasoning-delta → part.text
- *   tool-call       → part.toolCallId / part.toolName / part.input
- *   tool-result     → part.toolCallId / part.toolName / part.output
- *   error           → part.error
- *
- * Error handling:
- *   - AbortError  → logged to console.warn, then returns (user cancelled)
- *   - All others  → calls onError callback then re-throws
- */
+// AI SDK v6 field names (differ from older docs):
+//   tool-call  → part.input   (not args)
+//   tool-result → part.output  (not result/content)
+
 export async function streamChat(opts: StreamChatOptions): Promise<void> {
   const {
     model,
@@ -368,11 +310,8 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     debugRaw = false,
   } = opts
 
-  // Guard: abort signal already fired before we even start
   if (signal?.aborted)
     return
-
-  // Guard: empty message array will be rejected by every provider
   if (!messages.length)
     throw new Error('streamChat: messages array is empty')
 
@@ -383,24 +322,20 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
       model,
       ...(systemPrompt ? { system: systemPrompt } : {}),
       messages,
-      ...(hasTools ? { tools } : {}),
-      // isLoopFinished() stops when the model returns with no tool calls.
-      ...(hasTools ? { stopWhen: isLoopFinished() } : {}),
+      ...(hasTools ? { tools, stopWhen: isLoopFinished() } : {}),
       maxOutputTokens,
       ...(providerOptions ? { providerOptions } : {}),
       ...(signal ? { abortSignal: signal } : {}),
     })
 
     let fullText = ''
-    const toolFailureCounts = new Map<string, number>()
+    const failureGuard = new ToolFailureGuard()
 
     for await (const part of result.fullStream) {
-      // Check abort on every iteration to surface cancellation quickly
       if (signal?.aborted)
         return
-
       if (debugRaw)
-        console.warn('[ai] raw stream part:', part)
+        console.warn('[ai] stream part:', part)
 
       switch (part.type) {
         case 'text-delta':
@@ -412,91 +347,49 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
           onReasoningDelta?.(part.text)
           break
 
-        // Start/end markers — no action needed, reasoning text arrives via delta
         case 'reasoning-start':
         case 'reasoning-end':
           break
 
         case 'tool-call':
-          onToolCall?.({
-            id: part.toolCallId,
-            name: part.toolName,
-            // part.input is the correct field in AI SDK v5/v6
-            args: (part.input ?? {}) as Record<string, unknown>,
-          })
+          onToolCall?.({ id: part.toolCallId, name: part.toolName, args: (part.input ?? {}) as Record<string, unknown> })
           break
 
         case 'tool-result':
-          onToolResult?.({
-            id: part.toolCallId,
-            name: part.toolName,
-            ok: true,
-            // part.output is the correct field in AI SDK v5/v6
-            result: (part.output ?? {}) as Record<string, unknown>,
-          })
+          onToolResult?.({ id: part.toolCallId, name: part.toolName, ok: true, result: (part.output ?? {}) as Record<string, unknown> })
           break
 
         case 'tool-error': {
           const errorMessage = extractErrorMessage(part.error)
-          onToolResult?.({
-            id: part.toolCallId,
-            name: part.toolName,
-            ok: false,
-            result: { error: errorMessage },
-          })
-
-          const failureCount = (toolFailureCounts.get(part.toolName) ?? 0) + 1
-          toolFailureCounts.set(part.toolName, failureCount)
-          if (failureCount >= 3) {
-            throw new Error(
-              `Error: Repeated tool call failur detected of ${part.toolName}, give the agent further instructions`,
-            )
-          }
+          onToolResult?.({ id: part.toolCallId, name: part.toolName, ok: false, result: { error: errorMessage } })
+          failureGuard.record(part.toolName)
           break
         }
 
-        case 'error': {
-          const msg = part.error instanceof Error
-            ? part.error.message
-            : String(part.error)
-          throw new Error(msg)
-        }
+        case 'error':
+          throw new Error(extractErrorMessage(part.error))
       }
     }
 
-    const [usage, providerMetadata] = await Promise.all([
-      result.usage,
-      result.providerMetadata,
-    ])
-
-    onFinish?.({
-      fullText,
-      usage,
-      ...(providerMetadata ? { providerMetadata } : {}),
-    })
+    const [usage, providerMetadata] = await Promise.all([result.usage, result.providerMetadata])
+    onFinish?.({ fullText, usage, ...(providerMetadata ? { providerMetadata } : {}) })
   }
   catch (error: unknown) {
     if (isAbortError(error)) {
-      console.warn('[streamChat] stream aborted:', extractErrorMessage(error))
+      console.warn('[streamChat] aborted:', extractErrorMessage(error))
       return
     }
-
+    // Preserve the original AI SDK error object (RetryError, APICallError, etc.)
+    // so callers receive full context (status codes, response bodies, attempt list).
     const err = error instanceof Error ? error : new Error(extractErrorMessage(error))
+    console.error('[streamChat] error:', extractErrorMessage(error))
     onError?.(err)
     throw err
   }
 }
 
-// ── system prompt builder ─────────────────────────────────────────────────────
+// ── System prompt builder ─────────────────────────────────────────────────────
 
-/**
- * Build the full system prompt for the current session.
- *
- * @param projectPath - Absolute path to the open project, or null if none.
- * @param _mode       - 'build' (implement) | 'plan' (design only).
- * @param osInfo      - OS info from getOsInfo(). Injects platform-specific
- *                      shell/path conventions so the agent uses correct syntax.
- */
 export function buildSystemPrompt(
   projectPath: string | null,
   _mode: ChatMode = 'build',

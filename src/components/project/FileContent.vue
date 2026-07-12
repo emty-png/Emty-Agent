@@ -56,155 +56,61 @@ function breadcrumb(path: string): string[] {
 </script>
 
 <template>
-  <div class="content-root" @click.self="clearSelection">
+  <div class="flex h-full flex-col overflow-hidden bg-[var(--color-bg-base)]" @click.self="clearSelection">
     <!-- ── empty state ─────────────────────────────────────────────── -->
-    <div v-if="!selectedPath" class="content-empty">
-      <File :size="28" :stroke-width="1.3" class="empty-icon" />
-      <p class="empty-label">
+    <div v-if="!selectedPath" class="flex flex-1 flex-col items-center justify-center gap-[10px] text-[var(--color-text-tertiary)]">
+      <File :size="28" :stroke-width="1.3" class="opacity-40" />
+      <p class="text-[12.5px] tracking-[0.01em]">
         Select a file to view its contents
       </p>
     </div>
 
     <!-- ── loading file ────────────────────────────────────────────── -->
     <template v-else-if="loadingFile || highlighting">
-      <div class="content-header">
-        <div class="breadcrumb">
-          <span v-for="(part, i) in breadcrumb(selectedPath)" :key="i" class="breadcrumb-part">
-            <span v-if="i > 0" class="breadcrumb-sep">/</span>
+      <div class="flex h-[30px] min-h-[30px] shrink-0 items-center border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-[14px]">
+        <div class="flex items-center gap-[2px] overflow-hidden whitespace-nowrap text-[11.5px] text-[var(--color-text-tertiary)]">
+          <span v-for="(part, i) in breadcrumb(selectedPath)" :key="i">
+            <span v-if="i > 0" class="mx-[2px] text-[var(--color-border-bright)]">/</span>
             {{ part }}
           </span>
         </div>
       </div>
-      <div class="content-loading">
-        <Loader :size="16" :stroke-width="1.8" class="spin" />
+      <div class="flex flex-1 items-center justify-center text-[var(--color-text-tertiary)]">
+        <Loader :size="16" :stroke-width="1.8" class="animate-spin" />
       </div>
     </template>
 
     <!-- ── error ───────────────────────────────────────────────────── -->
-    <div v-else-if="error" class="content-error">
+    <div v-else-if="error" class="flex flex-1 items-center justify-center p-[24px] text-center text-[12.5px] text-[var(--color-danger-text)]">
       {{ error }}
     </div>
 
     <!-- ── file content ────────────────────────────────────────────── -->
     <template v-else-if="highlighted">
       <!-- header / breadcrumb -->
-      <div class="content-header">
-        <div class="breadcrumb">
+      <div class="flex h-[30px] min-h-[30px] shrink-0 items-center border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-[14px]">
+        <div class="flex items-center gap-[2px] overflow-hidden whitespace-nowrap text-[11.5px] text-[var(--color-text-tertiary)]">
           <span
             v-for="(part, i) in breadcrumb(selectedPath!)"
             :key="i"
-            class="breadcrumb-part"
-            :class="{ 'breadcrumb-part--file': i === breadcrumb(selectedPath!).length - 1 }"
+            :class="{ 'font-medium text-[var(--color-text-secondary)]': i === breadcrumb(selectedPath!).length - 1 }"
           >
-            <span v-if="i > 0" class="breadcrumb-sep">/</span>
+            <span v-if="i > 0" class="mx-[2px] text-[var(--color-border-bright)]">/</span>
             {{ part }}
           </span>
         </div>
       </div>
 
       <!-- code area -->
-      <div class="code-scroll">
+      <div class="flex-1 overflow-auto py-[8px]">
         <!-- eslint-disable-next-line vue/no-v-html -->
-        <div class="code-wrap" v-html="highlighted" />
+        <div class="min-w-max" v-html="highlighted" />
       </div>
     </template>
   </div>
 </template>
 
 <style scoped>
-/* ── root ────────────────────────────────────────────────────────────────────── */
-.content-root {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--color-bg-base);
-  overflow: hidden;
-}
-
-/* ── empty ───────────────────────────────────────────────────────────────────── */
-.content-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--color-text-tertiary);
-}
-
-.empty-icon {
-  opacity: 0.4;
-}
-
-.empty-label {
-  font-size: 12.5px;
-  letter-spacing: 0.01em;
-}
-
-/* ── header / breadcrumb ─────────────────────────────────────────────────────── */
-.content-header {
-  display: flex;
-  align-items: center;
-  height: 30px;
-  min-height: 30px;
-  padding-inline: 14px;
-  background: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-subtle);
-  flex-shrink: 0;
-}
-
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  font-size: 11.5px;
-  color: var(--color-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.breadcrumb-sep {
-  margin-inline: 2px;
-  color: var(--color-border-bright);
-}
-
-.breadcrumb-part--file {
-  color: var(--color-text-secondary);
-  font-weight: 500;
-}
-
-/* ── loading ─────────────────────────────────────────────────────────────────── */
-.content-loading {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-text-tertiary);
-}
-
-/* ── error ───────────────────────────────────────────────────────────────────── */
-.content-error {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  font-size: 12.5px;
-  color: var(--color-danger-text);
-  text-align: center;
-}
-
-/* ── code scroll ─────────────────────────────────────────────────────────────── */
-.code-scroll {
-  flex: 1;
-  overflow: auto;
-  padding: 8px 0;
-}
-
-.code-wrap {
-  min-width: max-content;
-}
-
 /* ── shiki output overrides ──────────────────────────────────────────────────── */
 :deep(.shiki) {
   background: transparent !important;
@@ -253,16 +159,5 @@ function breadcrumb(path: string): string[] {
 
 :deep(.shiki .line:hover) {
   background: var(--color-bg-hover);
-}
-
-/* spinner */
-.spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

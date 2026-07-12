@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { Message } from '@/stores/chat'
 import type { Attachment } from '@/stores/chat/attachment-types'
+import type { AgentStatus } from '@/stores/chat/types'
 import { computed } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { isStreamingStatus } from '@/stores/chat/agentStatus'
 import { SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from '@/stores/chat/constants'
 import { useCheckpointStore } from '@/stores/checkpoints'
 import AssistantMessage from './AssistantMessage.vue'
@@ -11,7 +13,7 @@ import UserMessage from './UserMessage.vue'
 
 const props = defineProps<{
   messages: Message[]
-  isStreaming: boolean
+  agentStatus: AgentStatus
   isSubAgent: boolean
 }>()
 
@@ -52,6 +54,14 @@ const displayMessages = computed(() => {
   }
   return props.messages
 })
+
+const isStreaming = computed(() => isStreamingStatus(props.agentStatus))
+
+// ── Tailwind Class Extractions ──────────────────────────────────────────────
+const sessionDividerClasses = 'flex items-center gap-0 w-full py-0.5 select-none opacity-45 transition-opacity duration-200 ease-[ease] hover:opacity-100'
+const sessionDividerLineClasses = 'flex-1 h-px border-t border-dashed border-(--color-border-mid) opacity-50'
+const sessionDividerLabelClasses = 'flex items-center gap-[5px] px-2.5 text-(--color-text-dim) shrink-0'
+const sessionDividerTextClasses = 'text-[11px] font-semibold tracking-[0.04em] uppercase'
 </script>
 
 <template>
@@ -65,12 +75,12 @@ const displayMessages = computed(() => {
         @restore="handleRestore"
       />
 
-      <div v-if="isSessionDivider(msg)" class="session-divider">
-        <div class="session-divider-line" />
-        <div class="session-divider-label">
-          <span class="session-divider-text">{{ sessionDividerLabel(msg) }}</span>
+      <div v-if="isSessionDivider(msg)" :class="sessionDividerClasses">
+        <div :class="sessionDividerLineClasses" />
+        <div :class="sessionDividerLabelClasses">
+          <span :class="sessionDividerTextClasses">{{ sessionDividerLabel(msg) }}</span>
         </div>
-        <div class="session-divider-line" />
+        <div :class="sessionDividerLineClasses" />
       </div>
 
       <UserMessage
@@ -82,48 +92,8 @@ const displayMessages = computed(() => {
       <AssistantMessage
         v-else
         :msg="msg"
-        :is-streaming="isStreaming && msg.id === messages.at(-1)?.id"
+        :agent-status="msg.id === messages.at(-1)?.id && msg.elapsedSec == null ? props.agentStatus : { type: 'idle' }"
       />
     </template>
   </TransitionGroup>
 </template>
-
-<style scoped>
-.session-divider {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  width: 100%;
-  padding: 2px 0;
-  user-select: none;
-  opacity: 0.45;
-  transition: opacity 200ms ease;
-}
-
-.session-divider:hover {
-  opacity: 1;
-}
-
-.session-divider-line {
-  flex: 1;
-  height: 1px;
-  border-top: 1px dashed var(--color-border-mid);
-  opacity: 0.5;
-}
-
-.session-divider-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 10px;
-  color: var(--color-text-dim);
-  flex-shrink: 0;
-}
-
-.session-divider-text {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-</style>

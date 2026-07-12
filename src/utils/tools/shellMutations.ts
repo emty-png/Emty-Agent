@@ -355,8 +355,8 @@ export function extractRedirectTargets(segment: string): string[] {
   let m: RegExpExecArray | null
   m = REDIRECT_OUTPUT_RE.exec(cleaned)
   while (m !== null) {
-    const op = m[2] ?? ''
-    const target = m[3] ?? ''
+    const op = m[1] ?? ''
+    const target = m[2] ?? ''
 
     // Skip input redirects (defensive — regex shouldn't allow them)
     if (op.startsWith('<'))

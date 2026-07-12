@@ -406,7 +406,7 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
 
     // ── Step 7: Refresh the file tree so the project view reflects changes ─
     try {
-      const { useFileTreeStore } = await import('./fileTree')
+      const { useFileTreeStore } = await import('@/stores/fileTree')
       const ft = useFileTreeStore()
       await ft.loadTree()
     }

@@ -3,10 +3,12 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "main"
+    "main",
+    "window-*"
   ],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
     "opener:default",
     "dialog:allow-open",
     "allow-browser-mount-surface",
@@ -28,58 +30,153 @@
     "fs:read-all",
     {
       "identifier": "fs:allow-read-dir",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-read-text-file-lines",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-stat",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-exists",
       "allow": [
-        { "path": "C:\\Program Files\\Git\\bin\\bash.exe" },
-        { "path": "C:\\Program Files\\Git\\usr\\bin\\bash.exe" },
-        { "path": "C:\\Program Files\\Git\\git-bash.exe" },
-        { "path": "C:\\Program Files (x86)\\Git\\bin\\bash.exe" },
-        { "path": "C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe" },
-        { "path": "C:\\Program Files (x86)\\Git\\git-bash.exe" }
+        {
+          "path": "C:\\Program Files\\Git\\bin\\bash.exe"
+        },
+        {
+          "path": "C:\\Program Files\\Git\\usr\\bin\\bash.exe"
+        },
+        {
+          "path": "C:\\Program Files\\Git\\git-bash.exe"
+        },
+        {
+          "path": "C:\\Program Files (x86)\\Git\\bin\\bash.exe"
+        },
+        {
+          "path": "C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe"
+        },
+        {
+          "path": "C:\\Program Files (x86)\\Git\\git-bash.exe"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "**"
+        }
       ]
     },
     {
       "identifier": "fs:allow-read-file",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-write-file",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-write-text-file",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-mkdir",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-rename",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-remove",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     {
       "identifier": "fs:allow-copy-file",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        },
+        {
+          "path": "$HOME/.emty/**"
+        }
+      ]
     },
     "core:window:allow-minimize",
     "core:window:allow-maximize",
@@ -94,25 +191,81 @@
     {
       "identifier": "shell:allow-spawn",
       "allow": [
-        { "name": "git", "cmd": "git", "args": true },
-        { "name": "powershell", "cmd": "powershell", "args": true },
-        { "name": "pwsh", "cmd": "pwsh", "args": true },
-        { "name": "sh", "cmd": "sh", "args": true },
-        { "name": "git-bash", "cmd": "C:\\Program Files\\Git\\bin\\bash.exe", "args": true },
-        { "name": "git-bash-x86", "cmd": "C:\\Program Files (x86)\\Git\\bin\\bash.exe", "args": true },
-        { "name": "cmd", "cmd": "cmd", "args": true }
+        {
+          "name": "git",
+          "cmd": "git",
+          "args": true
+        },
+        {
+          "name": "powershell",
+          "cmd": "powershell",
+          "args": true
+        },
+        {
+          "name": "pwsh",
+          "cmd": "pwsh",
+          "args": true
+        },
+        {
+          "name": "sh",
+          "cmd": "sh",
+          "args": true
+        },
+        {
+          "name": "git-bash",
+          "cmd": "C:\\Program Files\\Git\\bin\\bash.exe",
+          "args": true
+        },
+        {
+          "name": "git-bash-x86",
+          "cmd": "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+          "args": true
+        },
+        {
+          "name": "cmd",
+          "cmd": "cmd",
+          "args": true
+        }
       ]
     },
     {
       "identifier": "shell:allow-execute",
       "allow": [
-        { "name": "git", "cmd": "git", "args": true },
-        { "name": "powershell", "cmd": "powershell", "args": true },
-        { "name": "pwsh", "cmd": "pwsh", "args": true },
-        { "name": "sh", "cmd": "sh", "args": true },
-        { "name": "git-bash", "cmd": "C:\\Program Files\\Git\\bin\\bash.exe", "args": true },
-        { "name": "git-bash-x86", "cmd": "C:\\Program Files (x86)\\Git\\bin\\bash.exe", "args": true },
-        { "name": "cmd", "cmd": "cmd", "args": true }
+        {
+          "name": "git",
+          "cmd": "git",
+          "args": true
+        },
+        {
+          "name": "powershell",
+          "cmd": "powershell",
+          "args": true
+        },
+        {
+          "name": "pwsh",
+          "cmd": "pwsh",
+          "args": true
+        },
+        {
+          "name": "sh",
+          "cmd": "sh",
+          "args": true
+        },
+        {
+          "name": "git-bash",
+          "cmd": "C:\\Program Files\\Git\\bin\\bash.exe",
+          "args": true
+        },
+        {
+          "name": "git-bash-x86",
+          "cmd": "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+          "args": true
+        },
+        {
+          "name": "cmd",
+          "cmd": "cmd",
+          "args": true
+        }
       ]
     },
     "shell:allow-kill",
@@ -120,7 +273,14 @@
     "os:default",
     {
       "identifier": "http:default",
-      "allow": [{ "url": "https://**" }, { "url": "http://**" }]
+      "allow": [
+        {
+          "url": "https://**"
+        },
+        {
+          "url": "http://**"
+        }
+      ]
     }
   ]
 }

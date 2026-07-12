@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import type { Category, ScaffoldOptionChoice, ScaffoldOptions, ScaffoldTemplate } from './templates'
+import type { Category, ScaffoldOptionChoice, ScaffoldOptions, ScaffoldTemplate } from '@/utils/scaffold/templates'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 import { exists, writeTextFile } from '@tauri-apps/plugin-fs'
 import { openPath } from '@tauri-apps/plugin-opener'
@@ -20,31 +20,31 @@ import {
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getDeviconForFramework } from '@/utils/icons'
-import ScaffoldDropdown from './ScaffoldDropdown.vue'
-import ScaffoldMultiSelect from './ScaffoldMultiSelect.vue'
-import { buildCommandLine, joinPath, runScaffold, sanitizeProjectName } from './scaffoldRunner'
+import { buildCommandLine, joinPath, runScaffold, sanitizeProjectName } from '@/utils/scaffold/scaffoldRunner'
 import {
 
   getDefaultOptions,
   getTemplatesForCategory,
   scaffoldCategories,
 
-} from './templates'
-import { ASTRO_SVG } from './templates/astro'
-import { BUN_SVG } from './templates/bun'
-import { DOCUSAURUS_SVG } from './templates/docusaurus'
-import { ELECTRON_SVG } from './templates/electron'
-import { ELYSIA_SVG } from './templates/elysia'
-import { FASTIFY_SVG } from './templates/fastify'
-import { HONO_SVG } from './templates/hono'
-import { NEXTJS_SVG } from './templates/nextjs'
-import { NUXT_SVG } from './templates/nuxt'
-import { REMIX_SVG } from './templates/remix'
-import { SVELTEKIT_SVG } from './templates/sveltekit'
-import { TANSTACK_SVG } from './templates/tanstack-start'
-import { TAURI_SVG } from './templates/tauri'
-import { TSDOWN_SVG } from './templates/tsdown'
-import { VITE_ICONS } from './templates/vite'
+} from '@/utils/scaffold/templates'
+import { ASTRO_SVG } from '@/utils/scaffold/templates/astro'
+import { BUN_SVG } from '@/utils/scaffold/templates/bun'
+import { DOCUSAURUS_SVG } from '@/utils/scaffold/templates/docusaurus'
+import { ELECTRON_SVG } from '@/utils/scaffold/templates/electron'
+import { ELYSIA_SVG } from '@/utils/scaffold/templates/elysia'
+import { FASTIFY_SVG } from '@/utils/scaffold/templates/fastify'
+import { HONO_SVG } from '@/utils/scaffold/templates/hono'
+import { NEXTJS_SVG } from '@/utils/scaffold/templates/nextjs'
+import { NUXT_SVG } from '@/utils/scaffold/templates/nuxt'
+import { REMIX_SVG } from '@/utils/scaffold/templates/remix'
+import { SVELTEKIT_SVG } from '@/utils/scaffold/templates/sveltekit'
+import { TANSTACK_SVG } from '@/utils/scaffold/templates/tanstack-start'
+import { TAURI_SVG } from '@/utils/scaffold/templates/tauri'
+import { TSDOWN_SVG } from '@/utils/scaffold/templates/tsdown'
+import { VITE_ICONS } from '@/utils/scaffold/templates/vite'
+import ScaffoldDropdown from './ScaffoldDropdown.vue'
+import ScaffoldMultiSelect from './ScaffoldMultiSelect.vue'
 
 const emit = defineEmits<{
   close: []

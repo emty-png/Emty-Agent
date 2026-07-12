@@ -49,6 +49,7 @@ interface CommandResult {
 
 interface CommandTaskRecord {
   id: string
+  tabId: string | null
   kind: CommandTaskKind
   mode: CommandTaskMode
   label: string | null
@@ -72,13 +73,14 @@ interface CommandTaskHandle {
   stopRequested: boolean
   timeoutRequested: boolean
   resolveCompletion: ((value: CommandCompletionSignal) => void) | null
+  /** Resolved once the child process has spawned (PID assigned) or failed to spawn. */
+  resolveSpawn: (() => void) | null
 }
 
 interface CommandCompletionSignal {
   code: number | null
   spawnError?: string
-  inferredExit?: boolean
-  transferred?: boolean
+  timedOut?: boolean
 }
 
 export interface ShellToolRuntimeEvents {
@@ -92,6 +94,7 @@ export interface ShellToolRuntimeEvents {
 
 export interface CommandTaskSummary {
   id: string
+  tabId: string | null
   kind: CommandTaskKind
   mode: CommandTaskMode
   label: string | null
@@ -150,6 +153,21 @@ export const commandTasks = readonly(taskSnapshotsRef)
 function touchTasks(): void {
   taskSnapshotsRef.value = sortTasks(tasks.values())
   taskVersionRef.value++
+}
+
+// Throttled variant used for high-frequency stdout/stderr data events.
+// Batches all output-driven reactive updates into a single flush per ~16ms
+// tick so verbose commands (e.g. pnpm install, cargo build) don't flood
+// Vue's reactivity system and freeze the UI.
+let _pendingOutputTouch = false
+function touchTasksThrottled(): void {
+  if (_pendingOutputTouch)
+    return
+  _pendingOutputTouch = true
+  setTimeout(() => {
+    _pendingOutputTouch = false
+    touchTasks()
+  }, 16)
 }
 
 function nextTaskId(): string {
@@ -253,6 +271,7 @@ function sortTasks(entries: Iterable<CommandTaskRecord>): CommandTaskSummary[] {
 function snapshotTask(task: CommandTaskRecord): CommandTaskSummary {
   return {
     id: task.id,
+    tabId: task.tabId,
     kind: task.kind,
     mode: task.mode,
     label: task.label,
@@ -422,6 +441,7 @@ async function resolveShellCommand(command: string): Promise<ResolvedShellComman
 function createTaskRecord(options: {
   kind: CommandTaskKind
   mode: CommandTaskMode
+  tabId?: string | null
   cwd: string
   summary: string
   label?: string
@@ -431,6 +451,7 @@ function createTaskRecord(options: {
 
   const task: CommandTaskRecord = {
     id: nextTaskId(),
+    tabId: options.tabId ?? null,
     kind: options.kind,
     mode: options.mode,
     label: options.label?.trim() || null,
@@ -455,6 +476,7 @@ function createTaskRecord(options: {
     stopRequested: false,
     timeoutRequested: false,
     resolveCompletion: null,
+    resolveSpawn: null,
   })
   touchTasks()
   return task
@@ -478,42 +500,45 @@ function finalizeTask(task: CommandTaskRecord, handle: CommandTaskHandle, option
   touchTasks()
 }
 
-async function probeProcessRunning(pid: number): Promise<boolean | null> {
-  if (!Number.isFinite(pid) || pid <= 0)
-    return false
-
-  const shell = await resolveShell()
-  const probe = shell === 'powershell' || shell === 'pwsh'
-    ? `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { exit 0 } else { exit 1 }`
-    : `kill -0 ${pid}`
-  const resolved: ResolvedShellCommand = shell === 'powershell' || shell === 'pwsh'
-    ? { binary: shell, args: createShellArgs(shell, probe) }
-    : await resolveShellCommand(probe)
-
-  try {
-    const result = await Command.create(resolved.binary, resolved.args).execute()
-    return result.code === 0
-  }
-  catch {
-    return null
-  }
-}
-
 async function forceKillProcess(pid: number): Promise<boolean> {
   if (!Number.isFinite(pid) || pid <= 0)
     return false
 
   const shell = await resolveShell()
-  const cmd = shell === 'powershell' || shell === 'pwsh'
-    ? `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`
-    : `kill -9 ${pid}`
-  const resolved: ResolvedShellCommand = shell === 'powershell' || shell === 'pwsh'
-    ? { binary: shell, args: createShellArgs(shell, cmd) }
-    : await resolveShellCommand(cmd)
 
+  // On Windows, use taskkill /F /T which terminates the entire process tree
+  // (the shell wrapper AND all its children). Stop-Process only kills the
+  // immediate PID and leaves child processes orphaned and still running.
+  if (shell === 'powershell' || shell === 'pwsh') {
+    try {
+      // taskkill is always available on Windows; run it directly via cmd
+      // so we don't depend on the resolved shell being healthy.
+      const result = await Command.create('cmd', ['/d', '/s', '/c', `taskkill /F /T /PID ${pid}`]).execute()
+      if (result.code === 0)
+        return true
+    }
+    catch { /* fall through to Stop-Process */ }
+
+    // Fallback: Stop-Process (kills only the direct PID)
+    try {
+      const result = await Command.create(shell, [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`,
+      ]).execute()
+      return result.code === 0
+    }
+    catch {
+      return false
+    }
+  }
+
+  // Unix: kill -9 kills the process group if we negate the PID; fall back
+  // to the positive PID if the negation fails (child may have changed pgid).
   try {
-    const result = await Command.create(resolved.binary, resolved.args).execute()
-    return result.code === 0
+    const pgResult = await Command.create('sh', ['-c', `kill -9 -${pid} 2>/dev/null || kill -9 ${pid}`]).execute()
+    return pgResult.code === 0
   }
   catch {
     return false
@@ -521,32 +546,16 @@ async function forceKillProcess(pid: number): Promise<boolean> {
 }
 
 async function reconcileRunningTask(task: CommandTaskRecord): Promise<CommandTaskRecord> {
-  if (task.status !== 'running')
-    return task
-
-  const handle = taskHandles.get(task.id)
-  if (!handle || handle.pid == null)
-    return task
-
-  const isRunning = await probeProcessRunning(handle.pid)
-  if (isRunning !== false)
-    return task
-
-  handle.resolveCompletion?.({
-    code: null,
-    inferredExit: true,
-  })
-
-  const completion = taskPromises.get(task.id)
-  if (completion) {
-    try {
-      await completion
-    }
-    catch {
-      // The tracked task state is the source of truth even if the promise rejects.
-    }
-  }
-
+  // This used to actively probe the OS for the tracked PID (via a freshly spawned
+  // `kill -0`-style check) and declare the task finished the moment that probe came
+  // back negative. That probe runs as its own separate process and, in this app's
+  // environment, was unreliable enough to report tasks as "not running" even while
+  // they were demonstrably still alive and streaming stdout through their own
+  // command handle — silently converting live background tasks (e.g. dev servers)
+  // into "completed"/"failed". The handle's real 'close'/'error' listeners (set up
+  // when the task was started) are what actually keep `task.status` accurate now,
+  // so there's nothing left to reconcile here. Kept as a stable entry point in case
+  // a reliable cross-platform liveness check is reintroduced later.
   return task
 }
 
@@ -578,39 +587,38 @@ async function stopTaskInternal(id: string): Promise<CommandTaskSummary | null> 
   handle.stopRequested = true
   const pid = handle.pid
 
-  // Try child.kill() for non-background tasks; skip for background (detached) processes
-  if (handle.child != null && task.mode !== 'background') {
+  // Attempt a graceful kill via the Tauri child handle first.
+  if (handle.child != null) {
     try {
       await handle.child.kill()
     }
-    catch (e) {
-      task.stderr = appendOutput(task.stderr, `\n[kill error] ${e instanceof Error ? e.message : String(e)}`)
-    }
+    catch { /* ignore — we always follow up with a force kill below */ }
   }
 
-  // Force kill by PID after a short delay — this is the reliable path for background tasks
+  // Always force-kill by PID to ensure the entire process tree is terminated.
+  // On Windows `child.kill()` only signals the shell wrapper; `taskkill /F /T`
+  // is required to also kill the shell's children (the actual command process).
   if (pid != null) {
+    // Give the graceful kill a brief head start, then force-kill regardless.
     setTimeout(() => {
       void (async () => {
-        if (task.status !== 'running')
-          return
-
-        console.warn(`[shell] Task ${id} (PID ${pid}) still running, force killing`)
         const killed = await forceKillProcess(pid)
-        if (killed)
-          task.stderr = appendOutput(task.stderr, `\n[force killed PID ${pid}]`)
-        else
-          task.stderr = appendOutput(task.stderr, `\n[warning: force kill failed for PID ${pid}]`)
+        if (!killed)
+          console.warn(`[shell] force kill failed for task ${id} PID ${pid}`)
 
-        // Mark task as killed regardless — process may die asynchronously
-        if (task.status === 'running')
-          finalizeTask(task, handle, { status: 'killed', exitCode: null, note: 'Force killed' })
+        if (task.status === 'running') {
+          finalizeTask(task, handle, {
+            status: 'killed',
+            exitCode: null,
+            note: killed ? `\n[force killed PID ${pid}]` : `\n[warning: force kill may have failed for PID ${pid}]`,
+          })
+        }
         touchTasks()
       })()
-    }, 300)
+    }, 200)
   }
   else {
-    // No PID available — just finalize immediately
+    // No PID available — finalize immediately.
     if (task.status === 'running')
       finalizeTask(task, handle, { status: 'killed', exitCode: null, note: 'Killed (no PID)' })
   }
@@ -637,22 +645,23 @@ async function executeTrackedProcess(options: {
   let stdout = ''
   let stderr = ''
   let status: CommandResultStatus = 'completed'
-  let livenessTimer: ReturnType<typeof setInterval> | null = null
-  let probeInFlight = false
 
   const command = options.createCommand()
 
   command.stdout.on('data', (chunk: string) => {
     stdout = appendOutput(stdout, chunk)
     options.task.stdout = appendOutput(options.task.stdout, chunk)
-    emitToolOutput(options.runtimeEvents, 'git_command', options.toolCallId, 'stdout', chunk)
-    touchTasks()
+    emitToolOutput(options.runtimeEvents, options.task.kind === 'shell' ? 'run_command' : 'git_command', options.toolCallId, 'stdout', chunk)
+    // Use the throttled variant here: output events can fire hundreds of times
+    // per second on verbose commands and flooding touchTasks() synchronously
+    // will lock up the Vue reactivity system and freeze the UI.
+    touchTasksThrottled()
   })
   command.stderr.on('data', (chunk: string) => {
     stderr = appendOutput(stderr, chunk)
     options.task.stderr = appendOutput(options.task.stderr, chunk)
-    emitToolOutput(options.runtimeEvents, 'git_command', options.toolCallId, 'stderr', chunk)
-    touchTasks()
+    emitToolOutput(options.runtimeEvents, options.task.kind === 'shell' ? 'run_command' : 'git_command', options.toolCallId, 'stderr', chunk)
+    touchTasksThrottled()
   })
 
   let resolveDone!: (value: CommandCompletionSignal) => void
@@ -665,10 +674,6 @@ async function executeTrackedProcess(options: {
     if (doneResolved)
       return
     doneResolved = true
-    if (livenessTimer != null) {
-      clearInterval(livenessTimer)
-      livenessTimer = null
-    }
     resolveDone(value)
   }
 
@@ -690,29 +695,34 @@ async function executeTrackedProcess(options: {
     options.handle.child = child
     options.handle.pid = child.pid
 
-    livenessTimer = setInterval(() => {
-      if (doneResolved || probeInFlight || options.handle.pid == null)
-        return
+    // Signal that the process has spawned — unblocks background-task callers
+    options.handle.resolveSpawn?.()
+    options.handle.resolveSpawn = null
 
-      probeInFlight = true
-      void probeProcessRunning(options.handle.pid)
-        .then(isRunning => {
-          if (isRunning === false)
-            settleDone({ code: null, inferredExit: true })
-        })
-        .finally(() => {
-          probeInFlight = false
-        })
-    }, 2000)
+    // NOTE: this used to run a periodic `kill -0`-style liveness probe here for
+    // background tasks, and would settle the task as "exited" the moment the probe
+    // came back negative (see the removed comment below for the original
+    // reasoning). In practice that probe spawns its own separate process to check
+    // the PID, and in this app's environment it was unreliable enough to report
+    // demonstrably-running tasks (still actively streaming stdout through this very
+    // command handle) as no longer running — silently turning live dev servers into
+    // "completed"/"failed" tasks. The 'close' and 'error' listeners registered
+    // above are tied to the same handle the stdout/stderr streams come from, so
+    // they're the trustworthy signal here. Background tasks now only end via a
+    // real close/error event or an explicit kill — never via this kind of
+    // best-effort liveness inference.
   }
   catch (e) {
     status = 'spawn_error'
     const message = e instanceof Error ? e.message : String(e)
     stderr = appendOutput(stderr, message)
     options.task.stderr = appendOutput(options.task.stderr, message)
-    emitToolOutput(options.runtimeEvents, 'git_command', options.toolCallId, 'stderr', message)
+    emitToolOutput(options.runtimeEvents, options.task.kind === 'shell' ? 'run_command' : 'git_command', options.toolCallId, 'stderr', message)
     options.handle.child = null
     options.handle.pid = null
+    // Unblock any caller awaiting spawn confirmation (e.g. background task start)
+    options.handle.resolveSpawn?.()
+    options.handle.resolveSpawn = null
     options.abortSignal?.removeEventListener('abort', onAbort)
     touchTasks()
 
@@ -730,7 +740,21 @@ async function executeTrackedProcess(options: {
   if (options.timeoutMs > 0) {
     timer = setTimeout(() => {
       options.handle.timeoutRequested = true
-      settleDone({ code: null, transferred: true })
+      options.handle.stopRequested = true
+
+      // Settle the done promise immediately so the caller can unblock and
+      // report the timeout — the actual OS kill happens asynchronously.
+      settleDone({ code: null, timedOut: true })
+
+      // Graceful kill first, then force-kill the entire process tree.
+      if (options.handle.child != null) {
+        void options.handle.child.kill().catch(() => {})
+      }
+      if (options.handle.pid != null) {
+        const pid = options.handle.pid
+        // Short delay so the graceful signal has a chance to propagate.
+        setTimeout(() => void forceKillProcess(pid), 200)
+      }
     }, options.timeoutMs)
   }
 
@@ -739,44 +763,38 @@ async function executeTrackedProcess(options: {
   if (timer != null)
     clearTimeout(timer)
 
-  if (!settled.transferred) {
+  if (!settled.timedOut) {
     options.handle.child = null
     options.handle.pid = null
     options.handle.resolveCompletion = null
   }
   options.abortSignal?.removeEventListener('abort', onAbort)
 
-  if (options.handle.stopRequested) {
+  if (options.handle.stopRequested && !settled.timedOut) {
     status = 'killed'
     stderr = appendOutput(stderr, '[killed by user]')
     options.task.stderr = appendOutput(options.task.stderr, '[killed by user]')
-    emitToolOutput(options.runtimeEvents, 'git_command', options.toolCallId, 'stderr', '[killed by user]')
+    emitToolOutput(options.runtimeEvents, options.task.kind === 'shell' ? 'run_command' : 'git_command', options.toolCallId, 'stderr', '[killed by user]')
   }
-  else if (settled.transferred) {
+  else if (settled.timedOut) {
     status = 'timed_out'
-    const note = `[timed out after ${Math.floor(options.timeoutMs / 1000)}s — continues in background]`
+    const note = `\n[timed out after ${Math.floor(options.timeoutMs / 1000)}s]`
     stderr = appendOutput(stderr, note)
     options.task.stderr = appendOutput(options.task.stderr, note)
-    emitToolOutput(options.runtimeEvents, 'git_command', options.toolCallId, 'stderr', note)
+    emitToolOutput(options.runtimeEvents, options.task.kind === 'shell' ? 'run_command' : 'git_command', options.toolCallId, 'stderr', note)
   }
   else if (settled.spawnError) {
     status = 'spawn_error'
     stderr = appendOutput(stderr, settled.spawnError)
     options.task.stderr = appendOutput(options.task.stderr, settled.spawnError)
-    emitToolOutput(options.runtimeEvents, 'git_command', options.toolCallId, 'stderr', settled.spawnError)
-  }
-  else if (settled.inferredExit) {
-    const note = '[process exited without a shell close event; exit code unavailable]'
-    stderr = appendOutput(stderr, note)
-    options.task.stderr = appendOutput(options.task.stderr, note)
-    emitToolOutput(options.runtimeEvents, 'git_command', options.toolCallId, 'stderr', note)
+    emitToolOutput(options.runtimeEvents, options.task.kind === 'shell' ? 'run_command' : 'git_command', options.toolCallId, 'stderr', settled.spawnError)
   }
   else if (settled.code !== 0) {
     const semantic = interpretExitCode(options.displayCommand, settled.code)
     if (semantic.note) {
       stderr = appendOutput(stderr, semantic.note)
       options.task.stderr = appendOutput(options.task.stderr, semantic.note)
-      emitToolOutput(options.runtimeEvents, 'git_command', options.toolCallId, 'stderr', semantic.note)
+      emitToolOutput(options.runtimeEvents, options.task.kind === 'shell' ? 'run_command' : 'git_command', options.toolCallId, 'stderr', semantic.note)
     }
     if (semantic.isError)
       status = 'failed'
@@ -841,13 +859,6 @@ async function runTrackedSequence(options: {
       return options.task
     }
 
-    if (result.status === 'timed_out' && !handle.stopRequested) {
-      options.task.mode = 'background'
-      options.task.status = 'running'
-      touchTasks()
-      return options.task
-    }
-
     if (result.status === 'timed_out') {
       finalizeTask(options.task, handle, {
         status: 'timed_out',
@@ -855,7 +866,14 @@ async function runTrackedSequence(options: {
       return options.task
     }
 
-    if (result.status === 'spawn_error' || result.exitCode !== 0) {
+    // Trust the status executeTrackedProcess already computed (via interpretExitCode),
+    // rather than re-deriving from the raw exit code here. Re-checking exitCode !== 0
+    // directly is wrong in two ways: (1) `null !== 0` is true in JS, so any task that
+    // ends with an unknown exit code — e.g. the background liveness-probe fallback,
+    // which can never report a real code — gets mislabeled "failed" even though it
+    // ran fine; (2) it ignores command-specific exit-code semantics (e.g. grep/diff/
+    // test exit 1) that interpretExitCode already accounted for.
+    if (result.status === 'spawn_error' || result.status === 'failed') {
       finalizeTask(options.task, handle, {
         status: 'failed',
       })
@@ -896,6 +914,10 @@ function buildGitSummary(commands: Array<{ args: string[] }>): string {
   if (commands.length === 1)
     return `git ${first}`
   return `git ${first} (+${commands.length - 1} more)`
+}
+
+function hasGitCommitCommand(commands: Array<{ args: string[] }>): boolean {
+  return commands.some(command => command.args[0] === 'commit')
 }
 
 function applyCoAuthorTrailer(
@@ -1047,23 +1069,33 @@ function normalizeGitCommands(input: {
   return { action, commands: normalized }
 }
 
-function startGitSequence(options: {
+function startTrackedSequence(options: {
+  kind: CommandTaskKind
+  /** Task execution mode. Defaults to 'exec' (foreground). */
+  mode?: CommandTaskMode
+  tabId?: string | null
+  summary: string
   cwd: string
-  commands: Array<{ args: string[] }>
+  specs: Array<{ displayCommand: string; createCommand: () => Command<string> }>
   timeoutMs: number
   abortSignal?: AbortSignal
-  coAuthor?: boolean
   runtimeEvents?: ShellToolRuntimeEvents
   toolCallId?: string
-}): { task: CommandTaskRecord; done: Promise<CommandTaskRecord> } {
-  const commands = applyCoAuthorTrailer(options.commands, options.coAuthor ?? false)
-
+}): { task: CommandTaskRecord; done: Promise<CommandTaskRecord>; spawnDone: Promise<void> } {
   const task = createTaskRecord({
-    kind: 'git',
-    mode: 'exec',
+    kind: options.kind,
+    mode: options.mode ?? 'exec',
+    tabId: options.tabId ?? null,
     cwd: options.cwd,
-    summary: buildGitSummary(commands),
-    commandCount: commands.length,
+    summary: options.summary,
+    commandCount: options.specs.length,
+  })
+
+  // spawnDone resolves once the first command has spawned (PID assigned) or
+  // failed to spawn. Background callers await this instead of full completion.
+  const handle = taskHandles.get(task.id)!
+  const spawnDone = new Promise<void>(resolve => {
+    handle.resolveSpawn = resolve
   })
 
   const done = runTrackedSequence({
@@ -1072,14 +1104,11 @@ function startGitSequence(options: {
     ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
     ...(options.runtimeEvents ? { runtimeEvents: options.runtimeEvents } : {}),
     ...(options.toolCallId ? { toolCallId: options.toolCallId } : {}),
-    specs: commands.map(command => ({
-      displayCommand: `git ${command.args.join(' ')}`,
-      createCommand: () => Command.create('git', command.args, { cwd: options.cwd }),
-    })),
+    specs: options.specs,
   })
 
   taskPromises.set(task.id, done)
-  return { task, done }
+  return { task, done, spawnDone }
 }
 
 async function waitForTask(task: CommandTaskRecord, done: Promise<CommandTaskRecord>, waitForMs: number | undefined) {
@@ -1106,7 +1135,7 @@ const runCommandInputSchema = z.object({
   timeout_ms: z.number().int().min(5000).max(900000).optional().default(120000).describe('Max execution time in ms. Default: 120000 (2 min). Max: 900000 (15 min). Ignored if is_background.'),
 })
 
-export function createRunCommandTool(projectPath: string, runtimeEvents?: ShellToolRuntimeEvents) {
+export function createRunCommandTool(projectPath: string, runtimeEvents?: ShellToolRuntimeEvents, tabId?: string | null) {
   if (!cwdRef)
     cwdRef = projectPath
 
@@ -1166,178 +1195,81 @@ Examples:
         // Snapshot is best-effort; never block the command.
       }
 
-      // ── Background mode ─────────────────────────────────────────────
+      const timeoutMs = input.timeout_ms ?? 120_000
+      // The tool description promises timeout_ms is "Ignored if is_background", but
+      // executeTrackedProcess's deadline timer didn't special-case mode — so a
+      // background dev server / watcher was getting force-killed the moment the
+      // (default 120s) timeout elapsed, surfacing as a confusing failure even though
+      // nothing was actually wrong. Background tasks have no deadline; they only stop
+      // via an explicit kill or by exiting on their own.
+      const effectiveTimeoutMs = input.is_background ? 0 : timeoutMs
+      const resolved = await resolveShellCommand(command)
+
+      const { task, done, spawnDone } = startTrackedSequence({
+        kind: 'shell',
+        mode: input.is_background ? 'background' : 'exec',
+        tabId: tabId ?? null,
+        summary: command,
+        cwd,
+        specs: [{
+          displayCommand: command,
+          createCommand: () => Command.create(resolved.binary, resolved.args, { cwd }),
+        }],
+        timeoutMs: effectiveTimeoutMs,
+        ...(abortSignal ? { abortSignal } : {}),
+        ...(runtimeEvents ? { runtimeEvents } : {}),
+        ...(toolCallId ? { toolCallId } : {}),
+      })
+
+      // ── Background mode ─────────────────────────────────────────────────────
+      // Wait only until the process has spawned (PID assigned), then return
+      // immediately. The task keeps running in the background and can be
+      // inspected or killed via git_command with action: "status" / "kill".
       if (input.is_background) {
-        const resolved = await resolveShellCommand(command)
-        const cmd = Command.create(resolved.binary, resolved.args, { cwd })
-
-        const task = createTaskRecord({
-          kind: 'shell',
-          mode: 'background',
-          cwd,
-          summary: command,
-          commandCount: 1,
-        })
-
-        cmd.stdout.on('data', (chunk: string) => {
-          task.stdout = appendOutput(task.stdout, chunk)
-          emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stdout', chunk)
-          touchTasks()
-        })
-        cmd.stderr.on('data', (chunk: string) => {
-          task.stderr = appendOutput(task.stderr, chunk)
-          emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stderr', chunk)
-          touchTasks()
-        })
-
-        try {
-          const child = await cmd.spawn()
-          task.currentCommand = command
-          const startMessage = `Background task ${task.id} started. PID: ${child.pid}.\n`
-          emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stdout', startMessage)
-
-          cmd.on('close', (event: { code: number | null }) => {
-            finalizeTask(task, taskHandles.get(task.id) ?? { child, pid: child.pid ?? null, stopRequested: false, timeoutRequested: false, resolveCompletion: null }, {
-              status: event.code === 0 ? 'completed' : 'failed',
-              exitCode: event.code,
-            })
-            emitToolOutput(runtimeEvents, 'run_command', toolCallId, event.code === 0 ? 'stdout' : 'stderr', `\n[process exited with code ${event.code ?? 'unknown'}]`)
-          })
-          cmd.on('error', () => {
-            finalizeTask(task, taskHandles.get(task.id) ?? { child, pid: child.pid ?? null, stopRequested: false, timeoutRequested: false, resolveCompletion: null }, {
-              status: 'failed',
-              exitCode: -1,
-              note: 'Spawn error',
-            })
-            emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stderr', '\n[spawn error]')
-          })
-
-          taskHandles.set(task.id, { child, pid: child.pid ?? null, stopRequested: false, timeoutRequested: false, resolveCompletion: null })
-          touchTasks()
-
-          return {
-            exit_code: 0,
-            duration_ms: 0,
-            task_id: task.id,
-            output: `Background task ${task.id} started. PID: ${child.pid}. Use action: "status" with id: "${task.id}" to check on it.`,
-          }
-        }
-        catch (e) {
-          finalizeTask(task, { child: null, pid: null, stopRequested: false, timeoutRequested: false, resolveCompletion: null }, {
-            status: 'failed',
-            exitCode: -1,
-            note: e instanceof Error ? e.message : String(e),
-          })
-          emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stderr', `Error spawning background process: ${e instanceof Error ? e.message : String(e)}`)
+        await spawnDone
+        const pid = taskHandles.get(task.id)?.pid
+        const spawnFailed = task.results[0]?.status === 'spawn_error'
+        if (spawnFailed) {
           return {
             exit_code: -1,
             duration_ms: 0,
-            output: `Error spawning background process: ${e instanceof Error ? e.message : String(e)}`,
+            task_id: task.id,
+            output: `Failed to start background command: ${task.stderr || 'spawn error'}`,
           }
         }
-      }
-
-      // ── Foreground execution ────────────────────────────────────────
-      const timeoutMs = input.timeout_ms ?? 120_000
-      const spawnTime = Date.now()
-      let output = ''
-      let fullOutput = ''
-
-      const appendProcessOutput = (chunk: string) => {
-        fullOutput += chunk
-        output = appendOutput(output, chunk)
-      }
-
-      const resolved = await resolveShellCommand(command)
-      const cmd = Command.create(resolved.binary, resolved.args, { cwd })
-
-      cmd.stdout.on('data', (chunk: string) => {
-        appendProcessOutput(chunk)
-        emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stdout', chunk)
-      })
-      cmd.stderr.on('data', (chunk: string) => {
-        appendProcessOutput(chunk)
-        emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stderr', chunk)
-      })
-
-      let resolveDone!: (value: { code: number | null; error?: string }) => void
-      const done = new Promise<{ code: number | null; error?: string }>(resolve => {
-        resolveDone = resolve
-      })
-
-      cmd.on('close', event => resolveDone({ code: event.code }))
-      cmd.on('error', error => resolveDone({ code: null, error: String(error) }))
-
-      let child: Child | null = null
-      const onAbort = () => {
-        void child?.kill()
-      }
-      abortSignal?.addEventListener('abort', onAbort, { once: true })
-
-      try {
-        child = await cmd.spawn()
-      }
-      catch (e) {
-        abortSignal?.removeEventListener('abort', onAbort)
-        emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stderr', `Error spawning process: ${e instanceof Error ? e.message : String(e)}`)
         return {
-          exit_code: -1,
-          duration_ms: Date.now() - spawnTime,
-          output: `Error spawning process: ${e instanceof Error ? e.message : String(e)}`,
+          exit_code: 0,
+          duration_ms: 0,
+          task_id: task.id,
+          output: `Background task ${task.id} started${pid ? ` (PID ${pid})` : ''}. Use git_command with action: "status" and id: "${task.id}" to check progress, or action: "kill" to stop it.`,
         }
       }
 
-      // Timeout monitor
-      let timer: ReturnType<typeof setTimeout> | null = null
-      let timedOut = false
+      // ── Foreground mode ─────────────────────────────────────────────────────
+      // Await full process completion. The timeout_ms timer inside
+      // executeTrackedProcess is the sole deadline enforcement mechanism;
+      // it kills the child and force-kills by PID when it fires.
+      const waited = await waitForTask(task, done, undefined)
 
-      if (timeoutMs > 0) {
-        timer = setTimeout(() => {
-          timedOut = true
-          void child?.kill()
-        }, timeoutMs)
-      }
-
-      const settled = await done
-
-      if (timer != null)
-        clearTimeout(timer)
-      abortSignal?.removeEventListener('abort', onAbort)
-
-      const durationMs = Date.now() - spawnTime
-      let exitCode = settled.code
-
-      if (timedOut) {
-        exitCode = -1
-        appendProcessOutput(`\n[timed out after ${Math.floor(timeoutMs / 1000)}s]`)
-        emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stderr', `\n[timed out after ${Math.floor(timeoutMs / 1000)}s]`)
-      }
-      else if (settled.error) {
-        exitCode = -1
-        appendProcessOutput(`\n[spawn error: ${settled.error}]`)
-        emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stderr', `\n[spawn error: ${settled.error}]`)
-      }
-      else if (exitCode !== 0) {
-        const semantic = interpretExitCode(command, exitCode)
-        if (semantic.note) {
-          appendProcessOutput(`\n${semantic.note}`)
-          emitToolOutput(runtimeEvents, 'run_command', toolCallId, 'stderr', `\n${semantic.note}`)
-        }
-      }
+      const result = waited.task.results[0]
+      let displaySource = result ? (result.stdout + (result.stderr ? `\n[stderr]\n${result.stderr}` : '')) : waited.task.stderr
+      if (!displaySource && waited.task.stdout)
+        displaySource = waited.task.stdout
 
       // ── Tail-based truncation ───────────────────────────────────────
       let logPath: string | null = null
-      const displaySource = fullOutput || output
-      const lines = displaySource.split(/\r?\n/g)
-      const shouldTruncateByLines = lines.length > MAX_OUTPUT_LINES
+      let output = ''
+      const outLines = displaySource.split(/\r?\n/g)
+      const shouldTruncateByLines = outLines.length > MAX_OUTPUT_LINES
       const shouldTruncateByChars = displaySource.length > MAX_OUTPUT_CHARS
+
       if (shouldTruncateByLines || shouldTruncateByChars) {
         const displayOutput = shouldTruncateByLines
-          ? lines.slice(-MAX_OUTPUT_LINES).join('\n')
+          ? outLines.slice(-MAX_OUTPUT_LINES).join('\n')
           : trimOutput(displaySource)
         logPath = await writeLogOutputFile(command, displaySource)
         const reason = shouldTruncateByLines
-          ? `${lines.length} lines total, showing last ${MAX_OUTPUT_LINES}`
+          ? `${outLines.length} lines total, showing last ${MAX_OUTPUT_LINES}`
           : `${displaySource.length} chars total, showing a shortened preview`
         const logNote = logPath
           ? `[Output truncated: ${reason}. Full output saved to: ${logPath}]\n---\n`
@@ -1348,17 +1280,24 @@ Examples:
         output = displaySource.trimEnd()
       }
 
+      if (waited.task.status === 'timed_out') {
+        output += `\n[timed out after ${Math.floor(timeoutMs / 1000)}s]`
+      }
+      else if (waited.task.status === 'killed') {
+        output += '\n[killed by user]'
+      }
+
       return {
-        exit_code: exitCode ?? -1,
-        duration_ms: durationMs,
-        output,
+        exit_code: waited.task.exitCode ?? -1,
+        duration_ms: result ? result.durationMs : (Date.now() - waited.task.startedAt),
+        output: output.trim() || '[No output]',
         ...(logPath ? { log_path: logPath } : {}),
       }
     },
   })
 }
 
-export function createGitCommandTool(projectPath: string, coAuthor = false, runtimeEvents?: ShellToolRuntimeEvents) {
+export function createGitCommandTool(projectPath: string, coAuthor = false, runtimeEvents?: ShellToolRuntimeEvents, tabId?: string | null) {
   const coAuthorNote = coAuthor
     ? '\n\nCo-authoring is ENABLED: every commit automatically includes a Co-authored-by trailer (Emty Agent). Do NOT add it yourself.'
     : ''
@@ -1388,8 +1327,8 @@ Examples:
         }),
       ])).min(1).max(20).optional().describe('Optional sequence of git commands to run in order.'),
       id: z.string().optional().describe('Tracked command task id used with action: "status" or "kill".'),
-      timeoutSeconds: z.number().int().min(5).max(300).optional().describe('Per-command timeout in seconds. Default: 60.'),
-      waitForMs: z.number().int().min(0).max(MAX_WAIT_MS).optional().describe('Optional wait window in milliseconds. If the sequence is still running when this wait expires, the tool returns early with a taskId and the git work continues. Default: wait until exit.'),
+      timeoutSeconds: z.number().int().min(5).max(900).optional().describe('Per-command timeout in seconds. Default: 60. For git commit, default is no hard timeout so long pre-commit hooks keep running.'),
+      waitForMs: z.number().int().min(0).max(MAX_WAIT_MS).optional().describe('Optional wait window in milliseconds. If the sequence is still running when this wait expires, the tool returns early with a taskId and the git work continues. Default: wait until exit, except git commit defaults to 30000.'),
     }),
     execute: async (input, execOptions) => {
       const { abortSignal } = execOptions
@@ -1426,18 +1365,28 @@ Examples:
           }
       }
 
-      const timeoutMs = (input.timeoutSeconds ?? 60) * 1000
-      const { task, done } = startGitSequence({
+      const commands = applyCoAuthorTrailer(normalized.commands, coAuthor ?? false)
+      const includesCommit = hasGitCommitCommand(commands)
+      const timeoutMs = input.timeoutSeconds == null && includesCommit
+        ? 0
+        : (input.timeoutSeconds ?? 60) * 1000
+      const waitForMs = input.waitForMs ?? (includesCommit ? 30_000 : undefined)
+      const { task, done } = startTrackedSequence({
+        kind: 'git',
+        tabId: tabId ?? null,
+        summary: buildGitSummary(commands),
         cwd: projectPath,
-        commands: normalized.commands,
+        specs: commands.map(command => ({
+          displayCommand: `git ${command.args.join(' ')}`,
+          createCommand: () => Command.create('git', command.args, { cwd: projectPath }),
+        })),
         timeoutMs,
-        coAuthor,
         ...(abortSignal ? { abortSignal } : {}),
         ...(runtimeEvents ? { runtimeEvents } : {}),
         ...(toolCallId ? { toolCallId } : {}),
       })
 
-      const waited = await waitForTask(task, done, input.waitForMs)
+      const waited = await waitForTask(task, done, waitForMs)
       if (waited.timedOut) {
         return {
           action: 'exec' as const,
@@ -1449,6 +1398,9 @@ Examples:
           currentCommand: waited.task.currentCommand,
           commandCount: waited.task.commandCount,
           completedCommands: waited.task.completedCommands,
+          note: includesCommit
+            ? `Commit is still running, likely in hooks. It continues as task ${waited.task.id}; use action: "status" with id: "${waited.task.id}" to check progress.`
+            : undefined,
           ...(waited.task.mode === 'background' ? { transferred: true } : {}),
           ...(waited.task.stdout ? { stdout: waited.task.stdout } : {}),
           ...(waited.task.stderr ? { stderr: waited.task.stderr } : {}),
@@ -1491,13 +1443,13 @@ Examples:
   })
 }
 
-export function createShellTools(projectPath: string, shell?: ShellBinary, coAuthor?: boolean, runtimeEvents?: ShellToolRuntimeEvents) {
+export function createShellTools(projectPath: string, shell?: ShellBinary, coAuthor?: boolean, runtimeEvents?: ShellToolRuntimeEvents, tabId?: string | null) {
   if (shell === 'sh' || shell === 'pwsh')
     primeShell(shell)
 
   return {
-    run_command: createRunCommandTool(projectPath, runtimeEvents),
-    git_command: createGitCommandTool(projectPath, coAuthor, runtimeEvents),
+    run_command: createRunCommandTool(projectPath, runtimeEvents, tabId),
+    git_command: createGitCommandTool(projectPath, coAuthor, runtimeEvents, tabId),
   } as const
 }
 
@@ -1562,26 +1514,26 @@ export function shellToolDisplayLabel(
         : Array.isArray(args.command) && args.command.every(part => typeof part === 'string')
           ? args.command as string[]
           : null
-      const commands = [
+      const cmds = [
         ...(single ? [{ args: single }] : []),
         ...(Array.isArray(args.commands)
-          ? args.commands.flatMap(command => {
-              if (typeof command === 'string') {
-                const args = splitQuotedArgs(command)
-                return args.length > 0 ? [{ args }] : []
+          ? args.commands.flatMap(cmd => {
+              if (typeof cmd === 'string') {
+                const cmdArgs = splitQuotedArgs(cmd)
+                return cmdArgs.length > 0 ? [{ args: cmdArgs }] : []
               }
-              if (typeof command === 'object' && command != null && Array.isArray((command as { args?: unknown }).args))
-                return [{ args: (command as { args: string[] }).args }]
+              if (typeof cmd === 'object' && cmd != null && Array.isArray((cmd as { args?: unknown }).args))
+                return [{ args: (cmd as { args: string[] }).args }]
               return []
             })
           : []),
       ]
 
-      if (!commands.length)
+      if (!cmds.length)
         return 'Git operation'
-      if (commands.length === 1)
-        return gitArgLabel(commands[0]!.args)
-      return `${gitArgLabel(commands[0]!.args)} +${commands.length - 1} more`
+      if (cmds.length === 1)
+        return gitArgLabel(cmds[0]!.args)
+      return `${gitArgLabel(cmds[0]!.args)} +${cmds.length - 1} more`
     }
 
     default:

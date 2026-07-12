@@ -16,7 +16,7 @@
         "title": "Emty Agent",
         "width": 975,
         "height": 540,
-        "minWidth": 975,
+        "minWidth": 1140,
         "minHeight": 540,
         "decorations": false,
         "visible": false

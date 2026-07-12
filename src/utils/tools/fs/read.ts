@@ -85,6 +85,7 @@ async function processSingleFile(
   limit: number,
   registry: FileReadRegistry,
   lockManager: FileLockManager,
+  forced: boolean = false,
 ): Promise<string> {
   // ── Path resolution ──────────────────────────────────────────────────────
   let fullPath: string
@@ -134,7 +135,7 @@ async function processSingleFile(
 
     // Deduplication
     const existing = registry.get(fullPath)
-    if (existing && existing.hash === hash) {
+    if (!forced && existing && existing.hash === hash) {
       const sameRange = existing.offset === oneBasedOffset && existing.limit === limit
       const previouslyComplete = existing.complete
       if (sameRange || previouslyComplete)
@@ -162,7 +163,7 @@ async function processSingleFile(
     }
 
     return output
-  })
+  }, forced)
 }
 
 // ---------------------------------------------------------------------------
@@ -203,21 +204,25 @@ Use offset and limit together to page through files that are too large to read a
         .describe(
           `The maximum number of lines to read per file. Default: ${DEFAULT_LINE_LIMIT}, Max: ${MAX_LINE_LIMIT}. Only provide if the file is too large to read at once.`,
         ),
+      forced: z
+        .boolean()
+        .optional()
+        .describe('If true, bypasses the file read lock and read registry deduplication, returning the full content immediately.'),
     }),
 
-    execute: async ({ file_paths, offset, limit }) => {
+    execute: async ({ file_paths, offset, limit, forced }) => {
       const start = offset !== undefined ? offset - 1 : 0
       const appliedLimit = Math.min(limit ?? DEFAULT_LINE_LIMIT, MAX_LINE_LIMIT)
 
       // Single file: no header, just content
       if (file_paths.length === 1) {
-        return await processSingleFile(file_paths[0]!, projectPath, start, appliedLimit, registry, lockManager)
+        return await processSingleFile(file_paths[0]!, projectPath, start, appliedLimit, registry, lockManager, forced)
       }
 
       // Multiple files: each prefixed with === path === header
       const results: string[] = []
       for (const filePath of file_paths) {
-        const content = await processSingleFile(filePath, projectPath, start, appliedLimit, registry, lockManager)
+        const content = await processSingleFile(filePath, projectPath, start, appliedLimit, registry, lockManager, forced)
         results.push(`=== ${filePath} ===\n${content}`)
       }
       return results.join('\n\n')

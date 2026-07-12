@@ -30,7 +30,7 @@ const browser = useBrowserStore()
 const viewportRef = ref<HTMLElement | null>(null)
 const isIntersecting = ref(true)
 // Needed so ResizeObserver can fire syncNow() even when no URL is loaded
-// and viewportRef is null (the "Embedded browser ready" idle state).
+// and viewportRef is null (the "Browser ready" idle state).
 const rootRef = ref<HTMLElement | null>(null)
 const addressInput = ref('')
 const addressFocused = ref(false)
@@ -377,40 +377,96 @@ watch(viewportRef, node => {
   observeViewport(node)
   syncNow()
 })
+
+// ── Tailwind Class Extractions ──────────────────────────────────────────────
+const rootClasses = 'flex flex-col h-full min-w-0 bg-[var(--color-bg-base,#000000)] text-[var(--color-text-primary,#f2f2f2)] font-sans'
+
+const tabsWrapperClasses = 'flex items-end gap-[2px] h-[36px] px-2 bg-[var(--color-bg-surface,#0a0a0a)] shadow-[inset_0_-1px_0_var(--color-border-subtle,#1a1a1a)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+
+function getTabClasses(isActive: boolean) {
+  const base = 'group inline-flex items-center gap-1.5 min-w-[80px] max-w-[220px] h-[30px] px-2.5 border-t border-l border-r border-b rounded-t-(--radius-sm) text-[12px] font-[450] cursor-pointer select-none shrink-0 transition-[background,color,border-color] duration-[120ms] ease focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-accent,#00e5ff)] focus-visible:-outline-offset-1'
+  if (isActive) {
+    return `${base} bg-[var(--color-bg-base,#000000)] text-[var(--color-text-primary,#f2f2f2)] border-t-[var(--color-border-subtle,#1a1a1a)] border-l-[var(--color-border-subtle,#1a1a1a)] border-r-[var(--color-border-subtle,#1a1a1a)] border-b-[var(--color-bg-base,#000000)] cursor-default`
+  }
+  return `${base} bg-transparent text-[var(--color-text-tertiary,#8a8a8a)] border-transparent border-b-[var(--color-border-subtle,#1a1a1a)] hover:bg-[var(--color-bg-hover,#1c1c1c)] hover:text-[var(--color-text-secondary,#cccccc)]`
+}
+
+const faviconWrapperClasses = 'grid place-items-center w-[14px] h-[14px] shrink-0 -order-1'
+const faviconLoadingClasses = 'w-[14px] h-[14px] rounded-(--radius-xs) object-contain transition-opacity duration-150 ease opacity-40 grayscale'
+const faviconLoadedClasses = 'w-[14px] h-[14px] rounded-(--radius-xs) object-contain transition-opacity duration-150 ease'
+const faviconGlobeClasses = 'text-inherit opacity-70'
+
+const tabTitleClasses = 'flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-medium'
+
+function getTabCloseClasses(isActive: boolean) {
+  const base = 'grid place-items-center w-[18px] h-[18px] rounded-(--radius-sm) shrink-0 transition-[background,color] duration-[120ms] ease outline-none hover:bg-[color-mix(in_srgb,var(--color-danger,#ef4444)_15%,transparent)] hover:!text-[var(--color-danger,#ef4444)] focus-visible:bg-[color-mix(in_srgb,var(--color-danger,#ef4444)_15%,transparent)] focus-visible:!text-[var(--color-danger,#ef4444)]'
+  return isActive
+    ? `${base} text-[var(--color-text-dim,#595959)]`
+    : `${base} text-transparent group-hover:text-[var(--color-text-dim,#595959)]`
+}
+
+const btnBase = 'inline-flex items-center justify-center h-[28px] border border-transparent rounded-(--radius-md) bg-transparent text-[var(--color-text-dim,#595959)] shrink-0 cursor-pointer transition-[background,color] duration-[120ms] ease focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-accent,#00e5ff)]'
+const newTabClasses = `${btnBase} w-[28px] ml-[2px] mb-[4px] hover:bg-[var(--color-state-hover,#1c1c1c)] hover:text-[var(--color-text-primary,#f2f2f2)]`
+const toolbarBtnClasses = `${btnBase} w-[32px] disabled:opacity-30 disabled:cursor-not-allowed hover:not(:disabled):bg-[var(--color-state-hover,#1c1c1c)] hover:not(:disabled):text-[var(--color-text-primary,#f2f2f2)]`
+
+const toolbarClasses = 'flex items-center gap-1.5 py-2 px-3 bg-[var(--color-bg-base,#000000)] border-b border-[color-mix(in_srgb,var(--color-border-subtle,#1a1a1a)_40%,transparent)]'
+const formClasses = 'flex-1 min-w-0'
+const addressShellClasses = 'flex items-center gap-2 h-[34px] px-[14px] border border-[color-mix(in_srgb,var(--color-border-subtle,#1a1a1a)_60%,transparent)] rounded-(--radius-lg) bg-[color-mix(in_srgb,var(--color-bg-surface,#0a0a0a)_50%,transparent)] transition-[border-color,background,box-shadow] duration-150 ease focus-within:border-[color-mix(in_srgb,var(--color-accent,#00e5ff)_80%,transparent)] focus-within:bg-[var(--color-bg-surface,#0a0a0a)] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent,#00e5ff)_15%,transparent)]'
+
+const addressIconClasses = 'text-[var(--color-text-dim,#595959)] shrink-0'
+const addressSpinnerClasses = 'text-[var(--color-accent,#00e5ff)] shrink-0 animate-spin'
+const addressInputClasses = 'flex-1 min-w-0 bg-transparent border-none outline-none text-[var(--color-text-primary,#f2f2f2)] text-[13px] tracking-[0.01em] placeholder:text-[color-mix(in_srgb,var(--color-text-dim,#595959)_70%,transparent)] placeholder:text-[12.5px]'
+
+const stageClasses = 'relative flex-1 min-h-0 bg-[var(--color-bg-base,#000000)]'
+const viewportClasses = 'absolute inset-0 z-10'
+
+const emptyWrapClasses = 'absolute inset-0 flex flex-col items-center justify-center gap-3 p-7 text-center bg-[var(--color-bg-base,#000000)]'
+const emptyMarkClasses = 'grid place-items-center w-12 h-12 rounded-(--radius-lg) bg-[color-mix(in_srgb,var(--color-accent,#00e5ff)_15%,transparent)] text-[var(--color-accent,#00e5ff)]'
+const emptyTitleClasses = 'text-[15px] font-semibold text-[var(--color-text-primary,#f2f2f2)] m-0'
+const emptyCopyClasses = 'max-w-[280px] text-[13px] leading-[1.6] text-[var(--color-text-dim,#595959)] m-0'
+
+const loadingOverlayClasses = 'absolute inset-0 z-[15] flex items-center justify-center bg-[var(--color-bg-base,#000000)] pointer-events-none'
+const loadingSpinnerClasses = 'text-[var(--color-text-dim,#595959)] animate-spin'
+
+const errorWrapClasses = 'absolute z-20 right-4 bottom-4 flex items-start gap-2 max-w-[min(420px,calc(100%-32px))] py-3 px-[14px] border border-[color-mix(in_srgb,var(--color-danger,#ef4444)_40%,transparent)] rounded-(--radius-lg) bg-[color-mix(in_srgb,var(--color-danger,#ef4444)_12%,var(--color-bg-base,#000000))] text-[var(--color-danger-text,#fca5a5)] text-[13px] leading-[1.5] shadow-[var(--color-shadow-md)]'
+const errorIconClasses = 'mt-[2px] shrink-0'
+
+const loadingTransitions = {
+  enterActiveClass: 'transition-opacity duration-200 ease',
+  enterFromClass: 'opacity-0',
+}
 </script>
 
 <template>
-  <div ref="rootRef" class="browser-root">
+  <div ref="rootRef" :class="rootClasses">
     <!-- Tab Strip -->
-    <div class="browser-tabs" role="tablist">
+    <div :class="tabsWrapperClasses" role="tablist">
       <button
         v-for="page in pages"
         :key="page.id"
         role="tab"
         :aria-selected="page.id === owner?.activePageId"
         :title="page.title"
-        class="browser-tab"
-        :class="{ 'browser-tab--active': page.id === owner?.activePageId }"
+        :class="getTabClasses(page.id === owner?.activePageId)"
         @click="switchPage(page.id)"
         @auxclick.middle="handleTabAuxClick($event, page.id)"
       >
-        <span class="browser-tab-favicon">
+        <span :class="faviconWrapperClasses">
           <template v-if="getFaviconUrl(page.url)">
             <img
               :src="getFaviconUrl(page.url)!"
-              class="browser-tab-favicon-img"
-              :class="{ 'browser-tab-favicon-img--loading': page.status === 'mounting' || page.status === 'loading' }"
+              :class="(page.status === 'mounting' || page.status === 'loading') ? faviconLoadingClasses : faviconLoadedClasses"
               alt=""
               width="14"
               height="14"
               @error="($event.target as HTMLImageElement).style.display = 'none'"
             >
           </template>
-          <Globe v-else :size="13" :stroke-width="1.8" class="browser-tab-favicon-globe" />
+          <Globe v-else :size="13" :stroke-width="1.8" :class="faviconGlobeClasses" />
         </span>
-        <span class="browser-tab-title">{{ page.title || 'New Tab' }}</span>
+        <span :class="tabTitleClasses">{{ page.title || 'New Tab' }}</span>
         <span
-          class="browser-tab-close"
+          :class="getTabCloseClasses(page.id === owner?.activePageId)"
           role="button"
           title="Close tab"
           aria-label="Close browser tab"
@@ -424,7 +480,7 @@ watch(viewportRef, node => {
       </button>
 
       <button
-        class="browser-tab-new"
+        :class="newTabClasses"
         title="Open new tab"
         aria-label="New browser tab"
         @click="openNewPage"
@@ -434,23 +490,23 @@ watch(viewportRef, node => {
     </div>
 
     <!-- Navigation & Address Bar -->
-    <div class="browser-toolbar">
-      <button class="toolbar-btn" :disabled="!canGoBack" title="Click to go back" aria-label="Back" @click="goBack">
+    <div :class="toolbarClasses">
+      <button :class="toolbarBtnClasses" :disabled="!canGoBack" title="Click to go back" aria-label="Back" @click="goBack">
         <ChevronLeft :size="16" :stroke-width="2.25" />
       </button>
-      <button class="toolbar-btn" :disabled="!canGoForward" title="Click to go forward" aria-label="Forward" @click="goForward">
+      <button :class="toolbarBtnClasses" :disabled="!canGoForward" title="Click to go forward" aria-label="Forward" @click="goForward">
         <ChevronRight :size="16" :stroke-width="2.25" />
       </button>
-      <button class="toolbar-btn" :disabled="!activePage?.url" title="Reload page" aria-label="Reload" @click="reloadPage">
+      <button :class="toolbarBtnClasses" :disabled="!activePage?.url" title="Reload page" aria-label="Reload" @click="reloadPage">
         <RefreshCw :size="14" :stroke-width="2.25" />
       </button>
 
-      <form class="address-form" @submit.prevent="submitAddress">
-        <div class="address-shell" :class="{ 'address-shell--loading': activePage?.status === 'loading' }">
-          <Globe class="address-icon" :size="13" :stroke-width="2" />
+      <form :class="formClasses" @submit.prevent="submitAddress">
+        <div :class="addressShellClasses">
+          <Globe :class="addressIconClasses" :size="13" :stroke-width="2" />
           <input
             v-model="addressInput"
-            class="address-input"
+            :class="addressInputClasses"
             type="text"
             spellcheck="false"
             autocomplete="off"
@@ -460,7 +516,7 @@ watch(viewportRef, node => {
           >
           <Loader2
             v-if="activePage && (activePage.status === 'mounting' || activePage.status === 'loading')"
-            class="address-spinner"
+            :class="addressSpinnerClasses"
             :size="13"
             :stroke-width="2"
           />
@@ -469,383 +525,36 @@ watch(viewportRef, node => {
     </div>
 
     <!-- Webview Stage -->
-    <div class="browser-stage">
-      <div v-if="!activePage || !activePage.url" class="browser-empty">
-        <div class="browser-empty-mark">
+    <div :class="stageClasses">
+      <div v-if="!activePage || !activePage.url" :class="emptyWrapClasses">
+        <div :class="emptyMarkClasses">
           <Globe :size="24" :stroke-width="1.8" />
         </div>
-        <p class="browser-empty-title">
-          Embedded browser ready
+        <p :class="emptyTitleClasses">
+          Browser ready
         </p>
-        <p class="browser-empty-copy">
+        <p :class="emptyCopyClasses">
           Use the address bar or the browser tools to open a page in this chat tab.
         </p>
       </div>
 
-      <div v-else ref="viewportRef" class="browser-viewport" />
+      <div v-else ref="viewportRef" :class="viewportClasses" />
 
       <!-- Loading overlay — prevents the white stage flash while Tauri surface mounts -->
-      <Transition name="browser-loading">
+      <Transition v-bind="loadingTransitions">
         <div
           v-if="activePage && (activePage.status === 'mounting' || activePage.status === 'loading')"
-          class="browser-loading-overlay"
+          :class="loadingOverlayClasses"
         >
-          <Loader2 :size="22" :stroke-width="1.8" class="browser-loading-spinner" />
+          <Loader2 :size="22" :stroke-width="1.8" :class="loadingSpinnerClasses" />
         </div>
       </Transition>
 
       <!-- User-visible errors only (internal lifecycle errors are filtered out) -->
-      <div v-if="displayError" class="browser-error">
-        <AlertTriangle :size="14" :stroke-width="2" class="browser-error-icon" />
+      <div v-if="displayError" :class="errorWrapClasses">
+        <AlertTriangle :size="14" :stroke-width="2" :class="errorIconClasses" />
         <span>{{ displayError }}</span>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.browser-root {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-width: 0;
-  background: var(--color-bg-base, #000000);
-  color: var(--color-text-primary, #f2f2f2);
-  font-family: ui-sans-serif, system-ui, sans-serif;
-}
-
-/* ── Tab Strip ─────────────────────────────────────────────── */
-.browser-tabs {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 36px;
-  padding: 0 8px;
-  background: var(--color-bg-surface, #0a0a0a);
-  box-shadow: inset 0 -1px 0 var(--color-border-subtle, #1a1a1a);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.browser-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.browser-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 80px;
-  max-width: 220px;
-  height: 30px;
-  padding: 0 10px;
-  border-top: 1px solid transparent;
-  border-left: 1px solid transparent;
-  border-right: 1px solid transparent;
-  border-bottom: 1px solid var(--color-border-subtle, #1a1a1a);
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  background: transparent;
-  color: var(--color-text-tertiary, #8a8a8a);
-  font-size: 12px;
-  font-weight: 450;
-  cursor: pointer;
-  user-select: none;
-  flex-shrink: 0;
-  transition:
-    background 120ms ease,
-    color 120ms ease,
-    border-color 120ms ease;
-}
-
-.browser-tab:hover:not(.browser-tab--active) {
-  background: var(--color-bg-hover, #1c1c1c);
-  color: var(--color-text-secondary, #cccccc);
-}
-
-.browser-tab--active {
-  background: var(--color-bg-base, #000000);
-  color: var(--color-text-primary, #f2f2f2);
-  border-top-color: var(--color-border-subtle, #1a1a1a);
-  border-left-color: var(--color-border-subtle, #1a1a1a);
-  border-right-color: var(--color-border-subtle, #1a1a1a);
-  border-bottom-color: var(--color-bg-base, #000000);
-  cursor: default;
-}
-
-.browser-tab:focus-visible {
-  outline: 2px solid var(--color-accent, #00e5ff);
-  outline-offset: -1px;
-}
-
-.browser-tab-favicon {
-  display: grid;
-  place-items: center;
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  order: -1;
-}
-
-.browser-tab-favicon-img {
-  width: 14px;
-  height: 14px;
-  border-radius: var(--radius-xs);
-  object-fit: contain;
-  transition: opacity 150ms ease;
-}
-
-.browser-tab-favicon-img--loading {
-  opacity: 0.4;
-  filter: grayscale(1);
-}
-
-.browser-tab-favicon-globe {
-  color: inherit;
-  opacity: 0.7;
-}
-
-.browser-tab-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.browser-tab-close {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-sm);
-  color: transparent;
-  flex-shrink: 0;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
-  outline: none;
-}
-
-.browser-tab:hover .browser-tab-close,
-.browser-tab--active .browser-tab-close {
-  color: var(--color-text-dim, #595959);
-}
-
-.browser-tab-close:hover,
-.browser-tab-close:focus-visible {
-  background: color-mix(in srgb, var(--color-danger, #ef4444) 15%, transparent);
-  color: var(--color-danger, #ef4444) !important;
-}
-
-/* ── New-tab + Toolbar buttons ──────────────────────────────── */
-.browser-tab-new,
-.toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-dim, #595959);
-  flex-shrink: 0;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
-}
-
-.browser-tab-new {
-  width: 28px;
-  margin-left: 2px;
-}
-
-.browser-tab-new:hover,
-.toolbar-btn:hover:not(:disabled) {
-  background: var(--color-state-hover, #1c1c1c);
-  color: var(--color-text-primary, #f2f2f2);
-}
-
-.browser-tab-new:focus-visible,
-.toolbar-btn:focus-visible {
-  outline: 2px solid var(--color-accent, #00e5ff);
-}
-
-.toolbar-btn {
-  width: 32px;
-}
-
-.toolbar-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-/* ── Toolbar + Address Bar ──────────────────────────────────── */
-.browser-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--color-bg-base, #000000);
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle, #1a1a1a) 40%, transparent);
-}
-
-.address-form {
-  flex: 1;
-  min-width: 0;
-}
-
-.address-shell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--color-border-subtle, #1a1a1a) 60%, transparent);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-bg-surface, #0a0a0a) 50%, transparent);
-  transition:
-    border-color 150ms ease,
-    background 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.address-shell:focus-within {
-  border-color: color-mix(in srgb, var(--color-accent, #00e5ff) 80%, transparent);
-  background: var(--color-bg-surface, #0a0a0a);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent, #00e5ff) 15%, transparent);
-}
-
-.address-icon,
-.address-spinner {
-  color: var(--color-text-dim, #595959);
-  flex-shrink: 0;
-}
-
-.address-spinner {
-  animation: spin 1s linear infinite;
-  color: var(--color-accent, #00e5ff);
-}
-
-.address-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: var(--color-text-primary, #f2f2f2);
-  font-size: 13px;
-  letter-spacing: 0.01em;
-}
-
-.address-input::placeholder {
-  color: color-mix(in srgb, var(--color-text-dim, #595959) 70%, transparent);
-  font-size: 12.5px;
-}
-
-/* ── Browser Stage & Empty States ────────────────────────────── */
-.browser-stage {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  background: var(--color-bg-base, #000000);
-}
-
-.browser-viewport {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-}
-
-.browser-empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 28px;
-  text-align: center;
-  background: var(--color-bg-base, #000000);
-}
-
-.browser-empty-mark {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-accent, #00e5ff) 15%, transparent);
-  color: var(--color-accent, #00e5ff);
-}
-
-.browser-empty-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-primary, #f2f2f2);
-  margin: 0;
-}
-
-.browser-empty-copy {
-  max-width: 280px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--color-text-dim, #595959);
-  margin: 0;
-}
-
-.browser-loading-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 15;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-bg-base, #000000);
-  pointer-events: none;
-}
-
-.browser-loading-spinner {
-  color: var(--color-text-dim, #595959);
-  animation: spin 1s linear infinite;
-}
-
-.browser-loading-enter-active {
-  transition: opacity 200ms ease;
-}
-.browser-loading-enter-from {
-  opacity: 0;
-}
-
-.browser-error {
-  position: absolute;
-  z-index: 20;
-  right: 16px;
-  bottom: 16px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  max-width: min(420px, calc(100% - 32px));
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--color-danger, #ef4444) 40%, transparent);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, var(--color-bg-base, #000000));
-  color: var(--color-danger-text, #fca5a5);
-  font-size: 13px;
-  line-height: 1.5;
-  box-shadow: var(--color-shadow-md);
-}
-
-.browser-error-icon {
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>

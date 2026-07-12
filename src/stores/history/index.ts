@@ -8,8 +8,8 @@ import {
   dbSearchConversations,
   dbUpdateConversationTitle,
 } from '@/db/database'
-import { useChatStore } from './chat'
-import { useProjectStore } from './project'
+import { useChatStore } from '@/stores/chat'
+import { useProjectStore } from '@/stores/project'
 
 const PAGE_SIZE = 50
 
@@ -157,6 +157,7 @@ export const useHistoryStore = defineStore('history', () => {
           ...(parts ? { parts } : {}),
           ...(attachments ? { attachments } : {}),
           ...(cacheStats ? { cacheStats } : {}),
+          ...(r.elapsed_sec != null ? { elapsedSec: r.elapsed_sec } : {}),
           ...(r.is_complete === 0 ? { error: 'Interrupted during generation.' } : {}),
         }
       }),

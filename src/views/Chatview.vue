@@ -10,10 +10,11 @@ import WeatherBackground from '@/components/chat/layout/IllustrationBackground.v
 import SubAgentBanner from '@/components/chat/layout/SubAgentBanner.vue'
 import MessageThread from '@/components/chat/messages/MessageThread.vue'
 import TabBar from '@/components/chat/tabs/TabBar.vue'
-import GitPane from '@/components/git/GitPane.vue'
+import GitPane from '@/components/sidepane/GitPane.vue'
 import TerminalPane from '@/components/terminal/TerminalPane.vue'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
+import { isStreamingStatus } from '@/stores/chat/agentStatus'
 import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
@@ -42,20 +43,60 @@ const terminalDragging = ref(false)
 const activeBrowserOwner = computed(() => browser.getOwner(activeId.value))
 const activeGitOwner = computed(() => gitPane.getOwner(activeId.value))
 const activeTerminalOwner = computed(() => terminal.getOwner(activeId.value))
-const hasRightPane = computed(() => activeBrowserOwner.value.isPanelOpen || activeGitOwner.value.isPanelOpen)
-const hasTerminalPane = computed(() =>
-  activeTerminalOwner.value.isPanelOpen && activeTerminalOwner.value.sessions.length > 0,
+const terminalInRightPane = computed(() =>
+  activeTerminalOwner.value.isPanelOpen && activeTerminalOwner.value.position === 'right' && activeTerminalOwner.value.sessions.length > 0,
 )
+const hasRightPane = computed(() =>
+  activeBrowserOwner.value.isPanelOpen || activeGitOwner.value.isPanelOpen || terminalInRightPane.value,
+)
+const hasTerminalPane = computed(() =>
+  activeTerminalOwner.value.isPanelOpen && activeTerminalOwner.value.position === 'bottom' && activeTerminalOwner.value.sessions.length > 0,
+)
+
+const containerWidth = ref(0)
+let containerResizeObserver: ResizeObserver | null = null
+
+onMounted(() => {
+  if (containerRef.value) {
+    containerResizeObserver = new ResizeObserver(entries => {
+      if (entries[0]) {
+        containerWidth.value = entries[0].contentRect.width
+      }
+    })
+    containerResizeObserver.observe(containerRef.value)
+  }
+})
+
+const MIN_MAIN_WIDTH = 400
+const MIN_SIDE_WIDTH = 320
+
+const dynamicSplitMin = computed(() => {
+  if (!containerWidth.value)
+    return SPLIT_MIN
+  const minPercent = (MIN_MAIN_WIDTH / containerWidth.value) * 100
+  return Math.max(SPLIT_MIN, minPercent)
+})
+
+const dynamicSplitMax = computed(() => {
+  if (!containerWidth.value)
+    return SPLIT_MAX
+  const maxPercent = ((containerWidth.value - MIN_SIDE_WIDTH) / containerWidth.value) * 100
+  return Math.max(dynamicSplitMin.value, Math.min(SPLIT_MAX, maxPercent))
+})
 
 const resolvedWorkspacePath = computed(() => resolveTabWorkspacePath(activeTab.value, project.projectPath))
 
 const splitPercent = computed(() => {
   if (activeGitOwner.value.isPanelOpen) {
     const stored = activeGitOwner.value.splitPercent || SPLIT_DEFAULT
-    return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, stored))
+    return Math.min(dynamicSplitMax.value, Math.max(dynamicSplitMin.value, stored))
   }
-  const stored = activeBrowserOwner.value.splitPercent || SPLIT_DEFAULT
-  return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, stored))
+  if (activeBrowserOwner.value.isPanelOpen) {
+    const stored = activeBrowserOwner.value.splitPercent || SPLIT_DEFAULT
+    return Math.min(dynamicSplitMax.value, Math.max(dynamicSplitMin.value, stored))
+  }
+  const stored = activeTerminalOwner.value.splitPercent || SPLIT_DEFAULT
+  return Math.min(dynamicSplitMax.value, Math.max(dynamicSplitMin.value, stored))
 })
 const mainPaneStyle = computed(() => {
   if (!hasRightPane.value)
@@ -89,57 +130,120 @@ const terminalPanelStyle = computed(() => {
   }
 })
 
-function onDragStart(event: MouseEvent) {
+let rafId: number | null = null
+let lastMoveEvent: MouseEvent | PointerEvent | null = null
+const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window
+
+function handleMoveEvent(event: MouseEvent | PointerEvent) {
+  lastMoveEvent = event
+  if (rafId !== null)
+    return
+
+  rafId = requestAnimationFrame(() => {
+    if (!lastMoveEvent) {
+      rafId = null
+      return
+    }
+
+    const evt = lastMoveEvent as MouseEvent | PointerEvent
+
+    if (horizontalDragging.value && containerRef.value) {
+      const rect = containerRef.value.getBoundingClientRect()
+      const raw = ((evt.clientX - rect.left) / rect.width) * 100
+      const next = Math.min(dynamicSplitMax.value, Math.max(dynamicSplitMin.value, raw))
+      if (activeGitOwner.value.isPanelOpen)
+        gitPane.setSplitPercent(activeId.value, next)
+      else if (activeBrowserOwner.value.isPanelOpen)
+        browser.setSplitPercent(activeId.value, next)
+      else
+        terminal.setSplitPercent(activeId.value, next)
+      rafId = null
+      return
+    }
+
+    if (terminalDragging.value && mainPanelRef.value) {
+      const rect = mainPanelRef.value.getBoundingClientRect()
+      const raw = ((rect.bottom - (evt as MouseEvent).clientY) / rect.height) * 100
+      terminal.setHeightPercent(
+        activeId.value,
+        Math.min(TERMINAL_SPLIT_MAX, Math.max(TERMINAL_SPLIT_MIN, raw)),
+      )
+    }
+
+    rafId = null
+  })
+}
+
+function addMoveListeners() {
+  if (typeof window === 'undefined')
+    return
+
+  if (supportsPointer) {
+    window.addEventListener('pointermove', handleMoveEvent)
+    window.addEventListener('pointerup', onPointerUp)
+  }
+  else {
+    window.addEventListener('mousemove', handleMoveEvent as EventListener)
+    window.addEventListener('mouseup', onPointerUp as EventListener)
+  }
+}
+
+function removeMoveListeners() {
+  if (typeof window === 'undefined')
+    return
+
+  if (supportsPointer) {
+    window.removeEventListener('pointermove', handleMoveEvent)
+    window.removeEventListener('pointerup', onPointerUp)
+  }
+  else {
+    window.removeEventListener('mousemove', handleMoveEvent as EventListener)
+    window.removeEventListener('mouseup', onPointerUp as EventListener)
+  }
+}
+
+function onDragStart(event: MouseEvent | PointerEvent) {
   if (!hasRightPane.value)
     return
 
   event.preventDefault()
   horizontalDragging.value = true
+  addMoveListeners()
 }
 
-function onTerminalDragStart(event: MouseEvent) {
+function onTerminalDragStart(event: MouseEvent | PointerEvent) {
   if (!hasTerminalPane.value)
     return
 
   event.preventDefault()
   terminalDragging.value = true
+  addMoveListeners()
 }
 
-function onMouseMove(event: MouseEvent) {
-  if (horizontalDragging.value && containerRef.value) {
-    const rect = containerRef.value.getBoundingClientRect()
-    const raw = ((event.clientX - rect.left) / rect.width) * 100
-    const next = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, raw))
-    if (activeGitOwner.value.isPanelOpen)
-      gitPane.setSplitPercent(activeId.value, next)
-    else
-      browser.setSplitPercent(activeId.value, next)
-    return
-  }
-
-  if (terminalDragging.value && mainPanelRef.value) {
-    const rect = mainPanelRef.value.getBoundingClientRect()
-    const raw = ((rect.bottom - event.clientY) / rect.height) * 100
-    terminal.setHeightPercent(
-      activeId.value,
-      Math.min(TERMINAL_SPLIT_MAX, Math.max(TERMINAL_SPLIT_MIN, raw)),
-    )
-  }
-}
-
-function onMouseUp() {
+function onPointerUp() {
   horizontalDragging.value = false
   terminalDragging.value = false
+  lastMoveEvent = null
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  removeMoveListeners()
 }
 
-onMounted(() => {
-  window.addEventListener('mousemove', onMouseMove)
-  window.addEventListener('mouseup', onMouseUp)
-})
-
 onUnmounted(() => {
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup', onMouseUp)
+  // Ensure any listeners/frames are cleaned up if component is destroyed while dragging
+  lastMoveEvent = null
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  removeMoveListeners()
+
+  if (containerResizeObserver) {
+    containerResizeObserver.disconnect()
+    containerResizeObserver = null
+  }
 })
 
 const threadRef = ref<HTMLElement | null>(null)
@@ -171,17 +275,23 @@ watch(activeId, async () => {
   }
 })
 
+let scrollRafId: number | null = null
+
 watch(
   () => [
     activeTab.value.messages.length,
     activeTab.value.messages.at(-1)?.content?.length,
     activeTab.value.messages.at(-1)?.toolEvents?.length,
   ],
-  async () => {
-    await nextTick()
+  () => {
+    if (scrollRafId !== null)
+      cancelAnimationFrame(scrollRafId)
 
-    if (threadRef.value && !showScrollButton.value)
-      threadRef.value.scrollTop = threadRef.value.scrollHeight
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = null
+      if (threadRef.value && !showScrollButton.value)
+        threadRef.value.scrollTop = threadRef.value.scrollHeight
+    })
   },
 )
 
@@ -211,6 +321,13 @@ const parentTabExists = computed(() => {
   const parentId = activeTab.value.subAgent?.parentTabId
   return !!parentId && chat.tabs.some(tab => tab.id === parentId)
 })
+
+// Mutual exclusivity: when Git/Browser opens, move terminal back to bottom.
+watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.isPanelOpen], ([browserOpen, gitOpen]) => {
+  if ((browserOpen || gitOpen) && activeTerminalOwner.value.position === 'right') {
+    terminal.setTerminalPosition(activeId.value, 'bottom')
+  }
+})
 </script>
 
 <template>
@@ -238,7 +355,7 @@ const parentTabExists = computed(() => {
               <WeatherBackground v-if="theme.showLandingArt" />
               <div class="center-col">
                 <ChatInput
-                  :is-streaming="activeTab.isStreaming"
+                  :agent-status="activeTab.agentStatus"
                   @send="send"
                   @stop="stop"
                 />
@@ -250,16 +367,15 @@ const parentTabExists = computed(() => {
               :key="`subagent-${activeTab.id}`"
               class="conversation"
             >
-              <SubAgentBanner :sub-agent="activeTab.subAgent!" />
-
               <div class="thread-container">
                 <div class="scroll-blur-top" />
 
                 <div ref="threadRef" class="thread" @scroll="onScroll">
+                  <SubAgentBanner :sub-agent="activeTab.subAgent!" />
                   <div class="thread-inner">
                     <MessageThread
                       :messages="activeTab.messages"
-                      :is-streaming="activeTab.isStreaming"
+                      :agent-status="activeTab.agentStatus"
                       :is-sub-agent="true"
                       @preview-attachment="previewAttachment = $event"
                     />
@@ -295,7 +411,7 @@ const parentTabExists = computed(() => {
                   <div class="sa-footer-spacer" />
 
                   <button
-                    v-if="activeTab.isStreaming"
+                    v-if="isStreamingStatus(activeTab.agentStatus)"
                     class="sa-footer-stop"
                     aria-label="Stop sub-agent"
                     @click="chat.stopGeneration(activeTab.id)"
@@ -327,7 +443,7 @@ const parentTabExists = computed(() => {
                   <div class="thread-inner">
                     <MessageThread
                       :messages="activeTab.messages"
-                      :is-streaming="activeTab.isStreaming"
+                      :agent-status="activeTab.agentStatus"
                       :is-sub-agent="false"
                       @preview-attachment="previewAttachment = $event"
                     />
@@ -351,7 +467,7 @@ const parentTabExists = computed(() => {
 
                 <div class="center-col">
                   <ChatInput
-                    :is-streaming="activeTab.isStreaming"
+                    :agent-status="activeTab.agentStatus"
                     @send="send"
                     @stop="stop"
                   />
@@ -389,7 +505,15 @@ const parentTabExists = computed(() => {
       </div>
 
       <div v-else-if="activeGitOwner.isPanelOpen && resolvedWorkspacePath" class="chat-git-panel">
-        <GitPane :cwd="resolvedWorkspacePath" :messages="activeTab.messages" @close="gitPane.closePanel(activeId)" />
+        <GitPane :cwd="resolvedWorkspacePath" :messages="activeTab.messages" :tab-id="activeTab.id" @close="gitPane.closePanel(activeId)" />
+      </div>
+
+      <div v-else-if="terminalInRightPane" class="chat-terminal-right-panel">
+        <TerminalPane
+          :owner-id="activeId"
+          :cwd="resolvedWorkspacePath"
+          @close="terminal.closePanel(activeId)"
+        />
       </div>
     </div>
 
@@ -517,6 +641,13 @@ const parentTabExists = computed(() => {
   min-height: 140px;
   overflow: hidden;
   background: var(--color-bg-base);
+}
+
+.chat-terminal-right-panel {
+  flex: 1;
+  min-width: 320px;
+  background: var(--color-bg-base);
+  overflow: hidden;
 }
 
 .center-col {

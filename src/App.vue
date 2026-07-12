@@ -6,10 +6,7 @@ import SettingsModal from './components/settings/SettingsModal.vue'
 import SideBar from './components/sidebar/Sidebar.vue'
 import TitleBar from './components/titlebar/Titlebar.vue'
 import { getDb } from './db/database'
-import { useChatStore } from './stores/chat'
-import { resolveTabWorkspacePath } from './stores/chat/workspace'
 import { useProjectStore } from './stores/project'
-import { useTerminalStore } from './stores/terminal'
 import { captureFatalError, fatalError } from './utils/errors'
 import { ALL_PROVIDERS, warmIconCache } from './utils/modelsdev'
 import ChatView from './views/Chatview.vue'
@@ -32,9 +29,7 @@ watch(showProviderBrowser, open => {
     settingsOpen.value = true
 })
 
-const chat = useChatStore()
 const project = useProjectStore()
-const terminal = useTerminalStore()
 
 function selectView(view: ViewType) {
   activeView.value = view
@@ -42,6 +37,12 @@ function selectView(view: ViewType) {
 
 onMounted(async () => {
   warmIconCache(ALL_PROVIDERS.map(p => p.id))
+
+  // A new window is opened with ?noProject=1 to start without an active project
+  if (new URLSearchParams(window.location.search).get('noProject') === '1') {
+    project.clearProject()
+  }
+
   try {
     await getDb()
   }
@@ -56,23 +57,16 @@ onMounted(async () => {
 function reloadApp() {
   window.location.reload()
 }
-
-async function toggleTerminalPanel() {
-  const owner = terminal.getOwner(chat.activeId)
-  if (owner.isPanelOpen) {
-    terminal.closePanel(chat.activeId)
-    return
-  }
-
-  const workspacePath = resolveTabWorkspacePath(chat.activeTab, project.projectPath)
-  activeView.value = 'chat'
-  await terminal.ensureVisibleSession(chat.activeId, workspacePath)
-}
 </script>
 
 <template>
   <div style="display: flex; flex-direction: column; height: 100vh">
-    <TitleBar title="Emty Agent" @toggle-terminal="toggleTerminalPanel" />
+    <TitleBar
+      title="Emty Agent"
+      :active-view="activeView"
+      @select-view="selectView"
+      @open-settings="settingsOpen = true"
+    />
 
     <FatalErrorScreen v-if="fatalError" :error="fatalError" @reload="reloadApp" />
 

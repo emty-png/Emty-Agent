@@ -78,18 +78,15 @@ function openMenu(e: MouseEvent, id: string) {
   e.stopPropagation()
   menuOpen.value = id
 
-  const menuWidth = 170 // width + padding/shadow
-  const menuHeight = 90 // height + padding/shadow
-
-  let x = e.clientX
-  let y = e.clientY
-
-  if (x + menuWidth > window.innerWidth) {
-    x = window.innerWidth - menuWidth - 10
-  }
-  if (y + menuHeight > window.innerHeight) {
-    y = window.innerHeight - menuHeight - 10
-  }
+  const btn = e.currentTarget as HTMLElement
+  const rect = btn.getBoundingClientRect()
+  const menuW = 140
+  let x = rect.left
+  if (x + menuW > window.innerWidth)
+    x = window.innerWidth - menuW - 8
+  let y = rect.bottom + 4
+  if (y + 80 > window.innerHeight)
+    y = rect.top - 80
 
   menuPos.value = { x, y }
 }
@@ -688,32 +685,34 @@ function relativeTime(ts: number): string {
 .ctx-menu {
   position: fixed;
   z-index: 9999;
-  min-width: 160px;
+  min-width: 140px;
   padding: 4px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-bright);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-mid);
   border-radius: var(--radius-lg);
-  box-shadow: var(--color-shadow-floating);
-  transform: translateY(-4px); /* open slightly above click point */
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 12px 28px rgba(0, 0, 0, 0.35);
 }
 
 .ctx-item {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   width: 100%;
-  height: 34px;
-  padding-inline: 10px;
+  height: 30px;
+  padding-inline: 8px;
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
   text-align: left;
   transition:
-    background 120ms ease,
-    color 120ms ease;
+    background 100ms ease,
+    color 100ms ease;
 }
 
 .ctx-item:hover {
@@ -732,7 +731,7 @@ function relativeTime(ts: number): string {
 .ctx-divider {
   height: 1px;
   background: var(--color-border-mid);
-  margin: 3px 6px;
+  margin: 2px 5px;
 }
 
 /* delete confirm dialog */
@@ -750,10 +749,12 @@ function relativeTime(ts: number): string {
   position: relative;
   width: 360px;
   padding: 24px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-bright);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-mid);
   border-radius: var(--radius-lg);
-  box-shadow: var(--color-shadow-floating);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .dialog-close {

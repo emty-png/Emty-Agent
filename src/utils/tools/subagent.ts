@@ -1,33 +1,7 @@
 /**
  * src/utils/tools/subagent.ts
  *
- * The spawn_subagent tool lets the main agent delegate focused work to a
- * purpose-built sub-agent that runs in its own tab with live streaming.
- *
- * Four personalities, each with a scoped tool set and a focused system prompt:
- *   • Explorer   — read-only codebase investigation (list, read, glob, grep)
- *   • Researcher — web-only information gathering (web_search, web_fetch)
- *   • Debugger   — bug hunting (filesystem reads + web search)
- *   • General    — full capability (filesystem read+write, shell, web)
- *
- * Execution model:
- *   execute() is BLOCKING from the parent agent's perspective.
- *   It calls onSpawn() (provided by the chat store) which synchronously creates
- *   a tab and starts an async stream. execute() then awaits completionPromise so
- *   the parent agent receives the sub-agent's full output as a tool result.
- *
- *   If the parent stream is aborted (user clicks Stop), onAbortSubAgent() is
- *   called to abort the sub-agent's stream controller too.
- *
- * Constraints:
- *   • Sub-agents never have ask_questions, task tools, or spawn_subagent
- *     (no recursive spawning, no UI interaction tools).
- *   • General personality sub-agents have full filesystem + shell + web access
- *     but still cannot spawn further sub-agents.
- *   • If the tab limit is reached, execute() returns an error to the main agent
- *     rather than silently failing.
- *   • Sub-agent output is truncated at MAX_RESULT_CHARS before being returned
- *     to the main agent context to prevent token budget exhaustion.
+ * Tools and types for spawning focused sub-agents.
  */
 
 import type { OsInfo } from '@/utils/os'

@@ -1,6 +1,7 @@
 import type { Ref } from 'vue'
 import { computed, nextTick, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { CHIP_PADDING, packSkill } from '@/utils/mentionFormat'
 import { getEnabledSkills } from '@/utils/skills'
 
 export interface CommandEntry {
@@ -164,16 +165,14 @@ export function useSlashCommand(
     const before = text.value.slice(0, slashStart.value)
     const queryEnd = slashStart.value + 1 + slashQuery.value.length
     const after = text.value.slice(queryEnd)
-    const trailingSpace = /^\\s/.test(after) ? '' : ' '
-
-    text.value = `${before}${newText}${trailingSpace}${after}`
+    text.value = `${before}${CHIP_PADDING}${newText}${CHIP_PADDING}${after}`
     close()
 
     nextTick(() => {
       const el = textareaRef.value
       if (!el)
         return
-      const pos = before.length + newText.length + trailingSpace.length
+      const pos = before.length + CHIP_PADDING.length + newText.length + CHIP_PADDING.length
       el.setSelectionRange(pos, pos)
       el.focus()
       el.style.height = 'auto'
@@ -185,17 +184,15 @@ export function useSlashCommand(
     const before = text.value.slice(0, slashStart.value)
     const queryEnd = slashStart.value + 1 + slashQuery.value.length
     const after = text.value.slice(queryEnd)
-    const chipText = `[skill:${entry.skillId}]`
-    const trailingSpace = /^\s/.test(after) ? '' : ' '
-
-    text.value = `${before}${chipText}${trailingSpace}${after}`
+    const chipText = packSkill(entry.skillId!)
+    text.value = `${before}${CHIP_PADDING}${chipText}${CHIP_PADDING}${after}`
     close()
 
     nextTick(() => {
       const el = textareaRef.value
       if (!el)
         return
-      const pos = before.length + chipText.length + trailingSpace.length
+      const pos = before.length + CHIP_PADDING.length + chipText.length + CHIP_PADDING.length
       el.setSelectionRange(pos, pos)
       el.focus()
       el.style.height = 'auto'

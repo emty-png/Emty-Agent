@@ -3,6 +3,7 @@ import { toolDisplayLabel as fsToolDisplayLabel } from '@/utils/tools/filesystem
 import { imageGenToolDisplayLabel } from '@/utils/tools/imageGen'
 import { mcpToolDisplayLabel } from '@/utils/tools/mcp'
 import { memoryToolDisplayLabel } from '@/utils/tools/memory'
+import { planToolDisplayLabel } from '@/utils/tools/plan'
 import { questionsToolDisplayLabel } from '@/utils/tools/questions'
 import { shellToolDisplayLabel } from '@/utils/tools/shell'
 import { skillToolDisplayLabel } from '@/utils/tools/skills'
@@ -11,54 +12,38 @@ import { subAgentDisplayLabel } from '@/utils/tools/subagent'
 import { taskToolDisplayLabel } from '@/utils/tools/todos'
 import { webToolDisplayLabel } from '@/utils/tools/web'
 
-/**
- * Returns a human-readable display label for any core or plugin tool.
- * Falls back to `Called {name}` if no specific formatter is defined.
- */
+type LabelResolver = (name: string, args: Record<string, unknown>) => string | null
+
+// Each resolver returns null when it doesn't own the tool name.
+// Wrap resolvers that use the 'Called {name}' sentinel into null-returning adapters.
+function adapt(resolver: (name: string, args: Record<string, unknown>) => string): LabelResolver {
+  return (name, args) => {
+    const label = resolver(name, args)
+    return label !== `Called ${name}` ? label : null
+  }
+}
+
+const RESOLVERS: LabelResolver[] = [
+  adapt(fsToolDisplayLabel),
+  adapt(shellToolDisplayLabel),
+  adapt(questionsToolDisplayLabel),
+  adapt(planToolDisplayLabel),
+  adapt(skillToolDisplayLabel),
+  adapt(webToolDisplayLabel),
+  adapt(browserToolDisplayLabel),
+  name => { const l = mcpToolDisplayLabel(name); return l !== `Called ${name}` ? l : null },
+  adapt(taskToolDisplayLabel),
+  adapt(sleepToolDisplayLabel),
+  adapt(memoryToolDisplayLabel),
+  adapt(imageGenToolDisplayLabel),
+  adapt(subAgentDisplayLabel),
+]
+
 export function getCoreToolDisplayLabel(name: string, args: Record<string, unknown>): string {
-  const fsLabel = fsToolDisplayLabel(name, args)
-  if (fsLabel !== `Called ${name}`)
-    return fsLabel
-
-  const shellLabel = shellToolDisplayLabel(name, args)
-  if (shellLabel !== `Called ${name}`)
-    return shellLabel
-
-  const qLabel = questionsToolDisplayLabel(name, args)
-  if (qLabel !== `Called ${name}`)
-    return qLabel
-
-  const skillLabel = skillToolDisplayLabel(name, args)
-  if (skillLabel !== `Called ${name}`)
-    return skillLabel
-
-  const webLabel = webToolDisplayLabel(name, args)
-  if (webLabel !== `Called ${name}`)
-    return webLabel
-
-  const browserLabel = browserToolDisplayLabel(name, args)
-  if (browserLabel !== `Called ${name}`)
-    return browserLabel
-
-  const mcpLabel = mcpToolDisplayLabel(name)
-  if (mcpLabel !== `Called ${name}`)
-    return mcpLabel
-
-  const todoLabel = taskToolDisplayLabel(name, args)
-  if (todoLabel !== `Called ${name}`)
-    return todoLabel
-
-  const slpLabel = sleepToolDisplayLabel(name, args)
-  if (slpLabel !== `Called ${name}`)
-    return slpLabel
-
-  const memoryLabel = memoryToolDisplayLabel(name, args)
-  if (memoryLabel !== `Called ${name}`)
-    return memoryLabel
-
-  const imgLabel = imageGenToolDisplayLabel(name, args)
-  if (imgLabel !== `Called ${name}`)
-    return imgLabel
-
-  return subAgentDisplayLabel(name, args)
+  for (const resolve of RESOLVERS) {
+    const label = resolve(name, args)
+    if (label !== null)
+      return label
+  }
+  return `Called ${name}`
 }

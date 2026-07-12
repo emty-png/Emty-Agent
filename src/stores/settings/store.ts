@@ -17,6 +17,7 @@ import type {
   MemoryConfig,
   OpenAIConfig,
   SerperConfig,
+  SoundConfig,
   TavilyConfig,
   ThinkingEffort,
   WebSearchProvider,
@@ -24,12 +25,12 @@ import type {
 import type { SkillMetadata } from '@/utils/skills'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
+import { useProjectStore } from '@/stores/project'
 import { inspectMcpServer, invalidateMcpServerSession } from '@/utils/mcp'
 import { getModelsDevData } from '@/utils/modelsdev'
 import { platformFetch } from '@/utils/platformFetch'
 import { BUILTIN_SKILL_METADATA, discoverGlobalSkills, discoverProjectSkills } from '@/utils/skills'
 import { buildToolCatalogGroups } from '@/utils/tools/catalog'
-import { useProjectStore } from '../project'
 import { fetchAnthropic, fetchGoogle, fetchOllamaDownloadedModels, fetchOpenAI } from './api'
 import { applyManualModelOverrides, makeId, mergeExplicitProviderModels, mergeProviderModels, resolveMdevId } from './helpers'
 
@@ -87,6 +88,7 @@ export const useSettingsStore = defineStore(
     })
     const autoContext = ref<AutoContextConfig>({ enabled: true })
     const memory = ref<MemoryConfig>({ enabled: true })
+    const sound = ref<SoundConfig>({ completionEnabled: true, errorEnabled: true, volume: 80 })
     const agent = ref<AgentConfig>({
       permissionMode: 'ask',
       subagents: {
@@ -902,6 +904,7 @@ export const useSettingsStore = defineStore(
       contextCaching,
       autoContext,
       memory,
+      sound,
       agent,
       disabledToolIds,
       disabledSkillIds,

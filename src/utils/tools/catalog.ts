@@ -59,7 +59,7 @@ const BUILTIN_GROUPS: BuiltinGroupDefinition[] = [
       { id: 'update_task', label: 'update_task', description: 'Update or delete an existing task.' },
       { id: 'list_tasks', label: 'list_tasks', description: 'List all current tasks with IDs and status.' },
       { id: 'get_task', label: 'get_task', description: 'Get full details of a single task.' },
-      { id: 'write_plan', label: 'write_plan', description: 'Write an implementation plan for the user to review.' },
+      { id: 'plan', label: 'plan', description: 'Write an implementation plan for the user to review.' },
       { id: 'sleep', label: 'sleep', description: 'Pause execution for a specified duration.' },
       { id: 'spawn_subagent', label: 'spawn_subagent', description: 'Delegate focused work to a sub-agent tab.' },
     ],

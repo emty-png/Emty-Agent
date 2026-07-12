@@ -197,7 +197,7 @@ async function processFile(
         return {
           file: filePath,
           status: 'error',
-          message: `Cannot create new file - ${filePath} already exists and is not empty. Use edit_files with an actual old_string, or write_file with rewrite: true.`,
+          message: `Cannot create new file - ${filePath} already exists and is not empty. Use edit_files with an actual old_string, or write_file to overwrite it.`,
         }
       }
     }

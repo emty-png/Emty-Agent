@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ScaffoldTemplate } from './templates'
+import type { ScaffoldTemplate } from '@/utils/scaffold/templates'
 
 const props = defineProps<{
   template: ScaffoldTemplate

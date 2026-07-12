@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Brain, ChevronDown, Eye, Search, Wrench, Zap } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -13,28 +13,52 @@ const pickerOpen = ref(false)
 const pickerSearch = ref('')
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const triggerRef = ref<HTMLElement | null>(null)
-const pickerPos = ref({ x: 0, y: 0 })
+const popupRef = ref<HTMLElement | null>(null)
 
-function updatePickerPos() {
-  if (!triggerRef.value || !pickerOpen.value)
-    return
-  const rect = triggerRef.value.getBoundingClientRect()
-  pickerPos.value = {
-    x: rect.left + rect.width / 2,
-    y: rect.top - 8,
+let rafId: number | null = null
+
+// Continuously update position directly to the DOM for zero-latency tracking
+function trackPosition() {
+  if (pickerOpen.value) {
+    if (triggerRef.value && popupRef.value) {
+      const rect = triggerRef.value.getBoundingClientRect()
+
+      // The pop-up is strictly w-[300px], so subtract 150px for a perfect center
+      const left = rect.left + rect.width / 2 - 150
+
+      // Anchor the bottom of the popup exactly 8px above the top of the trigger.
+      // Using `bottom` strictly enforces it ALWAYS stays above, independent of CSS transforms.
+      const bottom = window.innerHeight - rect.top + 8
+
+      popupRef.value.style.left = `${left}px`
+      popupRef.value.style.bottom = `${bottom}px`
+    }
+    rafId = requestAnimationFrame(trackPosition)
   }
 }
 
 function openPicker() {
   pickerOpen.value = true
   pickerSearch.value = ''
-  updatePickerPos()
-  // autofocus via nextTick — more reliable than the `autofocus` attr in Tauri
-  nextTick(() => searchInputRef.value?.focus())
+
+  if (rafId !== null)
+    cancelAnimationFrame(rafId)
+
+  // Wait for the popup to be mounted by Vue, then track and focus
+  nextTick(() => {
+    searchInputRef.value?.focus()
+    trackPosition()
+  })
 }
+
 function closePicker() {
   pickerOpen.value = false
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
 }
+
 function selectModel(uid: string) {
   chat.setTabModel(chat.activeTab.id, uid)
   closePicker()
@@ -71,118 +95,162 @@ function onKeydownGlobal(e: KeyboardEvent) {
   if (e.key === 'Escape')
     closePicker()
 }
-window.addEventListener('keydown', onKeydownGlobal)
-window.addEventListener('resize', updatePickerPos)
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydownGlobal)
+})
+
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydownGlobal)
-  window.removeEventListener('resize', updatePickerPos)
+  if (rafId !== null)
+    cancelAnimationFrame(rafId)
 })
+
+// ── Presentation: Tailwind v4 class strings ─────────────────────────────────
+const modelBtnClasses = computed(() => {
+  const shared = [
+    'flex items-center gap-1.5 h-[30px] pl-2.5 pr-2 border rounded-(--radius-md)',
+    'bg-transparent cursor-pointer max-w-[260px]',
+    '[transition:background_120ms_cubic-bezier(0.4,0,0.2,1),border-color_120ms_cubic-bezier(0.4,0,0.2,1),border-radius_150ms_cubic-bezier(0.16,1,0.3,1)]',
+    'active:scale-[0.97] active:duration-[80ms]',
+    'hover:bg-(--color-state-hover) hover:border-(--color-border-mid) hover:rounded-(--radius-lg)',
+  ].join(' ')
+
+  return pickerOpen.value
+    ? `${shared} bg-(--color-state-hover) border-(--color-border-mid) rounded-(--radius-lg)`
+    : `${shared} border-transparent`
+})
+
+const chevronClasses = computed(() => {
+  const base = 'text-(--color-text-tertiary) shrink-0 [transition:transform_200ms_cubic-bezier(0.4,0,0.2,1)]'
+  return pickerOpen.value ? `${base} rotate-180` : base
+})
+
+function modelRowClasses(isActive: boolean) {
+  const base = [
+    'flex items-center gap-2 w-[calc(100%-12px)] mx-1.5 my-[2px] h-[32px] px-2 border',
+    'rounded-(--radius-sm) text-left box-border cursor-pointer',
+    '[transition:background_100ms_cubic-bezier(0.4,0,0.2,1),border-color_100ms_cubic-bezier(0.4,0,0.2,1),color_100ms_cubic-bezier(0.4,0,0.2,1)]',
+  ].join(' ')
+
+  if (isActive) {
+    return `${base} bg-(--color-accent-muted-plus) border-(--color-accent-dim) text-(--color-text-primary)`
+  }
+  return `${base} bg-transparent border-transparent text-(--color-text-secondary) `
+    + 'hover:bg-(--color-state-hover) hover:border-(--color-border-subtle) hover:text-(--color-text-primary)'
+}
 </script>
 
 <template>
-  <div class="picker-wrap">
+  <div class="relative">
     <!-- ── Trigger ──────────────────────────────────────────────────────────── -->
     <div ref="triggerRef">
       <button
-        class="model-btn"
-        :class="{ 'model-btn--open': pickerOpen }"
+        :class="modelBtnClasses"
         aria-label="Select model"
         @click="openPicker"
       >
-        <Zap v-if="!activeModel" :size="13" :stroke-width="2.5" class="model-btn-zap" />
-        <span class="model-name">{{ activeLabel }}</span>
+        <Zap v-if="!activeModel" :size="13" :stroke-width="2.5" class="text-(--color-text-tertiary) shrink-0" />
+        <span class="text-[13px] font-semibold text-(--color-text-primary) tracking-[0.01em] whitespace-nowrap overflow-hidden text-ellipsis shrink">{{ activeLabel }}</span>
         <ChevronDown
           :size="13"
           :stroke-width="2.5"
-          class="model-chevron"
-          :class="{ 'model-chevron--open': pickerOpen }"
+          :class="chevronClasses"
         />
       </button>
     </div>
 
     <!-- ── Dropdown ────────────────────────────────────────────────────────── -->
     <Teleport to="body">
-      <Transition name="picker">
+      <Transition
+        enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-bottom"
+        enter-from-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"
+        enter-to-class="opacity-100 [transform:translateY(0)_scale(1)]"
+        leave-active-class="transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.7,0,0.84,0)] origin-bottom"
+        leave-from-class="opacity-100 [transform:translateY(0)_scale(1)]"
+        leave-to-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"
+      >
         <div
           v-if="pickerOpen"
-          class="picker-dropdown"
-          :style="{ left: `${pickerPos.x}px`, top: `${pickerPos.y}px` }"
+          ref="popupRef"
+          class="fixed w-[300px] max-h-[300px] bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden z-[10000]"
+          style="will-change: transform, left, bottom;"
         >
           <!-- Search toolbar -->
-          <div class="picker-toolbar">
-            <div class="picker-search-wrap">
-              <Search :size="13" :stroke-width="2" class="picker-search-icon" />
+          <div class="flex items-center gap-1.5 px-2.5 pt-2.5 pb-2 border-b border-(--color-border-mid) shrink-0">
+            <div class="relative flex-1">
+              <Search :size="13" :stroke-width="2" class="absolute left-2.5 top-1/2 -translate-y-1/2 text-(--color-text-tertiary) pointer-events-none" />
               <input
                 ref="searchInputRef"
                 v-model="pickerSearch"
-                class="picker-search"
+                class="w-full h-8 pl-[30px] pr-2.5 bg-(--color-bg-card) border border-(--color-border-bright) rounded-(--radius-md) text-(--color-text-primary) text-[12.5px] outline-none box-border [transition:border-color_150ms_cubic-bezier(0.4,0,0.2,1),box-shadow_150ms_cubic-bezier(0.4,0,0.2,1)] placeholder:text-(--color-text-dim) focus:border-(--color-accent) focus:shadow-[0_0_0_3px_var(--color-accent-muted),0_0_0_1px_var(--color-accent-muted-plus)]"
                 placeholder="Search models…"
               >
             </div>
           </div>
 
           <!-- Empty: no providers configured -->
-          <div v-if="enabledModels.length === 0" class="picker-empty">
-            <span class="picker-empty-icon">
+          <div v-if="enabledModels.length === 0" class="px-5 py-8 text-center flex flex-col items-center gap-1.5">
+            <span class="text-(--color-text-dim) mb-1 opacity-60 flex">
               <Zap :size="22" :stroke-width="1.5" />
             </span>
-            <p class="picker-empty-title">
+            <p class="m-0 text-[13px] font-medium text-(--color-text-secondary)">
               No models available
             </p>
-            <p class="picker-empty-hint">
+            <p class="m-0 text-xs text-(--color-text-tertiary) leading-[1.6]">
               Open Settings → Providers and add a provider key.
             </p>
           </div>
 
           <!-- Empty: no search results -->
-          <div v-else-if="groupedModels.length === 0" class="picker-empty">
-            <p class="picker-empty-title">
+          <div v-else-if="groupedModels.length === 0" class="px-5 py-8 text-center flex flex-col items-center gap-1.5">
+            <p class="m-0 text-[13px] font-medium text-(--color-text-secondary)">
               No results for "{{ pickerSearch }}"
             </p>
           </div>
 
           <!-- Model groups -->
-          <div v-else class="picker-groups">
+          <div
+            v-else
+            class="overflow-y-auto overflow-x-hidden flex-1 pt-1.5 pb-2 [scrollbar-width:thin] [scrollbar-color:var(--color-border-bright)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-(--color-border-bright) [&::-webkit-scrollbar-thumb]:rounded-(--radius-md)"
+          >
             <div
               v-for="group in groupedModels"
               :key="group.providerId"
-              class="picker-group"
+              class="mb-0.5"
             >
-              <span class="picker-group-header">{{ group.providerName }}</span>
+              <span class="block px-4 pt-2.5 pb-[5px] text-[11px] font-bold tracking-[0.08em] uppercase text-(--color-text-dim) select-none">{{ group.providerName }}</span>
 
               <button
                 v-for="m in group.models"
                 :key="m.uid"
-                class="picker-model-row"
-                :class="{ 'picker-model-row--active': m.uid === activeModel?.uid }"
+                :class="modelRowClasses(m.uid === activeModel?.uid)"
                 @click="selectModel(m.uid)"
               >
                 <!-- Model name -->
-                <span class="picker-model-name">{{ m.name }}</span>
+                <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-medium tracking-[0.01em]">{{ m.name }}</span>
 
                 <!-- Capability badges -->
-                <div class="picker-caps">
-                  <span v-if="(m as any).free" class="cap-badge cap-badge--free">Free</span>
-
+                <div class="flex items-center gap-1 shrink-0">
                   <span
                     v-if="m.supportsThinking"
-                    class="cap-icon-wrap"
+                    class="relative inline-flex items-center justify-center w-5 h-5 rounded-(--radius-xs) cursor-default [transition:background_100ms_cubic-bezier(0.4,0,0.2,1)] hover:bg-(--color-state-hover)"
                   >
-                    <Brain :size="11" :stroke-width="2" class="cap-icon cap-icon--thinking" />
+                    <Brain :size="11" :stroke-width="2" class="block text-(--color-accent-text)" />
                   </span>
 
                   <span
                     v-if="m.supportsToolCalls"
-                    class="cap-icon-wrap"
+                    class="relative inline-flex items-center justify-center w-5 h-5 rounded-(--radius-xs) cursor-default [transition:background_100ms_cubic-bezier(0.4,0,0.2,1)] hover:bg-(--color-state-hover)"
                   >
-                    <Wrench :size="11" :stroke-width="2" class="cap-icon cap-icon--tools" />
+                    <Wrench :size="11" :stroke-width="2" class="block text-(--color-success-text)" />
                   </span>
 
                   <span
                     v-if="m.supportsAttachments"
-                    class="cap-icon-wrap"
+                    class="relative inline-flex items-center justify-center w-5 h-5 rounded-(--radius-xs) cursor-default [transition:background_100ms_cubic-bezier(0.4,0,0.2,1)] hover:bg-(--color-state-hover)"
                   >
-                    <Eye :size="11" :stroke-width="2" class="cap-icon cap-icon--vision" />
+                    <Eye :size="11" :stroke-width="2" class="block text-(--color-info-text)" />
                   </span>
                 </div>
               </button>
@@ -193,362 +261,6 @@ onUnmounted(() => {
     </Teleport>
 
     <!-- Backdrop -->
-    <div v-if="pickerOpen" class="global-backdrop" @click="closePicker" />
+    <div v-if="pickerOpen" class="fixed inset-0 z-[9999] bg-transparent" @click="closePicker" />
   </div>
 </template>
-
-<style scoped>
-/*
-  Design system (matches component library + ServicesDropdown):
-  ─────────────────────────────────────────────────────────────
-  Border radius  → xs=3  sm=4  md=6  lg=8  xl=12  pill=9999
-  Ease out expo  → cubic-bezier(0.16, 1, 0.3, 1)    snappy open
-  Ease in expo   → cubic-bezier(0.7,  0, 0.84, 0)   fast close
-  Ease smooth    → cubic-bezier(0.4,  0, 0.2,  1)   state change
-  Ease spring    → cubic-bezier(0.34, 1.56, 0.64, 1) pop/bounce
-
-  Durations → instant 80ms  micro 100ms  fast 150ms  normal 220ms
-*/
-
-/* ── Wrapper ──────────────────────────────────────────────────────────────── */
-.picker-wrap {
-  position: relative;
-}
-
-/* ── Trigger button ───────────────────────────────────────────────────────── */
-.model-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding-inline: 10px 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  cursor: pointer;
-  max-width: 260px;
-  transition:
-    background 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.model-btn:hover,
-.model-btn--open {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-mid);
-  border-radius: var(--radius-lg);
-}
-
-.model-btn:active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
-
-.model-btn-zap {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.model-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
-}
-
-.model-chevron {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.model-chevron--open {
-  transform: rotate(180deg);
-}
-
-/* ── Dropdown shell ───────────────────────────────────────────────────────── */
-.picker-dropdown {
-  position: fixed;
-  transform: translate(-50%, -100%);
-  width: 300px;
-  max-height: 300px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-bright);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--color-shadow-floating);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  z-index: 10000;
-}
-
-/* ── Search toolbar ───────────────────────────────────────────────────────── */
-.picker-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 10px 8px;
-  border-bottom: 1px solid var(--color-border-mid);
-  flex-shrink: 0;
-}
-
-.picker-search-wrap {
-  position: relative;
-  flex: 1;
-}
-
-.picker-search-icon {
-  position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--color-text-tertiary);
-  pointer-events: none;
-}
-
-.picker-search {
-  width: 100%;
-  height: 32px;
-  padding-left: 30px;
-  padding-right: 10px;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-bright);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-size: 12.5px;
-  outline: none;
-  box-sizing: border-box;
-  transition:
-    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.picker-search::placeholder {
-  color: var(--color-text-dim);
-}
-
-.picker-search:focus {
-  border-color: var(--color-accent);
-  box-shadow:
-    0 0 0 3px var(--color-accent-muted),
-    0 0 0 1px var(--color-accent-muted-plus);
-}
-
-/* ── Groups + scrollable list ─────────────────────────────────────────────── */
-.picker-groups {
-  overflow-y: auto;
-  overflow-x: hidden;
-  flex: 1;
-  padding: 6px 0 8px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-bright) transparent;
-}
-
-.picker-groups::-webkit-scrollbar {
-  width: 4px;
-}
-.picker-groups::-webkit-scrollbar-track {
-  background: transparent;
-}
-.picker-groups::-webkit-scrollbar-thumb {
-  background: var(--color-border-bright);
-  border-radius: var(--radius-md);
-}
-
-.picker-group {
-  margin-bottom: 2px;
-}
-
-.picker-group-header {
-  display: block;
-  padding: 10px 16px 5px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-text-dim);
-  user-select: none;
-}
-
-/* ── Model row ────────────────────────────────────────────────────────────── */
-.picker-model-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 12px);
-  margin: 1px 6px;
-  height: 34px;
-  padding-inline: 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  text-align: left;
-  box-sizing: border-box;
-  transition:
-    background 100ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 100ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 100ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.picker-model-row:hover {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-subtle);
-  color: var(--color-text-primary);
-}
-
-.picker-model-row--active {
-  background: var(--color-accent-muted-plus);
-  border-color: var(--color-accent-dim);
-  color: var(--color-text-primary);
-}
-
-.picker-model-row--active:hover {
-  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
-  border-color: var(--color-accent);
-}
-
-/* Model name */
-.picker-model-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-}
-
-/* ── Capability badges ────────────────────────────────────────────────────── */
-.picker-caps {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.cap-badge {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  padding: 2px 7px;
-  border-radius: var(--radius-xs);
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.cap-badge--free {
-  color: var(--color-text-dim);
-  background: transparent;
-  border: 1px solid var(--color-border-mid);
-}
-
-/* Icon wrapper — no ::after tooltip; handled by Teleport instead */
-.cap-icon-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-xs);
-  cursor: default;
-  transition: background 100ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.cap-icon-wrap:hover {
-  background: var(--color-state-hover);
-}
-
-.cap-icon {
-  display: block;
-}
-.cap-icon--thinking {
-  color: var(--color-accent-text);
-}
-.cap-icon--tools {
-  color: var(--color-success-text);
-}
-.cap-icon--vision {
-  color: var(--color-info-text);
-}
-
-/* ── Empty states ─────────────────────────────────────────────────────────── */
-.picker-empty {
-  padding: 32px 20px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.picker-empty-icon {
-  color: var(--color-text-dim);
-  margin-bottom: 4px;
-  opacity: 0.6;
-  display: flex;
-}
-
-.picker-empty-title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-}
-
-.picker-empty-hint {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  line-height: 1.6;
-}
-
-/* ── Backdrop ─────────────────────────────────────────────────────────────── */
-.global-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: transparent;
-}
-
-/* ── Transition ───────────────────────────────────────────────────────────── */
-/*
-  Opens from BOTTOM (picker appears above the trigger).
-  → enter-from: shifted UP + slightly scaled down, transform-origin: bottom center.
-  Enter: 220ms ease-out-expo (snappy)
-  Leave: 160ms ease-in-expo  (fast, non-intrusive)
-*/
-.picker-enter-active {
-  transition:
-    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.picker-leave-active {
-  transition:
-    opacity 100ms cubic-bezier(0.7, 0, 0.84, 0),
-    transform 100ms cubic-bezier(0.7, 0, 0.84, 0);
-}
-
-/* translate(-50%, -100%) must be preserved — it's the centering/anchoring transform */
-.picker-enter-from,
-.picker-leave-to {
-  opacity: 0;
-  transform: translate(-50%, calc(-100% + 8px)) scale(0.96);
-  transform-origin: bottom center;
-}
-
-.picker-enter-to,
-.picker-leave-from {
-  transform: translate(-50%, -100%);
-  transform-origin: bottom center;
-}
-</style>

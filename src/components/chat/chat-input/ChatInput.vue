@@ -1,31 +1,33 @@
 <script setup lang="ts">
 import type { CommandEntry } from '@/composables/useSlashCommand'
 import type { Attachment } from '@/stores/chat/attachment-types'
-import { ArrowUp, ChevronDown, GitBranch, Hand, HandFist, Plus, Square, Terminal } from 'lucide-vue-next'
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import type { AgentStatus } from '@/stores/chat/types'
+import { ArrowUp, Plus, Square } from 'lucide-vue-next'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { INIT_PROMPT } from '@/composables/ChatInput.initPrompt'
+import { findTokenAfter, findTokenBefore, findTokenContaining, snapToTokenBoundary, splitMentions } from '@/composables/chatInputTokens'
 import { useAtMention } from '@/composables/useAtMention'
+import { useChatAttachments } from '@/composables/useChatAttachments'
 import { useSlashCommand } from '@/composables/useSlashCommand'
 import { useChatStore } from '@/stores/chat'
-import { isImageMime } from '@/stores/chat/attachment-types'
-import { canChangeWorkspace, resolveTabWorkspacePath } from '@/stores/chat/workspace'
+import { isStreamingStatus } from '@/stores/chat/agentStatus'
+import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useProjectStore } from '@/stores/project'
-import { useSettingsStore } from '@/stores/settings'
-import { openFileDialog, readFileAsAttachment } from '@/utils/attachments'
-import { commandTasks } from '@/utils/tools/shell'
-import AtMentionDropdown from './AtMentionDropdown.vue'
+import { serializeForSend } from '@/utils/mentionFormat'
+import AtMentionOverlay from '../chat-input-overlay/AtMentionOverlay.vue'
+import PermissionOverlay from '../chat-input-overlay/PermissionOverlay.vue'
+import QuestionOverlay from '../chat-input-overlay/QuestionOverlay.vue'
+import SlashCommandOverlay from '../chat-input-overlay/SlashCommandOverlay.vue'
+import TodoOverlay from '../chat-input-overlay/TodoOverlay.vue'
 import AttachmentPreview from './AttachmentPreview.vue'
 import AttachmentStrip from './AttachmentStrip.vue'
-import BackgroundTasksPopup from './BackgroundTasksPopup.vue'
 import ChatInputEstimator from './ChatInputEstimator.vue'
 import ModelPicker from './ModelPicker.vue'
-import PermissionOverlay from './PermissionOverlay.vue'
-import QuestionOverlay from './QuestionOverlay.vue'
-import SlashCommandDropdown from './SlashCommandDropdown.vue'
-import TodoOverlay from './TodoOverlay.vue'
-import WorktreePicker from './WorktreePicker.vue'
+import PermissionModePicker from './PermissionModePicker.vue'
+import ProjectPicker from './ProjectPicker.vue'
 
 const props = defineProps<{
-  isStreaming?: boolean
+  agentStatus?: AgentStatus
 }>()
 const emit = defineEmits<{
   send: [value: string, attachments: Attachment[]]
@@ -33,121 +35,40 @@ const emit = defineEmits<{
 }>()
 
 const project = useProjectStore()
-const settings = useSettingsStore()
 const chat = useChatStore()
 const projectPath = computed(() => resolveTabWorkspacePath(chat.activeTab, project.projectPath))
 
-// ── Permission mode dropdown ─────────────────────────────────────────────
-const permOpen = ref(false)
-function togglePerm() { permOpen.value = !permOpen.value }
-function selectPerm(mode: 'ask' | 'auto') {
-  settings.agent.permissionMode = mode
-  permOpen.value = false
-}
-function onPermKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape')
-    permOpen.value = false
-}
-window.addEventListener('keydown', onPermKeydown)
-onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
+const isStreaming = computed(() => props.agentStatus ? isStreamingStatus(props.agentStatus) : false)
 
 const text = computed({
   get: () => chat.activeTab.draft.text,
   set: value => chat.updateTabDraft(chat.activeTab.id, { text: value }),
 })
+
+const parsedParts = computed(() => splitMentions(text.value))
+
 const focused = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const backdropRef = ref<HTMLElement | null>(null)
+const inputRootRef = ref<HTMLElement | null>(null)
+const compactToolbar = ref(false)
+const COMPACT_THRESHOLD = 520
+
+onMounted(() => {
+  if (!inputRootRef.value)
+    return
+  const ro = new ResizeObserver(([entry]) => {
+    if (entry)
+      compactToolbar.value = entry.contentRect.width < COMPACT_THRESHOLD
+  })
+  ro.observe(inputRootRef.value)
+  onUnmounted(() => ro.disconnect())
+})
 
 const mention = useAtMention(textareaRef, text, projectPath)
 const slash = useSlashCommand(textareaRef, text, projectPath)
 
-const workspacePickerOpen = ref(false)
-const bgTasksOpen = ref(false)
-const runningTaskCount = computed(() => commandTasks.value.filter(t => t.status === 'running').length)
-const showWorkspaceButton = computed(() => canChangeWorkspace(chat.activeTab) && !!projectPath.value)
-const activeWorkspaceLabel = computed(() => {
-  const path = projectPath.value
-  if (!path)
-    return ''
-  return chat.activeTab.workspaceMeta?.label ?? path.replace(/[\\/]+$/, '').split(/[/\\]/).pop() ?? path
-})
-const activeWorkspaceDirty = computed(() => Boolean(chat.activeTab.workspaceMeta && !chat.activeTab.workspaceMeta.isClean))
-
-async function handleWorkspaceSelect(path: string) {
-  const { inspectWorkspace } = await import('@/utils/worktrees')
-  const snapshot = await inspectWorkspace(path)
-  chat.setTabWorkspace(chat.activeTab.id, {
-    workspacePath: path,
-    workspaceMeta: snapshot,
-  })
-  project.setProject(path)
-  workspacePickerOpen.value = false
-}
-
-const INIT_PROMPT = `Analyse this repository and generate or update \`AGENTS.md\` at the project root.
-
-The goal is a compact, high-signal instruction file that helps future AI agent sessions ramp up quickly and avoid common mistakes. Every sentence should answer: "Would an agent likely get this wrong without being told?" If not, leave it out.
-
-## How to investigate
-
-Work through the highest-value sources first:
-- Root README, manifests (package.json, Cargo.toml, pyproject.toml, go.mod, build.gradle, etc.), workspace config, lockfiles
-- Build, test, lint, formatter, typecheck, and codegen config
-- CI workflows (.github/workflows/, .gitlab-ci.yml, Makefile, Taskfile, etc.) and pre-commit / task-runner config
-- Any existing instruction files: AGENTS.md, CLAUDE.md, .cursor/rules/, .cursorrules, .github/copilot-instructions.md
-- A small number of representative source files to understand how the system is wired together — prefer entrypoints, routers, and bootstrap files over random leaf files
-
-Prefer executable sources of truth over prose. If docs conflict with config or scripts, trust the executable source.
-
-## What to extract
-
-Capture only the facts that require reading multiple files to infer:
-
-**Commands**
-- Exact commands for: dev server, build, test (full suite and single test), lint, typecheck, format, codegen, database migrations, deploy
-- Non-obvious flags, required environment variables, or setup steps that must happen first
-- Required ordering when it matters: e.g. "always run lint before typecheck before test"
-
-**Architecture**
-- Monorepo or multi-package structure: which directories own which concerns, real app entrypoints
-- How the major pieces connect: API layer, data layer, background jobs, frontend/backend split
-- Any generated code, build artifacts, or files that must never be edited by hand
-
-**Toolchain & framework quirks**
-- Non-default framework conventions or config that differ from what an agent would assume
-- Special environment loading (dotenv files, secret managers, feature flags)
-- Codegen or migration workflows that must be run after schema/model changes
-
-**Testing**
-- How to run a single test or a single package in isolation
-- Required services, fixtures, or databases before tests can run
-- Expensive, flaky, or integration-only test suites — and how to skip them during dev
-
-**Style & conventions**
-- Linting and formatting rules that differ from the language default (e.g. no semicolons, tabs vs spaces, import order)
-- Naming conventions, file structure expectations, or PR/commit conventions worth preserving
-
-## Questions
-
-Only ask the user questions if the repository genuinely cannot answer something important. Use the questions tool for a single short batch at most.
-
-Good reasons to ask:
-- Undocumented team conventions or branch/PR/release expectations
-- Missing setup steps or test prerequisites that are known but not written anywhere
-
-Do not ask about anything the repository already makes clear.
-
-## Writing rules
-
-- Use short sections and bullet points — keep it scannable
-- Include exact commands, not paraphrases
-- Architecture notes should explain non-obvious wiring, not describe what files exist
-- Omit generic advice, tutorials, exhaustive file trees, and anything speculative
-- If the repo is simple, keep the file simple. If it is large, summarise the few structural facts that actually change how an agent should work
-
-If \`AGENTS.md\` already exists at the root, improve it in place. Preserve verified, useful guidance. Remove fluff, stale claims, and anything contradicted by the current codebase. Reconcile it with what you actually find.\
-`
+const { attachments, previewAttachment, onPaste, removeAttachment, handleOpenFileDialog } = useChatAttachments()
 
 function handleSlashSelect(entry: CommandEntry) {
   if (entry.id === 'new') {
@@ -171,32 +92,6 @@ function handleSlashSelect(entry: CommandEntry) {
   }
 }
 
-// ── Mentions syntax highlighting backdrop ─────────────────────────────────
-interface MsgPart { type: 'text' | 'mention' | 'skill'; value: string }
-
-function splitMentions(text: string): MsgPart[] {
-  const parts: MsgPart[] = []
-  if (!text)
-    return parts
-  const regex = /@\[([\w./\-]+)\]|\[skill:[^\]]+\]/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null = regex.exec(text)
-  while (match !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ type: 'text', value: text.slice(lastIndex, match.index) })
-    }
-    const type = match[0].startsWith('@[') ? 'mention' : 'skill'
-    parts.push({ type, value: match[0] })
-    lastIndex = match.index + match[0].length
-    match = regex.exec(text)
-  }
-  if (lastIndex < text.length) {
-    parts.push({ type: 'text', value: text.slice(lastIndex) })
-  }
-  return parts
-}
-
-// Keep the invisible textarea and visual backdrop perfectly scrolled together
 function syncScroll() {
   if (backdropRef.value && textareaRef.value) {
     backdropRef.value.scrollTop = textareaRef.value.scrollTop
@@ -204,58 +99,21 @@ function syncScroll() {
   }
 }
 
-const attachments = computed({
-  get: () => chat.activeTab.draft.attachments,
-  set: value => chat.updateTabDraft(chat.activeTab.id, { attachments: value }),
-})
-const previewAttachment = ref<Attachment | null>(null)
-
-async function addFiles(files: FileList | File[]) {
-  const nextAttachments = [...attachments.value]
-  for (const file of files) {
-    try { nextAttachments.push(await readFileAsAttachment(file)) }
-    catch (err) { console.warn('[ChatInput] Failed to read file:', file.name, err) }
-  }
-  attachments.value = nextAttachments
-}
-
-function removeAttachment(id: string) { attachments.value = attachments.value.filter(a => a.id !== id) }
-
-function onPaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items
-  if (!items)
+function autoResize() {
+  const el = textareaRef.value
+  if (!el)
     return
-  const imageFiles: File[] = []
-  for (const item of items) {
-    if (item.kind === 'file') {
-      const file = item.getAsFile()
-      if (file) {
-        e.preventDefault()
-        imageFiles.push(
-          isImageMime(file.type)
-            ? new File([file], `Pasted image.${file.type.split('/')[1] ?? 'png'}`, { type: file.type })
-            : file,
-        )
-      }
-    }
-  }
-  if (imageFiles.length > 0)
-    addFiles(imageFiles)
-}
-
-async function handleOpenFileDialog() {
-  const newAttachments = await openFileDialog()
-  attachments.value = [...attachments.value, ...newAttachments]
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 180)}px`
 }
 
 function submit() {
   const hasText = text.value.trim().length > 0
   const hasAttachments = attachments.value.length > 0
-  if ((!hasText && !hasAttachments) || props.isStreaming)
+  if ((!hasText && !hasAttachments) || isStreaming.value)
     return
-  emit('send', text.value, [...attachments.value])
-  if (textareaRef.value)
-    textareaRef.value.style.height = 'auto'
+  emit('send', serializeForSend(text.value), [...attachments.value])
+  autoResize()
 }
 
 async function handleCompactSession(payload: { source: 'auto' | 'manual' }) {
@@ -267,6 +125,77 @@ function onKeydown(e: KeyboardEvent) {
     return
   if (mention.handleKeydown(e))
     return
+
+  // ── Arrow keys: skip over tokens atomically (chip body + padding) ────────
+  if (
+    (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+    && !e.shiftKey
+    && textareaRef.value
+    && textareaRef.value.selectionStart === textareaRef.value.selectionEnd
+  ) {
+    const cursor = textareaRef.value.selectionStart ?? 0
+    const next = e.key === 'ArrowLeft' ? cursor - 1 : cursor + 1
+    if (next >= 0 && next <= text.value.length) {
+      const tok = findTokenContaining(text.value, next)
+      if (tok) {
+        e.preventDefault()
+        const dest = e.key === 'ArrowLeft' ? tok.outerStart : tok.outerEnd
+        textareaRef.value.setSelectionRange(dest, dest)
+        return
+      }
+    }
+  }
+
+  if (
+    e.key === 'Backspace'
+    && !slash.isOpen.value
+    && !mention.isOpen.value
+    && textareaRef.value
+    && textareaRef.value.selectionStart === textareaRef.value.selectionEnd
+  ) {
+    const cursor = snapToTokenBoundary(text.value, textareaRef.value.selectionStart ?? 0)
+    const tokenRange = findTokenBefore(text.value, cursor)
+    if (tokenRange) {
+      e.preventDefault()
+      text.value = `${text.value.slice(0, tokenRange.outerStart)}${text.value.slice(tokenRange.outerEnd)}`
+      nextTick(() => {
+        const el = textareaRef.value
+        if (!el)
+          return
+        el.setSelectionRange(tokenRange.outerStart, tokenRange.outerStart)
+        el.focus()
+        autoResize()
+        syncScroll()
+      })
+      return
+    }
+  }
+
+  if (
+    e.key === 'Delete'
+    && !slash.isOpen.value
+    && !mention.isOpen.value
+    && textareaRef.value
+    && textareaRef.value.selectionStart === textareaRef.value.selectionEnd
+  ) {
+    const cursor = snapToTokenBoundary(text.value, textareaRef.value.selectionStart ?? 0)
+    const tokenRange = findTokenAfter(text.value, cursor)
+    if (tokenRange) {
+      e.preventDefault()
+      text.value = `${text.value.slice(0, tokenRange.outerStart)}${text.value.slice(tokenRange.outerEnd)}`
+      nextTick(() => {
+        const el = textareaRef.value
+        if (!el)
+          return
+        el.setSelectionRange(tokenRange.outerStart, tokenRange.outerStart)
+        el.focus()
+        autoResize()
+        syncScroll()
+      })
+      return
+    }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     submit()
@@ -274,15 +203,26 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function onInput(e: Event) {
-  const el = e.target as HTMLTextAreaElement
-  el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 180)}px`
+  autoResize()
   slash.handleInput(e)
   mention.handleInput(e)
   syncScroll()
 }
 
-const canSend = computed(() => (text.value.trim().length > 0 || attachments.value.length > 0) && !props.isStreaming)
+/** Snap cursor/selection out of tokens after mouse interaction. */
+function onMouseUp() {
+  const el = textareaRef.value
+  if (!el)
+    return
+  const start = el.selectionStart ?? 0
+  const end = el.selectionEnd ?? 0
+  const snappedStart = snapToTokenBoundary(text.value, start)
+  const snappedEnd = snapToTokenBoundary(text.value, end)
+  if (snappedStart !== start || snappedEnd !== end)
+    el.setSelectionRange(snappedStart, snappedEnd)
+}
+
+const canSend = computed(() => (text.value.trim().length > 0 || attachments.value.length > 0) && !isStreaming.value)
 
 const hasPermissionPrompt = computed(() => chat.activeTab.pendingPermissions.length > 0)
 const hasQuestions = computed(() => !!chat.activeTab.pendingQuestions)
@@ -293,21 +233,10 @@ watch(
   () => [chat.activeTab.id, text.value],
   async () => {
     await nextTick()
-    if (!textareaRef.value)
-      return
-    textareaRef.value.style.height = 'auto'
-    textareaRef.value.style.height = `${Math.min(textareaRef.value.scrollHeight, 180)}px`
+    autoResize()
     syncScroll()
   },
   { immediate: true },
-)
-
-watch(
-  () => [chat.activeTab.id, props.isStreaming],
-  () => {
-    if (props.isStreaming)
-      workspacePickerOpen.value = false
-  },
 )
 
 watch(
@@ -327,18 +256,92 @@ watch(
   },
   { immediate: true },
 )
+
+// ── Tailwind Class Extractions ──────────────────────────────────────────────
+const overlayTransitions = {
+  enterActiveClass: 'transition-[opacity,transform] duration-200 ease-out',
+  enterFromClass: 'opacity-0 translate-y-3',
+  enterToClass: 'opacity-100 translate-y-0',
+  leaveActiveClass: 'transition-[opacity,transform] duration-150 ease-out',
+  leaveFromClass: 'opacity-100 translate-y-0',
+  leaveToClass: 'opacity-0 translate-y-3',
+}
+
+const shellClasses = computed(() => [
+  'input-shell relative w-full bg-(--color-bg-card) border rounded-(--radius-lg) flex flex-col overflow-visible transition-colors duration-[120ms] ease-out',
+  (focused.value || isStreaming.value) ? 'border-(--color-accent-dim)' : 'border-(--color-border-bright)',
+].join(' '))
+
+const textAreaBase = [
+  'w-full min-h-[44px] max-h-[180px] pt-3 px-[14px] pb-1',
+  'text-[13.5px] font-[inherit] leading-[1.55] whitespace-pre-wrap break-words tracking-normal',
+  'border-none box-border m-0',
+].join(' ')
+
+const backdropClasses = [
+  textAreaBase,
+  'absolute inset-0 text-(--color-text-primary) pointer-events-none overflow-y-auto select-none',
+  '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+].join(' ')
+
+const fieldClasses = [
+  textAreaBase,
+  'relative z-10 bg-transparent text-transparent caret-(--color-accent-bright) outline-none overflow-y-auto resize-none',
+  'selection:text-transparent selection:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)]',
+  'placeholder:text-transparent disabled:opacity-45 disabled:cursor-not-allowed',
+].join(' ')
+
+const chipBase = [
+  'inline-flex items-center gap-0 rounded-[4px] font-[inherit]',
+  'whitespace-pre-wrap overflow-visible [text-overflow:unset] align-baseline',
+  'px-[5px] py-[1px] leading-[inherit] mx-[-5px]',
+].join(' ')
+
+const mentionClasses = [
+  chipBase,
+  'text-(--color-accent-text)',
+  'bg-[color-mix(in_srgb,var(--color-accent-text)_10%,transparent)]',
+].join(' ')
+
+const skillClasses = [
+  chipBase,
+  'text-(--color-success-text)',
+  'bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)]',
+].join(' ')
+
+const btnTransition = '[transition:background_120ms_cubic-bezier(0.4,0,0.2,1),border-color_120ms_cubic-bezier(0.4,0,0.2,1),color_120ms_cubic-bezier(0.4,0,0.2,1),border-radius_150ms_cubic-bezier(0.16,1,0.3,1)]'
+
+const uploadBtnClasses = [
+  'flex items-center justify-center w-[30px] h-[30px] border border-transparent rounded-(--radius-md)',
+  'bg-transparent text-(--color-text-primary) cursor-pointer shrink-0',
+  btnTransition,
+  'hover:bg-(--color-state-hover) hover:border-(--color-border-mid) hover:rounded-(--radius-lg) hover:text-(--color-text-secondary)',
+  'active:scale-[0.97] active:duration-[80ms]',
+  'disabled:opacity-30 disabled:cursor-not-allowed disabled:transform-none',
+].join(' ')
+
+const actionBtnBase = `flex items-center justify-center w-[30px] h-[30px] border rounded-(--radius-md) cursor-pointer shrink-0 ${btnTransition} hover:rounded-(--radius-lg) active:scale-[0.97] active:duration-[80ms]`
+
+const stopBtnClasses = `${actionBtnBase} bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] border-[color-mix(in_srgb,var(--color-danger)_35%,transparent)] text-(--color-danger-text) hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] hover:border-[color-mix(in_srgb,var(--color-danger)_50%,transparent)]`
+
+const sendBtnClasses = computed(() => {
+  if (canSend.value) {
+    return `${actionBtnBase} bg-(--color-accent-muted) border-(--color-accent-dim) text-(--color-accent-text) hover:bg-[color-mix(in_srgb,var(--color-accent-muted)_80%,transparent)] hover:border-(--color-accent)`
+  }
+  return `${actionBtnBase} bg-transparent text-(--color-text-tertiary) border-(--color-border-subtle) disabled:cursor-default disabled:opacity-30 disabled:transform-none`
+})
 </script>
 
 <template>
-  <div class="chat-input-root">
-    <Transition name="overlay">
+  <div ref="inputRootRef" class="chat-input-root relative w-full flex flex-col overflow-visible">
+    <Transition v-bind="overlayTransitions">
       <PermissionOverlay v-if="hasPermissionPrompt" />
     </Transition>
-    <Transition name="overlay">
+    <Transition v-bind="overlayTransitions">
       <QuestionOverlay v-if="hasQuestions && !hasPermissionPrompt" />
     </Transition>
-    <Transition name="overlay">
-      <AtMentionDropdown
+    <Transition v-bind="overlayTransitions">
+      <AtMentionOverlay
         v-if="mention.isOpen.value && !hasQuestions && !hasPermissionPrompt"
         :entries="mention.filteredEntries.value"
         :selected-idx="mention.selectedIdx.value"
@@ -349,8 +352,8 @@ watch(
         @close="mention.close()"
       />
     </Transition>
-    <Transition name="overlay">
-      <SlashCommandDropdown
+    <Transition v-bind="overlayTransitions">
+      <SlashCommandOverlay
         v-if="slash.isOpen.value && !hasQuestions && !hasPermissionPrompt"
         :entries="slash.filteredCommands.value"
         :selected-idx="slash.selectedIdx.value"
@@ -361,123 +364,83 @@ watch(
         @close="slash.close()"
       />
     </Transition>
-    <Transition name="overlay">
+    <Transition v-bind="overlayTransitions">
       <TodoOverlay v-if="showTodos" />
     </Transition>
 
-    <div
-      class="input-shell"
-      :class="{
-        'input-shell--focused': focused,
-        'input-shell--streaming': props.isStreaming,
-      }"
-    >
-      <div v-if="props.isStreaming" class="input-scanner-track">
-        <div class="input-scanner-head" />
+    <div :class="shellClasses">
+      <!-- Scanner track & spinning head -->
+      <div
+        v-if="isStreaming"
+        class="box-border absolute -inset-px rounded-[inherit] p-px pointer-events-none z-10 overflow-hidden"
+        style="mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask-composite: exclude; -webkit-mask-composite: xor;"
+      >
+        <div class="absolute top-1/2 left-1/2 w-[300%] aspect-square -translate-x-1/2 -translate-y-1/2">
+          <div class="w-full h-full animate-[spin_2.5s_linear_infinite] bg-[conic-gradient(from_0deg,transparent_0%,transparent_75%,var(--color-accent)_95%,var(--color-accent-bright)_100%)]" />
+        </div>
       </div>
 
       <!-- Syntax Highlighter wrapper -->
-      <div class="input-text-area">
+      <div class="relative w-full flex">
         <!-- Colored Backdrop -->
-        <div ref="backdropRef" class="input-backdrop" aria-hidden="true">
-          <span v-if="!text" class="backdrop-placeholder">
+        <div ref="backdropRef" :class="backdropClasses" aria-hidden="true">
+          <span v-if="!text" class="text-(--color-text-tertiary)">
             {{ 'Ask anything\u2026 (@ to link files)' }}
           </span>
           <template v-else>
-            <template v-for="(part, i) in splitMentions(text)" :key="i">
-              <span v-if="part.type === 'mention'" class="backdrop-mention">{{ part.value }}</span>
-              <span v-else-if="part.type === 'skill'" class="backdrop-skill">{{ part.value }}</span>
-              <span v-else>{{ part.value }}</span>
+            <template v-for="(part, i) in parsedParts" :key="i">
+              <span v-if="part.type === 'mention'" :class="mentionClasses" :title="part.value">
+                {{ part.display }}
+              </span>
+              <span v-else-if="part.type === 'skill'" :class="skillClasses" :title="part.value">
+                {{ part.display }}
+              </span>
+              <span v-else>{{ part.display }}</span>
             </template>
             <br v-if="text.endsWith('\n')">
           </template>
         </div>
 
-        <!-- Invisible physical Textarea (sits exactly on top) -->
+        <!-- Invisible physical Textarea -->
         <textarea
           ref="textareaRef"
           v-model="text"
-          class="input-field"
+          :class="fieldClasses"
           rows="1"
-          :disabled="props.isStreaming"
+          spellcheck="false"
+          :disabled="isStreaming"
           @focus="focused = true"
           @blur="focused = false"
           @keydown="onKeydown"
           @input="onInput"
           @scroll="syncScroll"
           @paste="onPaste"
+          @mouseup="onMouseUp"
         />
       </div>
 
       <AttachmentStrip :attachments="attachments" @preview="previewAttachment = $event" @remove="removeAttachment" />
 
-      <div class="input-toolbar">
+      <div
+        class="flex items-center gap-1.5 pt-1.5 px-2 pb-2 relative"
+        :class="[{ 'input-toolbar--compact': compactToolbar }]"
+      >
         <button
-          class="upload-btn"
+          :class="uploadBtnClasses"
           aria-label="Upload files"
-          :disabled="props.isStreaming"
+          :disabled="isStreaming"
           @click="handleOpenFileDialog"
         >
           <Plus :size="14" :stroke-width="2" />
         </button>
 
-        <!-- Permission mode toggle -->
-        <div class="perm-picker-wrap">
-          <div v-if="chat.activeTab.mode === 'plan'" class="plan-mode-chip">
-            <span>Plan Mode</span>
-          </div>
-          <button
-            class="perm-btn"
-            :class="[
-              permOpen ? 'perm-btn--open' : '',
-              `perm-btn--${settings.agent.permissionMode}`,
-            ]"
-            aria-label="Permission mode"
-            @click="togglePerm"
-          >
-            <component :is="settings.agent.permissionMode === 'auto' ? HandFist : Hand" :size="12" :stroke-width="2" />
-            <span>{{ settings.agent.permissionMode === 'auto' ? 'Yolo' : 'Ask' }}</span>
-            <ChevronDown
-              :size="13"
-              :stroke-width="2.5"
-              class="perm-chevron"
-              :class="{ 'perm-chevron--open': permOpen }"
-            />
-          </button>
-          <Transition name="perm-dd">
-            <div v-if="permOpen" class="perm-dropdown">
-              <button
-                class="perm-option perm-option--ask"
-                :class="{ 'perm-option--active': settings.agent.permissionMode === 'ask' }"
-                @click="selectPerm('ask')"
-              >
-                <Hand :size="13" :stroke-width="2" />
-                <span>Ask Permission</span>
-              </button>
-              <button
-                class="perm-option perm-option--auto"
-                :class="{ 'perm-option--active': settings.agent.permissionMode === 'auto' }"
-                @click="selectPerm('auto')"
-              >
-                <HandFist :size="13" :stroke-width="2" />
-                <span>Yolo</span>
-              </button>
-            </div>
-          </Transition>
-          <div v-if="permOpen" class="perm-backdrop" @click="permOpen = false" />
-        </div>
+        <PermissionModePicker :is-plan-mode="chat.activeTab.mode === 'plan'" :compact="compactToolbar" />
 
-        <WorktreePicker
-          v-if="workspacePickerOpen"
-          :project-path="projectPath"
-          :selected-path="chat.activeTab.workspacePath ?? projectPath"
-          @select="handleWorkspaceSelect"
-          @close="workspacePickerOpen = false"
-        />
+        <ProjectPicker :compact="compactToolbar" />
 
-        <div class="tool-spacer" />
+        <div class="flex-1" />
 
-        <div class="toolbar-right">
+        <div class="flex items-center gap-2 shrink-0">
           <ChatInputEstimator
             :text="text"
             mode="build"
@@ -485,13 +448,12 @@ watch(
             @compact-session="handleCompactSession"
           />
           <ModelPicker />
-          <button v-if="props.isStreaming" class="action-btn action-btn--stop" aria-label="Stop generation" @click="$emit('stop')">
+          <button v-if="isStreaming" :class="stopBtnClasses" aria-label="Stop generation" @click="$emit('stop')">
             <Square :size="11" :stroke-width="0" style="fill: currentColor" />
           </button>
           <button
             v-else
-            class="action-btn action-btn--send"
-            :class="{ 'action-btn--send-active': canSend }"
+            :class="sendBtnClasses"
             aria-label="Send message"
             :disabled="!canSend"
             @click="submit"
@@ -501,601 +463,7 @@ watch(
         </div>
       </div>
     </div>
-    <div v-if="showWorkspaceButton || runningTaskCount > 0" class="input-extender">
-      <button
-        v-if="showWorkspaceButton"
-        class="extender-workspace-btn"
-        :class="{ 'extender-workspace-btn--dirty': activeWorkspaceDirty, 'extender-workspace-btn--disabled': props.isStreaming }"
-        aria-label="Choose worktree"
-        :disabled="props.isStreaming"
-        @click="workspacePickerOpen = true"
-      >
-        <GitBranch :size="13" :stroke-width="2" />
-        <span v-if="activeWorkspaceLabel" class="workspace-name">{{ activeWorkspaceLabel }}</span>
-      </button>
-
-      <button
-        v-if="runningTaskCount > 0"
-        class="extender-bg-btn"
-        aria-label="Background commands"
-        @click="bgTasksOpen = !bgTasksOpen"
-      >
-        <Terminal :size="12" :stroke-width="2" />
-        <span>{{ runningTaskCount }} BG command{{ runningTaskCount !== 1 ? 's' : '' }} running</span>
-      </button>
-    </div>
-
-    <BackgroundTasksPopup v-if="bgTasksOpen" @close="bgTasksOpen = false" />
 
     <AttachmentPreview v-if="previewAttachment" :attachment="previewAttachment" @close="previewAttachment = null" />
   </div>
 </template>
-
-<style scoped>
-.chat-input-root {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: visible;
-}
-
-.overlay-enter-active {
-  transition:
-    opacity 200ms ease,
-    transform 200ms ease;
-}
-.overlay-leave-active {
-  transition:
-    opacity 150ms ease,
-    transform 150ms ease;
-}
-.overlay-enter-from,
-.overlay-leave-to {
-  opacity: 0;
-  transform: translateY(12px);
-}
-
-.input-shell {
-  position: relative;
-  width: 100%;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-bright);
-  border-radius: var(--radius-lg);
-  display: flex;
-  flex-direction: column;
-  transition: border-color 120ms ease;
-  overflow: visible;
-}
-.input-extender {
-  width: calc(100% - 24px);
-  height: 35px;
-  margin: 0 auto;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-bright);
-  border-top: none;
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  display: flex;
-  align-items: center;
-  padding: 0 10px;
-}
-.extender-workspace-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  font-size: 10.5px;
-  font-weight: 500;
-  transition:
-    background 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.extender-workspace-btn:hover {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-mid);
-  border-radius: var(--radius-lg);
-}
-.extender-workspace-btn:active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
-.extender-workspace-btn--dirty {
-  color: var(--color-accent-text);
-}
-.extender-workspace-btn--disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-.extender-bg-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-accent-text);
-  cursor: pointer;
-  font-size: 10.5px;
-  font-weight: 500;
-  margin-left: auto;
-  transition: all 100ms ease;
-}
-.extender-bg-btn:hover {
-  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-  border-color: var(--color-accent-dim);
-}
-.input-shell--focused {
-  border-color: var(--color-accent-dim);
-}
-.input-shell--streaming {
-  border-color: var(--color-accent-dim);
-}
-
-.input-scanner-track {
-  box-sizing: border-box;
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 10;
-  overflow: hidden;
-}
-.input-scanner-head {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 300%;
-  aspect-ratio: 1 / 1;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0%,
-    transparent 75%,
-    var(--color-accent) 95%,
-    var(--color-accent-bright) 100%
-  );
-  transform: translate(-50%, -50%) rotate(0deg);
-  animation: chat-scanner-spin 2.5s linear infinite;
-}
-@keyframes chat-scanner-spin {
-  0% {
-    transform: translate(-50%, -50%) rotate(0deg);
-  }
-  100% {
-    transform: translate(-50%, -50%) rotate(360deg);
-  }
-}
-
-/* ── Backdrop Syntax Highlighter Setup ───────────────────────────────────── */
-.input-text-area {
-  position: relative;
-  width: 100%;
-  display: flex;
-}
-
-/* Base styles must be completely identical between the two layers */
-.input-backdrop,
-.input-field {
-  width: 100%;
-  min-height: 44px;
-  max-height: 180px;
-  padding: 12px 14px 4px;
-  font-size: 13.5px;
-  font-family: inherit;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  letter-spacing: normal;
-  word-spacing: normal;
-  border: none;
-  box-sizing: border-box;
-  margin: 0;
-}
-
-.input-backdrop {
-  position: absolute;
-  inset: 0;
-  color: var(--color-text-primary);
-  pointer-events: none; /* Let clicks pass through to textarea */
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-.input-backdrop::-webkit-scrollbar {
-  display: none;
-}
-
-.backdrop-placeholder {
-  color: var(--color-text-tertiary);
-}
-
-.backdrop-mention {
-  color: var(--color-accent-text);
-  background: var(--color-accent-muted-plus);
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--color-accent-dim);
-  padding: 0 4px;
-  /*
-    Negative margin zeroes out the physical width of the padding and border
-    so the caret in the invisible textarea stays perfectly aligned!
-  */
-  margin: 0 -5px;
-}
-
-.backdrop-skill {
-  color: var(--color-success-text);
-  background: color-mix(in srgb, var(--color-success) 12%, transparent);
-  border-radius: var(--radius-xs);
-  border: 1px solid color-mix(in srgb, var(--color-success) 28%, transparent);
-  padding: 0 4px;
-  margin: 0 -5px;
-}
-
-.input-field {
-  position: relative;
-  z-index: 1;
-  background: transparent;
-  color: transparent; /* Makes real text invisible, revealing colored backdrop text! */
-  caret-color: var(--color-accent-bright);
-  outline: none;
-  overflow-y: auto;
-  resize: none;
-}
-.input-field::selection {
-  color: var(--color-text-primary);
-  background: var(--color-accent);
-}
-.input-field::placeholder {
-  color: transparent;
-}
-.input-field:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-
-.input-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px 8px;
-  position: relative;
-}
-.tool-spacer {
-  flex: 1;
-}
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.attachment-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 10px 6px;
-}
-
-.upload-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-primary);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.upload-btn:hover {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-mid);
-  border-radius: var(--radius-lg);
-  color: var(--color-text-secondary);
-}
-.upload-btn:active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
-.upload-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.workspace-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 120ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.workspace-btn:hover {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-mid);
-  border-radius: var(--radius-lg);
-  color: var(--color-text-secondary);
-}
-
-.workspace-btn--dirty {
-  color: var(--color-accent-text);
-}
-
-.workspace-name {
-  font-size: 12px;
-  font-weight: 600;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.action-btn:hover {
-  border-radius: var(--radius-lg);
-}
-.action-btn:active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
-
-.action-btn--send {
-  background: transparent;
-  color: var(--color-text-tertiary);
-  border-color: var(--color-border-subtle);
-}
-.action-btn--send:disabled {
-  cursor: default;
-  opacity: 0.3;
-  transform: none;
-}
-.action-btn--send-active {
-  background: var(--color-accent-muted);
-  border-color: var(--color-accent-dim);
-  color: var(--color-accent-text);
-}
-.action-btn--send-active:hover {
-  background: color-mix(in srgb, var(--color-accent-muted) 180%, transparent);
-  border-color: var(--color-accent);
-}
-.action-btn--stop {
-  background: color-mix(in srgb, var(--color-danger) 10%, transparent);
-  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
-  color: var(--color-danger-text);
-}
-.action-btn--stop:hover {
-  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
-  border-color: color-mix(in srgb, var(--color-danger) 50%, transparent);
-}
-
-/* ── Permission mode picker ────────────────────────────────────────────────── */
-.perm-picker-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.plan-mode-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 8px;
-  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
-  color: var(--color-accent);
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.perm-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 30px;
-  padding-inline: 10px 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-primary);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.perm-btn:hover,
-.perm-btn--open {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-mid);
-  border-radius: var(--radius-lg);
-}
-
-.perm-btn:active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
-
-.perm-btn--auto {
-  color: var(--color-warning-text);
-}
-
-.perm-btn--auto:hover,
-.perm-btn--auto.perm-btn--open {
-  color: var(--color-warning-text);
-  background: color-mix(in srgb, var(--color-warning-text) 8%, transparent);
-  border-color: color-mix(in srgb, var(--color-warning-text) 30%, transparent);
-}
-
-.perm-chevron {
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.perm-chevron--open {
-  transform: rotate(180deg);
-}
-
-.perm-btn--auto .perm-chevron {
-  color: color-mix(in srgb, var(--color-warning-text) 70%, transparent);
-}
-
-.perm-dropdown {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 148px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-bright);
-  border-radius: var(--radius-lg);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 4px 12px rgba(0, 0, 0, 0.3),
-    0 12px 28px rgba(0, 0, 0, 0.35);
-  padding: 4px;
-  z-index: 10000;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.perm-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 30px;
-  padding-inline: 8px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  box-sizing: border-box;
-  transition:
-    background 100ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 100ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 100ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.perm-option:hover {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-subtle);
-  color: var(--color-text-primary);
-}
-
-.perm-option--active {
-  background: var(--color-accent-muted-plus);
-  border-color: var(--color-accent-dim);
-  color: var(--color-text-primary);
-}
-
-.perm-option--active:hover {
-  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
-  border-color: var(--color-accent);
-}
-
-.perm-option--auto.perm-option--active {
-  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
-  border-color: var(--color-danger);
-  color: var(--color-text-primary);
-}
-
-.perm-option--auto.perm-option--active:hover {
-  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
-  border-color: var(--color-danger);
-}
-
-.perm-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  background: transparent;
-}
-
-.perm-dd-enter-active {
-  transition:
-    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.perm-dd-leave-active {
-  transition:
-    opacity 100ms cubic-bezier(0.7, 0, 0.84, 0),
-    transform 100ms cubic-bezier(0.7, 0, 0.84, 0);
-}
-
-.perm-dd-enter-from,
-.perm-dd-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(8px) scale(0.96);
-  transform-origin: bottom center;
-}
-
-.perm-dd-enter-to,
-.perm-dd-leave-from {
-  opacity: 1;
-  transform: translateX(-50%);
-  transform-origin: bottom center;
-}
-</style>

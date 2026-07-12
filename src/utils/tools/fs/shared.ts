@@ -83,7 +83,10 @@ export type FileReadRegistry = Map<string, ReadRegistryEntry>
 export class FileLockManager {
   private locks = new Map<string, Promise<void>>()
 
-  async withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  async withLock<T>(key: string, fn: () => Promise<T>, forced: boolean = false): Promise<T> {
+    if (forced)
+      return fn()
+
     const prev = this.locks.get(key) ?? Promise.resolve()
     const current = prev.then(() => fn(), () => fn())
     const tail = current.then(() => {}, () => {})

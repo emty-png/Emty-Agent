@@ -2,8 +2,8 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { TerminalEvent } from '@/utils/terminal'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { makeId } from '@/stores/chat/utils'
 import { closeTerminalSession, listenToTerminalEvents, startTerminalSession, writeTerminalSession } from '@/utils/terminal'
-import { makeId } from './chat/utils'
 
 export type TerminalSessionStatus = 'starting' | 'ready' | 'closed' | 'error'
 
@@ -22,9 +22,13 @@ export interface TerminalSessionState {
   updatedAt: number
 }
 
+export type TerminalOwnerPosition = 'bottom' | 'right'
+
 export interface TerminalOwnerState {
   isPanelOpen: boolean
   heightPercent: number
+  position: TerminalOwnerPosition
+  splitPercent: number
   sessions: TerminalSessionState[]
   activeSessionId: string | null
 }
@@ -32,6 +36,7 @@ export interface TerminalOwnerState {
 const DEFAULT_HEIGHT_PERCENT = 28
 const MIN_HEIGHT_PERCENT = 18
 const MAX_HEIGHT_PERCENT = 50
+const DEFAULT_SPLIT_PERCENT = 50
 const MAX_BUFFER_CHARS = 200_000
 const DEFAULT_COLS = 120
 const DEFAULT_ROWS = 28
@@ -49,6 +54,8 @@ function createOwnerState(): TerminalOwnerState {
   return {
     isPanelOpen: false,
     heightPercent: DEFAULT_HEIGHT_PERCENT,
+    position: 'bottom',
+    splitPercent: DEFAULT_SPLIT_PERCENT,
     sessions: [],
     activeSessionId: null,
   }
@@ -217,6 +224,15 @@ export const useTerminalStore = defineStore('terminal', () => {
     ensureOwner(ownerId).heightPercent = Math.min(MAX_HEIGHT_PERCENT, Math.max(MIN_HEIGHT_PERCENT, percent))
   }
 
+  function setTerminalPosition(ownerId: string, position: TerminalOwnerPosition) {
+    ensureOwner(ownerId).position = position
+  }
+
+  function setSplitPercent(ownerId: string, percent: number) {
+    const normalized = Math.min(100, Math.max(0, Math.round(Number(percent) || 0)))
+    ensureOwner(ownerId).splitPercent = normalized
+  }
+
   async function createSession(ownerId: string, cwd?: string | null) {
     await ensureTerminalEvents()
 
@@ -349,6 +365,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     closePanel,
     togglePanel,
     setHeightPercent,
+    setTerminalPosition,
+    setSplitPercent,
     createSession,
     ensureVisibleSession,
     writeToSession,

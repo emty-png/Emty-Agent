@@ -7,6 +7,7 @@ import {
   Puzzle,
   Server,
   Settings,
+  SlidersHorizontal,
   X,
   Zap,
 } from 'lucide-vue-next'
@@ -16,6 +17,7 @@ import ProvidersSection from './providers/ProvidersSection.vue'
 import AgentSection from './sections/AgentSection.vue'
 import McpSection from './sections/McpSection.vue'
 import ModelsSection from './sections/ModelsSection.vue'
+import OthersSection from './sections/OthersSection.vue'
 import SkillsSection from './sections/SkillsSection.vue'
 import ThemeSection from './sections/ThemeSection.vue'
 
@@ -23,7 +25,7 @@ import ThemeSection from './sections/ThemeSection.vue'
 const emit = defineEmits<{ close: []; browseProviders: [] }>()
 
 //  navigation
-type Section = 'agent' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models'
+type Section = 'agent' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models' | 'others'
 const activeSection = ref<Section>('providers')
 
 const NAV: { id: Section; label: string; icon: Component }[] = [
@@ -33,6 +35,7 @@ const NAV: { id: Section; label: string; icon: Component }[] = [
   { id: 'mcp', label: 'MCP', icon: Server },
   { id: 'providers', label: 'Providers', icon: Puzzle },
   { id: 'models', label: 'Models', icon: Zap },
+  { id: 'others', label: 'Others', icon: SlidersHorizontal },
 ]
 
 // close on Escape
@@ -86,6 +89,7 @@ function onKeydown(e: KeyboardEvent) {
             <McpSection v-else-if="activeSection === 'mcp'" />
             <ProvidersSection v-else-if="activeSection === 'providers'" @browse-providers="emit('browseProviders')" />
             <ModelsSection v-else-if="activeSection === 'models'" />
+            <OthersSection v-else-if="activeSection === 'others'" />
           </div>
         </div>
       </div>

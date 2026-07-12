@@ -3,7 +3,7 @@ import { tool } from 'ai'
 
 export type ToolPermissionMode = 'ask' | 'auto'
 export type ToolPermissionDecision = 'allow-once' | 'allow-session' | 'deny'
-const NO_PERMISSION_TOOL_NAMES = new Set(['ask_questions', 'create_task', 'update_task', 'list_tasks', 'get_task', 'sleep', 'write_plan'])
+const NO_PERMISSION_TOOL_NAMES = new Set(['ask_questions', 'create_task', 'update_task', 'list_tasks', 'get_task', 'sleep', 'plan'])
 
 export interface ToolPermissionRequest {
   tabId: string
@@ -75,6 +75,17 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
   actionDetails: string[]
 } {
   switch (toolName) {
+    case 'plan': {
+      const planName = typeof args.planName === 'string' && args.planName.trim() ? args.planName : 'plan.md'
+      return {
+        actionTitle: 'Write implementation plan',
+        actionDetails: [
+          `Plan: ${planName}`,
+          'Action: save a reviewable markdown plan for this conversation',
+        ],
+      }
+    }
+
     case 'list_directory': {
       const ignore = asStringList(args.ignore)
       return {

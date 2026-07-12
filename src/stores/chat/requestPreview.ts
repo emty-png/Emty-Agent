@@ -5,6 +5,7 @@ import type { ToolSet } from '@/utils/ai'
 import { asSchema } from 'ai'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
+import { getEffectiveDisabledSkillIds, getEffectiveMcpServers } from '@/utils/perTabOverrides'
 import { filterDisabledTools } from '@/utils/tools/catalog'
 import { buildMcpAliasedTools } from '@/utils/tools/mcpAliases'
 import { buildMentionContext } from './mentions'
@@ -120,6 +121,8 @@ export async function buildChatRequestPreview(options: {
   ])
 
   const workspace = await inspectWorkspace(workspacePath)
+  const effectiveDisabledSkillIds = getEffectiveDisabledSkillIds(tab, settings.disabledSkillIds)
+  const effectiveMcpServers = getEffectiveMcpServers(tab, settings.mcpServers)
 
   const text = content.trim()
   const maxOutputTokens = activeModel.supportsThinking
@@ -149,7 +152,7 @@ export async function buildChatRequestPreview(options: {
     projectPath: workspacePath,
     requestText: text,
     autoContext: settings.autoContext,
-    disabledSkillIds: settings.disabledSkillIds,
+    disabledSkillIds: effectiveDisabledSkillIds,
     supportsToolCalls: activeModel.supportsToolCalls,
     workspaceContext: buildWorkspacePromptContext(workspace),
     memoryContext,
@@ -199,7 +202,7 @@ export async function buildChatRequestPreview(options: {
     ? await buildToolDefinitions({
         projectPath: workspacePath,
         memoryEnabled: settings.memory.enabled,
-        mcpServers: settings.mcpServers,
+        mcpServers: effectiveMcpServers,
         disabledToolIds: settings.disabledToolIds,
         readRegistry,
         ...(osInfo?.shell ? { shell: osInfo.shell } : {}),

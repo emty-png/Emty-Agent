@@ -28,7 +28,6 @@ const props = defineProps<{
 
 const ICON_CLIPBOARD = /* html */'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>'
 const ICON_CHECK = /* html */'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>'
-const ICON_WRAP = /* html */'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><path d="M3 12h15a3 3 0 0 1 0 6h-4"/><polyline points="16 16 14 18 16 20"/><line x1="3" y1="18" x2="10" y2="18"/></svg>'
 
 // ── rendered output ───────────────────────────────────────────────────────────
 
@@ -76,26 +75,26 @@ function renderInline(raw: string): string {
   return parts.map((part, i) => {
     // Odd-indexed parts are inline code spans.
     if (i % 2 === 1) {
-      return `<code class="md-ic">${escHtml(part.slice(1, -1))}</code>`
+      return `<code class="[font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] text-[0.875em] bg-[var(--color-bg-elevated)] text-[var(--color-code)] px-[5px] py-[1px] rounded-[var(--radius-sm)] border border-[var(--color-border-mid)]">${escHtml(part.slice(1, -1))}</code>`
     }
 
     let t = escHtml(part)
 
     // bold + italic (must be tested before bold or italic individually)
-    t = t.replace(/\*\*\*(.+?)\*\*\*/gs, '<strong><em>$1</em></strong>')
-    t = t.replace(/___(.+?)___/gs, '<strong><em>$1</em></strong>')
+    t = t.replace(/\*\*\*(.+?)\*\*\*/gs, '<strong class="font-bold text-[var(--color-text-primary)]"><em class="italic text-[var(--color-text-secondary)]">$1</em></strong>')
+    t = t.replace(/___(.+?)___/gs, '<strong class="font-bold text-[var(--color-text-primary)]"><em class="italic text-[var(--color-text-secondary)]">$1</em></strong>')
     // bold
-    t = t.replace(/\*\*(.+?)\*\*/gs, '<strong>$1</strong>')
-    t = t.replace(/__(.+?)__/gs, '<strong>$1</strong>')
+    t = t.replace(/\*\*(.+?)\*\*/gs, '<strong class="font-bold text-[var(--color-text-primary)]">$1</strong>')
+    t = t.replace(/__(.+?)__/gs, '<strong class="font-bold text-[var(--color-text-primary)]">$1</strong>')
     // italic  (* and _)
-    t = t.replace(/\*([^\s*][^*]*)\*/g, '<em>$1</em>')
-    t = t.replace(/_([^\s_][^_]*)_/g, '<em>$1</em>')
+    t = t.replace(/\*([^\s*][^*]*)\*/g, '<em class="italic text-[var(--color-text-secondary)]">$1</em>')
+    t = t.replace(/_([^\s_][^_]*)_/g, '<em class="italic text-[var(--color-text-secondary)]">$1</em>')
     // strikethrough
-    t = t.replace(/~~(.+?)~~/g, '<del>$1</del>')
+    t = t.replace(/~~(.+?)~~/g, '<del class="line-through text-[var(--color-text-tertiary)]">$1</del>')
     // links
     t = t.replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
-      '<a href="$2" class="md-a" target="_blank" rel="noopener noreferrer">$1</a>',
+      '<a href="$2" class="text-[var(--color-info-text)] underline underline-offset-2 transition-colors duration-[120ms] ease-[ease] hover:text-[var(--color-text-primary)]" target="_blank" rel="noopener noreferrer">$1</a>',
     )
 
     return t
@@ -245,152 +244,99 @@ function tokenise(content: string): Block[] {
 
 // ── block → HTML ──────────────────────────────────────────────────────────────
 
-async function blockToHtml(block: Block): Promise<string> {
+/**
+ * Unified block-to-HTML renderer.
+ * Returns a plain string for non-code blocks, or a Promise for code blocks
+ * that need async Shiki highlighting.
+ */
+function renderBlock(block: Block): string | Promise<string> {
   switch (block.type) {
-    // ── heading ───────────────────────────────────────────────────────────────
     case 'heading': {
       const tag = `h${block.level}`
-      return `<${tag} class="md-h md-h${block.level}">${renderInline(block.text)}</${tag}>`
+      const size = block.level === 1
+        ? 'text-[1.35em]'
+        : block.level === 2
+          ? 'text-[1.2em] border-b border-[var(--color-border-subtle)] pb-[4px]'
+          : block.level === 3
+            ? 'text-[1.05em]'
+            : 'text-[1em]'
+      const color = block.level >= 4 ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-primary)]'
+      return `<${tag} class="${size} ${color} font-bold leading-[1.3] mt-[20px] mb-[8px] first:mt-0 last:mb-0">${renderInline(block.text)}</${tag}>`
     }
-
-    // ── paragraph ─────────────────────────────────────────────────────────────
-    case 'paragraph': {
-      return `<p class="md-p">${block.lines.map(l => renderInline(l)).join('<br>')}</p>`
-    }
-
-    // ── fenced code ───────────────────────────────────────────────────────────
-    case 'code': {
-      const { id, lang, code, closed } = block
-      codeStore.set(id, code)
-
-      let body: string
-      if (!closed) {
-        // Streaming: fence not yet closed — plain pre + blinking cursor.
-        body = `<div class="md-code-body">\
-<span class="md-code-plain">${escHtml(code)}</span>\
-<span class="md-cursor"> ▊</span></div>`
-      }
-      else {
-        try {
-          const h = await getHighlighter()
-          const useLang = h.getLoadedLanguages().includes(lang as never) ? lang : 'plaintext'
-          body = `<div class="md-code-body">${h.codeToHtml(code, { lang: useLang, theme: 'ember-dark' })}</div>`
-        }
-        catch {
-          body = `<div class="md-code-body"><pre class="md-code-fallback"><code>${escHtml(code)}</code></pre></div>`
-        }
-      }
-
-      const langLabel = lang && lang !== 'plaintext'
-        ? `<span class="md-code-lang">${escHtml(lang)}</span>`
-        : '<span></span>'
-
-      const actions = `<div class="md-code-actions">\
-<button class="md-btn md-wrap-btn" data-wrap-id="${id}" title="Toggle word wrap" aria-label="Toggle word wrap">${ICON_WRAP}</button>\
-<button class="md-btn md-copy-btn" data-code-id="${id}" aria-label="Copy code">\
-<span class="md-copy-idle">${ICON_CLIPBOARD}<span>Copy</span></span>\
-<span class="md-copy-done">${ICON_CHECK}<span>Copied!</span></span>\
-</button></div>`
-
-      return `<div class="md-code-wrap" data-lang="${escHtml(lang)}">\
-<div class="md-code-header">${langLabel}${actions}</div>${body}</div>`
-    }
-
-    // ── unordered list (with GFM task items) ──────────────────────────────────
+    case 'paragraph':
+      return `<p class="mb-[14px] last:mb-0">${block.lines.map(l => renderInline(l)).join('<br>')}</p>`
     case 'ul': {
       const isTaskList = block.items.some(it => /^\[[ x]\]/i.test(it))
       const items = block.items.map(it => {
         const task = it.match(/^\[([ x])\]\s+(\S.*)$/i)
         if (task) {
           const checked = task[1]!.toLowerCase() === 'x'
-          return `<li class="md-li md-task-item">\
-<label class="md-task-label">\
-<input type="checkbox" class="md-checkbox" ${checked ? 'checked' : ''} disabled>\
-<span>${renderInline(task[2]!)}</span>\
-</label></li>`
+          return `<li class="mb-[5px] leading-[1.6]"><label class="flex items-baseline gap-2 cursor-default select-none"><input type="checkbox" class="shrink-0 w-[13px] h-[13px] m-0 accent-[var(--color-accent-bright)] cursor-default translate-y-[1px]" ${checked ? 'checked' : ''} disabled><span>${renderInline(task[2]!)}</span></label></li>`
         }
-        return `<li class="md-li">${renderInline(it)}</li>`
+        return `<li class="mb-[4px] leading-[1.6]">${renderInline(it)}</li>`
       }).join('')
-      return `<ul class="${isTaskList ? 'md-ul md-task-list' : 'md-ul'}">${items}</ul>`
+      return `<ul class="${isTaskList ? 'pl-[4px] list-none' : 'pl-[20px] list-disc'} mb-[14px] last:mb-0">${items}</ul>`
     }
-
-    // ── ordered list ──────────────────────────────────────────────────────────
     case 'ol': {
-      const items = block.items.map(it => `<li class="md-li">${renderInline(it)}</li>`).join('')
-      return `<ol class="md-ol">${items}</ol>`
+      const items = block.items.map(it => `<li class="mb-[4px] leading-[1.6]">${renderInline(it)}</li>`).join('')
+      return `<ol class="pl-[20px] mb-[14px] last:mb-0 list-decimal">${items}</ol>`
     }
-
-    // ── blockquote ────────────────────────────────────────────────────────────
     case 'blockquote': {
-      // Render inner lines as a paragraph so inline formatting works
       const inner = block.lines.map(l => renderInline(l)).join('<br>')
-      return `<blockquote class="md-bq"><p class="md-bq-inner">${inner}</p></blockquote>`
+      return `<blockquote class="border-l-[3px] border-[var(--color-accent-dim)] mb-[14px] last:mb-0 px-[16px] py-[8px] bg-[color-mix(in_srgb,var(--color-accent-muted)_40%,transparent)] rounded-r-[var(--radius-md)] text-[var(--color-text-secondary)] italic"><p class="m-0">${inner}</p></blockquote>`
     }
-
-    // ── table ─────────────────────────────────────────────────────────────────
     case 'table': {
-      const thead = `<thead><tr>${block.header.map(h => `<th class="md-th">${renderInline(h)}</th>`).join('')}</tr></thead>`
+      const thead = `<thead><tr>${block.header.map(h => `<th class="px-[12px] py-[7px] text-left font-semibold text-[11.5px] uppercase tracking-[0.04em] text-[var(--color-text-tertiary)] bg-[var(--color-bg-surface)] border-b border-[var(--color-border-mid)] whitespace-nowrap">${renderInline(h)}</th>`).join('')}</tr></thead>`
       const tbody = `<tbody>${block.rows.map(row =>
-        `<tr>${row.map(c => `<td class="md-td">${renderInline(c)}</td>`).join('')}</tr>`,
+        `<tr class="group/tr hover:bg-[color-mix(in_srgb,var(--color-bg-hover)_60%,transparent)]">${row.map(c => `<td class="px-[12px] py-[7px] border-b border-[var(--color-border-subtle)] text-[var(--color-text-primary)] align-top group-last/tr:border-b-0">${renderInline(c)}</td>`).join('')}</tr>`,
       ).join('')}</tbody>`
-      return `<div class="md-table-wrap"><table class="md-table">${thead}${tbody}</table></div>`
+      return `<div class="overflow-x-auto mb-[14px] last:mb-0 border border-[var(--color-border-mid)] rounded-[var(--radius-md)]"><table class="w-full border-collapse text-[13px]">${thead}${tbody}</table></div>`
     }
-
-    // ── horizontal rule ───────────────────────────────────────────────────────
     case 'hr':
-      return '<hr class="md-hr">'
-
+      return '<hr class="border-0 border-t border-[var(--color-border-mid)] my-[18px] last:mb-0">'
+    case 'code':
+      return renderCodeBlock(block)
     default:
       return ''
   }
 }
 
-// ── render pipeline ───────────────────────────────────────────────────────────
+async function renderCodeBlock(block: CodeBlock): Promise<string> {
+  const { id, lang, code, closed } = block
+  codeStore.set(id, code)
 
-/**
- * Synchronous HTML generator for non-code blocks.
- * Avoids the async overhead of blockToHtml() for simple blocks.
- */
-function blockToHtmlSync(block: Block): string | null {
-  switch (block.type) {
-    case 'heading': {
-      const tag = `h${block.level}`
-      return `<${tag} class="md-h md-h${block.level}">${renderInline(block.text)}</${tag}>`
-    }
-    case 'paragraph':
-      return `<p class="md-p">${block.lines.map(l => renderInline(l)).join('<br>')}</p>`
-    case 'ul': {
-      const isTaskList = block.items.some(it => /^\[[ x]\]/i.test(it))
-      const items = block.items.map(it => {
-        const task = it.match(/^\[([ x])\]\s+(\S.*)$/i)
-        if (task) {
-          const checked = task[1]!.toLowerCase() === 'x'
-          return `<li class="md-li md-task-item"><label class="md-task-label"><input type="checkbox" class="md-checkbox" ${checked ? 'checked' : ''} disabled><span>${renderInline(task[2]!)}</span></label></li>`
-        }
-        return `<li class="md-li">${renderInline(it)}</li>`
-      }).join('')
-      return `<ul class="${isTaskList ? 'md-ul md-task-list' : 'md-ul'}">${items}</ul>`
-    }
-    case 'ol': {
-      const items = block.items.map(it => `<li class="md-li">${renderInline(it)}</li>`).join('')
-      return `<ol class="md-ol">${items}</ol>`
-    }
-    case 'blockquote': {
-      const inner = block.lines.map(l => renderInline(l)).join('<br>')
-      return `<blockquote class="md-bq"><p class="md-bq-inner">${inner}</p></blockquote>`
-    }
-    case 'table': {
-      const thead = `<thead><tr>${block.header.map(h => `<th class="md-th">${renderInline(h)}</th>`).join('')}</tr></thead>`
-      const tbody = `<tbody>${block.rows.map(row => `<tr>${row.map(c => `<td class="md-td">${renderInline(c)}</td>`).join('')}</tr>`).join('')}</tbody>`
-      return `<div class="md-table-wrap"><table class="md-table">${thead}${tbody}</table></div>`
-    }
-    case 'hr':
-      return '<hr class="md-hr">'
-    // code blocks must go through the async path
-    default:
-      return null
+  let body: string
+  if (!closed) {
+    body = `<div class="overflow-x-auto [&_pre]:m-0 [&_pre]:px-[16px] [&_pre]:py-[14px] [&_pre]:!bg-[var(--color-bg-base)] [&_pre]:[font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] [&_pre]:text-[12.5px] [&_pre]:leading-[1.6] [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_code]:[font-family:inherit] [&_code]:bg-transparent">\
+<span class="[font-family:'JetBrains_Mono','Fira_Code',ui-monospace,monospace] text-[12.5px] text-[var(--color-text-primary)] whitespace-pre-wrap block px-[16px] py-[14px]">${escHtml(code)}</span>\
+<span class="animate-[md-blink_0.9s_step-end_infinite] text-[var(--color-accent-bright)] motion-reduce:animate-none motion-reduce:opacity-100"> ▊</span></div>`
   }
+  else {
+    try {
+      const h = await getHighlighter()
+      const useLang = h.getLoadedLanguages().includes(lang as never) ? lang : 'plaintext'
+      body = `<div class="overflow-x-auto [&_pre]:m-0 [&_pre]:px-[16px] [&_pre]:py-[14px] [&_pre]:!bg-[var(--color-bg-base)] [&_pre]:[font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] [&_pre]:text-[12.5px] [&_pre]:leading-[1.6] [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_code]:[font-family:inherit] [&_code]:bg-transparent">${h.codeToHtml(code, { lang: useLang, theme: 'ember-dark' })}</div>`
+    }
+    catch {
+      body = `<div class="overflow-x-auto [&_pre]:m-0 [&_pre]:px-[16px] [&_pre]:py-[14px] [&_pre]:!bg-[var(--color-bg-base)] [&_pre]:[font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] [&_pre]:text-[12.5px] [&_pre]:leading-[1.6] [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_code]:[font-family:inherit] [&_code]:bg-transparent"><pre class="m-0 px-[16px] py-[14px] text-[var(--color-text-primary)] [font-family:'JetBrains_Mono','Fira_Code',ui-monospace,monospace] text-[12.5px] whitespace-pre-wrap"><code>${escHtml(code)}</code></pre></div>`
+    }
+  }
+
+  const langLabel = lang && lang !== 'plaintext'
+    ? `<span class="[font-family:'JetBrains_Mono','Fira_Code',ui-monospace,monospace] text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">${escHtml(lang)}</span>`
+    : '<span></span>'
+
+  const actions = `<div class="flex items-center gap-1 ml-auto">\
+<button class="md-btn md-copy-btn group inline-flex items-center gap-[5px] text-[11px] font-medium px-[8px] py-[2px] h-[22px] border border-[var(--color-border-mid)] rounded-[var(--radius-sm)] bg-transparent text-[var(--color-text-tertiary)] cursor-pointer transition-[background,color,border-color] duration-[110ms] ease-[ease] whitespace-nowrap leading-none hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] motion-reduce:transition-none" data-code-id="${id}" aria-label="Copy code">\
+<span class="md-copy-idle inline-flex items-center gap-[5px] group-data-[copied]:hidden">${ICON_CLIPBOARD}<span>Copy</span></span>\
+<span class="md-copy-done hidden items-center gap-[5px] text-[var(--color-success-text,#4ade80)] group-data-[copied]:inline-flex">${ICON_CHECK}<span>Copied!</span></span>\
+</button></div>`
+
+  return `<div class="md-code-wrap rounded-[var(--radius-md)] border border-[var(--color-border-mid)] overflow-hidden bg-[var(--color-bg-base)] mb-[14px] last:mb-0" data-lang="${escHtml(lang)}">\
+<div class="flex items-center justify-between px-[8px] py-[6px] pl-[12px] bg-[var(--color-bg-surface)] border-b border-[var(--color-border-mid)] min-h-[34px] gap-2">${langLabel}${actions}</div>${body}</div>`
 }
+
+// ── render pipeline ───────────────────────────────────────────────────────────
 
 /**
  * Stable prefix cache for incremental rendering.
@@ -454,7 +400,7 @@ async function renderContent(content: string, version: number, streaming: boolea
     blockSeq = 0
 
     const blocks = tokenise(content)
-    const parts = await Promise.all(blocks.map(blockToHtml))
+    const parts = await Promise.all(blocks.map(b => Promise.resolve(renderBlock(b))))
 
     if (renderVersion === version)
       html.value = parts.join('\n')
@@ -477,15 +423,8 @@ async function renderContent(content: string, version: number, streaming: boolea
     const newParts: string[] = []
 
     for (const block of newBlocks) {
-      // Try sync path first (avoids async overhead for non-code blocks)
-      const syncHtml = blockToHtmlSync(block)
-      if (syncHtml !== null) {
-        newParts.push(syncHtml)
-      }
-      else {
-        // Code block — use async Shiki path
-        newParts.push(await blockToHtml(block))
-      }
+      const result = renderBlock(block)
+      newParts.push(typeof result === 'string' ? result : await result)
       if (renderVersion !== version)
         return
     }
@@ -509,13 +448,8 @@ async function renderContent(content: string, version: number, streaming: boolea
     const tailParts: string[] = []
 
     for (const block of tailBlocks) {
-      const syncHtml = blockToHtmlSync(block)
-      if (syncHtml !== null) {
-        tailParts.push(syncHtml)
-      }
-      else {
-        tailParts.push(await blockToHtml(block))
-      }
+      const result = renderBlock(block)
+      tailParts.push(typeof result === 'string' ? result : await result)
       if (renderVersion !== version)
         return
     }
@@ -588,17 +522,6 @@ function handleClick(e: MouseEvent): void {
       copyBtn.dataset.copied = '1'
       setTimeout(() => { delete copyBtn.dataset.copied }, 2000)
     }).catch(() => {})
-    return
-  }
-
-  // ── word-wrap toggle ──
-  const wrapBtn = target.closest<HTMLElement>('[data-wrap-id]')
-  if (wrapBtn) {
-    const wrap = wrapBtn.closest<HTMLElement>('.md-code-wrap')
-    if (wrap) {
-      wrap.classList.toggle('is-wrapped')
-      wrapBtn.classList.toggle('is-active')
-    }
   }
 }
 </script>
@@ -610,303 +533,11 @@ function handleClick(e: MouseEvent): void {
     • All text that originates from block parsing is passed through escHtml().
     • Links have target="_blank" rel="noopener noreferrer".
   -->
-  <div class="md-root" @click.capture="handleClick" v-html="html" />
+  <div class="text-[13.5px] leading-[1.65] text-[var(--color-text-primary)] break-words [word-break:break-word] [&_svg:not(.md-btn_svg)]:block [&_svg:not(.md-btn_svg)]:max-w-full [&_svg:not(.md-btn_svg)]:h-auto [&_svg:not(.md-btn_svg)]:max-h-[480px]" @click.capture="handleClick" v-html="html" />
 </template>
 
-<style scoped>
-/* ── root ─────────────────────────────────────────────────────────────────── */
-.md-root {
-  font-size: 13.5px;
-  line-height: 1.65;
-  color: var(--color-text-primary);
-  word-break: break-word;
-}
-
-/* Consistent bottom margin for all block-level elements */
-.md-root :deep(p),
-.md-root :deep(ul),
-.md-root :deep(ol),
-.md-root :deep(blockquote),
-.md-root :deep(.md-code-wrap),
-.md-root :deep(.md-table-wrap) {
-  margin-bottom: 14px;
-}
-.md-root :deep(*:last-child) {
-  margin-bottom: 0;
-}
-
-/* ── headings ─────────────────────────────────────────────────────────────── */
-.md-root :deep(.md-h) {
-  font-weight: 700;
-  line-height: 1.3;
-  color: var(--color-text-primary);
-  margin-top: 20px;
-  margin-bottom: 8px;
-}
-/* Suppress top margin when a heading is the very first element */
-.md-root :deep(.md-h:first-child) {
-  margin-top: 0;
-}
-.md-root :deep(.md-h1) {
-  font-size: 1.35em;
-}
-.md-root :deep(.md-h2) {
-  font-size: 1.2em;
-  border-bottom: 1px solid var(--color-border-subtle);
-  padding-bottom: 4px;
-}
-.md-root :deep(.md-h3) {
-  font-size: 1.05em;
-}
-.md-root :deep(.md-h4),
-.md-root :deep(.md-h5),
-.md-root :deep(.md-h6) {
-  font-size: 1em;
-  color: var(--color-text-secondary);
-}
-
-/* ── paragraph ────────────────────────────────────────────────────────────── */
-.md-root :deep(.md-p) {
-  margin: 0 0 14px;
-}
-
-/* ── inline code ──────────────────────────────────────────────────────────── */
-.md-root :deep(.md-ic) {
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
-  font-size: 0.875em;
-  background: var(--color-bg-elevated);
-  color: var(--color-code);
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border-mid);
-}
-
-/* ── links ────────────────────────────────────────────────────────────────── */
-.md-root :deep(.md-a) {
-  color: var(--color-info-text);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  transition: color 120ms ease;
-}
-.md-root :deep(.md-a:hover) {
-  color: var(--color-text-primary);
-}
-
-/* ── strong / em / del ────────────────────────────────────────────────────── */
-.md-root :deep(strong) {
-  font-weight: 700;
-  color: var(--color-text-primary);
-}
-.md-root :deep(em) {
-  font-style: italic;
-  color: var(--color-text-secondary);
-}
-.md-root :deep(del) {
-  text-decoration: line-through;
-  color: var(--color-text-tertiary);
-}
-
-/* ── lists ────────────────────────────────────────────────────────────────── */
-.md-root :deep(.md-ul),
-.md-root :deep(.md-ol) {
-  padding-left: 20px;
-  margin: 0 0 14px;
-}
-.md-root :deep(.md-li) {
-  margin-bottom: 4px;
-  line-height: 1.6;
-}
-.md-root :deep(.md-ul .md-li) {
-  list-style-type: disc;
-}
-.md-root :deep(.md-ol .md-li) {
-  list-style-type: decimal;
-}
-
-/* ── task list ────────────────────────────────────────────────────────────── */
-.md-root :deep(.md-task-list) {
-  list-style: none;
-  padding-left: 4px;
-}
-.md-root :deep(.md-task-item) {
-  margin-bottom: 5px;
-}
-.md-root :deep(.md-task-label) {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  cursor: default;
-  user-select: none;
-}
-.md-root :deep(.md-checkbox) {
-  flex-shrink: 0;
-  width: 13px;
-  height: 13px;
-  margin: 0;
-  accent-color: var(--color-accent-bright);
-  cursor: default;
-  translate: 0 1px;
-}
-
-/* ── blockquote ───────────────────────────────────────────────────────────── */
-.md-root :deep(.md-bq) {
-  border-left: 3px solid var(--color-accent-dim);
-  margin: 0 0 14px;
-  padding: 8px 16px;
-  background: color-mix(in srgb, var(--color-accent-muted) 40%, transparent);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  color: var(--color-text-secondary);
-  font-style: italic;
-}
-.md-root :deep(.md-bq-inner) {
-  margin: 0;
-}
-
-/* ── horizontal rule ──────────────────────────────────────────────────────── */
-.md-root :deep(.md-hr) {
-  border: none;
-  border-top: 1px solid var(--color-border-mid);
-  margin: 18px 0;
-}
-
-/* ── code block wrapper ───────────────────────────────────────────────────── */
-.md-root :deep(.md-code-wrap) {
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-mid);
-  overflow: hidden;
-  background: var(--color-bg-base);
-  margin-bottom: 14px;
-}
-
-/* ── code block header ────────────────────────────────────────────────────── */
-.md-root :deep(.md-code-header) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px 6px 12px;
-  background: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-mid);
-  min-height: 34px;
-  gap: 8px;
-}
-.md-root :deep(.md-code-lang) {
-  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-tertiary);
-}
-
-/* ── code block action buttons ────────────────────────────────────────────── */
-.md-root :deep(.md-code-actions) {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-}
-.md-root :deep(.md-btn) {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 500;
-  padding: 2px 8px;
-  height: 22px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  transition:
-    background 110ms ease,
-    color 110ms ease,
-    border-color 110ms ease;
-  white-space: nowrap;
-  line-height: 1;
-}
-.md-root :deep(.md-btn:hover) {
-  background: var(--color-bg-hover);
-  color: var(--color-text-secondary);
-}
-
-/* Word-wrap toggle — icon-only, slightly narrower */
-.md-root :deep(.md-wrap-btn) {
-  padding: 2px 6px;
-}
-.md-root :deep(.md-wrap-btn.is-active) {
-  background: var(--color-bg-hover);
-  color: var(--color-accent-text);
-  border-color: var(--color-accent-dim);
-}
-
-/* Copy button — two-state via data-copied attribute */
-.md-root :deep(.md-copy-btn .md-copy-done) {
-  display: none;
-}
-.md-root :deep(.md-copy-btn[data-copied] .md-copy-idle) {
-  display: none;
-}
-.md-root :deep(.md-copy-btn[data-copied] .md-copy-done) {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--color-success-text, #4ade80);
-}
-.md-root :deep(.md-copy-idle) {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-/* ── code block body ──────────────────────────────────────────────────────── */
-.md-root :deep(.md-code-body) {
-  overflow-x: auto;
-}
-/* Shiki wraps in <pre><code>. Override background to match wrapper. */
-.md-root :deep(.md-code-body pre) {
-  margin: 0;
-  padding: 14px 16px;
-  background: var(--color-bg-base) !important;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
-  font-size: 12.5px;
-  line-height: 1.6;
-  overflow-x: auto;
-  /* No wrap by default — toggled by .is-wrapped */
-  white-space: pre;
-}
-.md-root :deep(.md-code-body code) {
-  font-family: inherit;
-  background: transparent;
-}
-/* Word-wrap enabled state */
-.md-root :deep(.md-code-wrap.is-wrapped .md-code-body pre) {
-  white-space: pre-wrap;
-  overflow-x: hidden;
-}
-
-/* Plain pre (streaming / error fallback) */
-.md-root :deep(.md-code-fallback) {
-  margin: 0;
-  padding: 14px 16px;
-  color: var(--color-text-primary);
-  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  font-size: 12.5px;
-  white-space: pre-wrap;
-}
-.md-root :deep(.md-code-plain) {
-  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  font-size: 12.5px;
-  color: var(--color-text-primary);
-  white-space: pre-wrap;
-  display: block;
-  padding: 14px 16px;
-}
-/* Blinking cursor during streaming */
-.md-root :deep(.md-cursor) {
-  animation: md-blink 0.9s step-end infinite;
-  color: var(--color-accent-bright);
-}
+<style>
+/* Unscoped global style block to ensure keyframes are available to arbitrary Tailwind values */
 @keyframes md-blink {
   0%,
   100% {
@@ -914,63 +545,6 @@ function handleClick(e: MouseEvent): void {
   }
   50% {
     opacity: 0;
-  }
-}
-
-/* ── table ────────────────────────────────────────────────────────────────── */
-.md-root :deep(.md-table-wrap) {
-  overflow-x: auto;
-  margin-bottom: 14px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: var(--radius-md);
-}
-.md-root :deep(.md-table) {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.md-root :deep(.md-th) {
-  padding: 7px 12px;
-  text-align: left;
-  font-weight: 600;
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-tertiary);
-  background: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-mid);
-  white-space: nowrap;
-}
-.md-root :deep(.md-td) {
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  color: var(--color-text-primary);
-  vertical-align: top;
-}
-.md-root :deep(tr:last-child .md-td) {
-  border-bottom: none;
-}
-/* Subtle hover on table rows */
-.md-root :deep(tbody tr:hover td) {
-  background: color-mix(in srgb, var(--color-bg-hover) 60%, transparent);
-}
-
-/* ── SVG ──────────────────────────────────────────────────────────────────── */
-.md-root :deep(svg:not(.md-btn svg)) {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  max-height: 480px;
-}
-
-/* ── reduced-motion ───────────────────────────────────────────────────────── */
-@media (prefers-reduced-motion: reduce) {
-  .md-root :deep(.md-cursor) {
-    animation: none;
-    opacity: 1;
-  }
-  .md-root :deep(.md-btn) {
-    transition: none;
   }
 }
 </style>

@@ -1,48 +1,105 @@
 import { homeDir, join } from '@tauri-apps/api/path'
-import { mkdir, writeTextFile } from '@tauri-apps/plugin-fs'
+import { exists, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { createUnifiedDiff, diffLineStats, ensureDir, normalizeLineEndings } from './fs/shared'
 
-export function createPlanTools(onPlanCreated?: (filepath: string) => void) {
+export interface PlanCreatedEvent {
+  filepath: string
+  conversationId: string
+  planName: string
+}
+
+export interface CreatePlanToolsOptions {
+  conversationId: string
+  onPlanCreated?: (event: PlanCreatedEvent) => void
+}
+
+const DEFAULT_PLAN_NAME = 'plan.md'
+
+function safePathSegment(value: string, fallback: string): string {
+  const sanitized = value
+    .trim()
+    .split('')
+    .map(char => char.charCodeAt(0) < 32 ? '-' : char)
+    .join('')
+    .replace(/[<>:"/\\|?*]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/^\.+/, '')
+    .replace(/\.+$/, '')
+    .replace(/-+/g, '-')
+
+  return sanitized || fallback
+}
+
+function normalizePlanFilename(planName?: string): string {
+  const rawName = safePathSegment(planName || DEFAULT_PLAN_NAME, DEFAULT_PLAN_NAME)
+  return rawName.toLowerCase().endsWith('.md') ? rawName : `${rawName}.md`
+}
+
+export function planToolDisplayLabel(name: string, args: Record<string, unknown>): string {
+  if (name !== 'plan')
+    return `Called ${name}`
+
+  const planName = typeof args.planName === 'string' && args.planName.trim()
+    ? normalizePlanFilename(args.planName)
+    : DEFAULT_PLAN_NAME
+
+  return `Plan ${planName}`
+}
+
+export function createPlanTools(options: CreatePlanToolsOptions) {
+  const conversationId = safePathSegment(options.conversationId, 'unknown-conversation')
+
   return {
-    write_plan: tool({
-      description: 'Write an implementation plan for the user to review. This will save the plan to ~/.emty/plans/ and switch the UI to Plan Mode.',
+    plan: tool({
+      description: [
+        'Write or replace a production-quality implementation plan for the user to review before modifying files.',
+        'The plan is saved to ~/.emty/plans/<conversation_id>/<planName>.md and the result includes a unified diff plus added/removed line counts.',
+        'Use concise but complete markdown with scope, constraints, affected files, implementation steps, validation, rollback or risk notes, and explicit acceptance criteria.',
+      ].join(' '),
       inputSchema: z.object({
-        planContent: z.string().describe('The markdown content of the plan.'),
-        planName: z.string().optional().describe('The name of the plan file. If not provided, a random name will be generated.'),
+        planContent: z.string().min(1).describe('The complete markdown content of the plan. Include scope, approach, validation, risks, and acceptance criteria.'),
+        planName: z.string().optional().describe('Optional markdown filename for the plan. Defaults to plan.md. Path separators are not allowed.'),
       }),
       execute: async ({ planContent, planName }) => {
         try {
           const home = await homeDir()
-          const plansDir = await join(home, '.emty', 'plans')
+          const plansDir = await join(home, '.emty', 'plans', conversationId)
+          await ensureDir(plansDir)
 
-          try {
-            await mkdir(plansDir, { recursive: true })
-          }
-          catch {
-            // Ignore if directory already exists
-          }
-
-          const filename = planName ? (planName.endsWith('.md') ? planName : `${planName}.md`) : `plan-${Date.now()}.md`
+          const filename = normalizePlanFilename(planName)
           const filepath = await join(plansDir, filename)
+          const normalizedContent = `${normalizeLineEndings(planContent).trimEnd()}\n`
 
-          await writeTextFile(filepath, planContent)
-
-          if (onPlanCreated) {
-            onPlanCreated(filepath)
+          let previousContent = ''
+          let operation: 'create' | 'replace' = 'create'
+          if (await exists(filepath)) {
+            previousContent = normalizeLineEndings(await readTextFile(filepath))
+            operation = 'replace'
           }
+
+          const { added, removed } = diffLineStats(previousContent, normalizedContent)
+          const diff = createUnifiedDiff(filename, previousContent, normalizedContent)
+
+          await writeTextFile(filepath, normalizedContent)
+
+          options.onPlanCreated?.({ filepath, conversationId, planName: filename })
 
           return {
-            type: 'text',
-            value: `Plan written successfully to ${filepath}. Waiting for user approval.`,
+            message: `Plan ${operation === 'create' ? 'created' : 'updated'} at ${filepath}. Waiting for user approval.`,
+            file: filepath,
+            conversationId,
+            planName: filename,
+            operation,
+            added,
+            removed,
+            diff,
           }
         }
         catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error)
-          return {
-            type: 'text',
-            value: `Failed to write plan: ${msg}`,
-          }
+          return `Error: Failed to write plan: ${msg}`
         }
       },
     }),

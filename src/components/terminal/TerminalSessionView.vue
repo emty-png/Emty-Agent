@@ -263,40 +263,12 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="terminal-layout-container">
+  <div class="relative w-full h-full bg-[var(--color-bg-base,#1a1a1a)] overflow-hidden">
     <div
       :ref="(el) => setHostEl(el as HTMLElement | null)"
-      class="terminal-session-view"
+      class="absolute inset-0 pt-3 px-4 pb-4 overflow-hidden outline-none bg-[var(--color-bg-base,#1a1a1a)] text-[var(--color-text-primary,#e5e5e5)]"
       tabindex="0"
       @mousedown="focusTerminal"
     />
   </div>
 </template>
-
-<style scoped>
-.terminal-layout-container {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  /* Provide an explicit background so the xterm canvas has something solid
-     behind it even if the theme colours haven't been read yet. */
-  background-color: var(--color-bg-base, #1a1a1a);
-  overflow: hidden;
-}
-
-.terminal-session-view {
-  position: absolute;
-  inset: 0;
-  /* Keep the foreground colour in sync with the rest of the UI so that
-     getComputedStyle() on this element gives us a non-transparent colour.
-     Note: buildTerminalTheme() now reads from :root vars directly, so this
-     is just a safety net and ensures the textarea/selection elements xterm
-     injects also inherit a sensible colour. */
-  color: var(--color-text-primary, #e5e5e5);
-  background-color: var(--color-bg-base, #1a1a1a);
-  /* Add a small inset so terminal content doesn't sit flush against edges */
-  padding: 12px 16px 16px 16px;
-  overflow: hidden;
-  outline: none;
-}
-</style>

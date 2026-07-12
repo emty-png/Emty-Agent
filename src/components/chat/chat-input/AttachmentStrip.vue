@@ -11,31 +11,40 @@ const emit = defineEmits<{
   preview: [Attachment]
   remove: [string]
 }>()
+
+const stripClasses = 'flex flex-wrap gap-1.5 px-2.5 pt-1 pb-1.5'
+const chipClasses = 'flex items-center gap-2 p-[5px_8px_5px_5px] bg-(--color-state-hover) border border-(--color-border-bright) rounded-(--radius-md) cursor-pointer max-w-[220px] transition-[background,border-color] duration-[110ms] ease hover:bg-(--color-bg-elevated) hover:border-(--color-border-bright)'
+const thumbClasses = 'w-9 h-9 object-cover rounded-(--radius-sm) shrink-0'
+const fileIconClasses = 'flex items-center justify-center w-9 h-9 rounded-(--radius-sm) bg-(--color-bg-card) text-(--color-text-tertiary) shrink-0'
+const infoClasses = 'flex flex-col gap-px min-w-0 flex-1'
+const nameClasses = 'text-[11.5px] font-semibold text-(--color-text-secondary) whitespace-nowrap overflow-hidden text-ellipsis'
+const sizeClasses = 'text-[10px] text-(--color-text-tertiary)'
+const removeClasses = 'flex items-center justify-center w-[18px] h-[18px] border-none rounded-(--radius-xs) bg-transparent text-(--color-text-tertiary) cursor-pointer shrink-0 transition-[background,color] duration-100 ease hover:bg-[color-mix(in_srgb,var(--color-danger)_15%,transparent)] hover:text-(--color-danger-text)'
 </script>
 
 <template>
-  <div v-if="attachments.length > 0" class="attachment-strip">
+  <div v-if="attachments.length > 0" :class="stripClasses">
     <div
       v-for="att in attachments"
       :key="att.id"
-      class="attachment-chip"
+      :class="chipClasses"
       @click="emit('preview', att)"
     >
       <img
         v-if="att.type === 'image'"
         :src="att.dataUrl"
         :alt="att.name"
-        class="attachment-thumb"
+        :class="thumbClasses"
       >
-      <div v-else class="attachment-file-icon">
+      <div v-else :class="fileIconClasses">
         <FileText :size="16" :stroke-width="1.6" />
       </div>
-      <div class="attachment-info">
-        <span class="attachment-name">{{ att.name }}</span>
-        <span class="attachment-size">{{ formatFileSize(att.size) }}</span>
+      <div :class="infoClasses">
+        <span :class="nameClasses">{{ att.name }}</span>
+        <span :class="sizeClasses">{{ formatFileSize(att.size) }}</span>
       </div>
       <button
-        class="attachment-remove"
+        :class="removeClasses"
         aria-label="Remove attachment"
         @click.stop="emit('remove', att.id)"
       >
@@ -44,97 +53,3 @@ const emit = defineEmits<{
     </div>
   </div>
 </template>
-
-<style scoped>
-/* ── attachment preview strip ─────────────────────────────────────────────── */
-.attachment-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 10px 6px;
-}
-
-.attachment-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px 5px 5px;
-  background: var(--color-state-hover);
-  border: 1px solid var(--color-border-bright);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  max-width: 220px;
-  transition:
-    background 110ms ease,
-    border-color 110ms ease;
-}
-
-.attachment-chip:hover {
-  background: var(--color-bg-elevated);
-  border-color: var(--color-border-bright);
-}
-
-.attachment-thumb {
-  width: 36px;
-  height: 36px;
-  object-fit: cover;
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-}
-
-.attachment-file-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-card);
-  color: var(--color-text-tertiary);
-  flex-shrink: 0;
-}
-
-.attachment-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-  flex: 1;
-}
-
-.attachment-name {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.attachment-size {
-  font-size: 10px;
-  color: var(--color-text-tertiary);
-}
-
-.attachment-remove {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 100ms ease,
-    color 100ms ease;
-}
-
-.attachment-remove:hover {
-  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
-  color: var(--color-danger-text);
-}
-</style>

@@ -161,7 +161,12 @@ const FileTreeNode = defineComponent({
     const row = h(
       'button',
       {
-        class: ['node-row', isSelected && 'node-row--selected'],
+        class: [
+          'flex h-[24px] w-full shrink-0 cursor-pointer items-center gap-[5px] whitespace-nowrap border-none bg-transparent pr-[8px] text-left transition-[background,color] duration-[120ms] ease-[ease]',
+          isSelected
+            ? '!bg-[var(--color-accent-muted)] text-[var(--color-accent-text)] hover:bg-[var(--color-accent-muted)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-primary)]',
+        ],
         style: indent,
         onClick: this.onClick,
       },
@@ -171,37 +176,43 @@ const FileTreeNode = defineComponent({
           ? h(ChevronRight, {
               size: 12,
               strokeWidth: 2,
-              class: ['node-chevron', node.expanded && 'node-chevron--open'],
+              class: [
+                'shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-[120ms] ease-[ease]',
+                node.expanded ? 'rotate-90' : '',
+              ],
             })
-          : h('span', { class: 'node-chevron-spacer' }),
+          : h('span', { class: 'inline-block w-[12px] shrink-0' }),
 
         // icon
         node.isDir
-          ? h(FolderIcon, { size: 13, strokeWidth: 1.6, class: 'node-folder-icon', style: { color: folderColor } })
+          ? h(FolderIcon, { size: 13, strokeWidth: 1.6, class: 'shrink-0', style: { color: folderColor } })
           : node.loading
             ? h(Loader, {
                 size: 13,
                 strokeWidth: 1.6,
-                class: 'spin node-file-icon',
+                class: 'animate-spin flex h-[14px] w-[14px] shrink-0 items-center justify-center overflow-hidden',
                 style: { color: 'var(--file-color-lock)' },
               })
             : getDeviconForFile(node.name)
               ? h('i', {
-                  class: ['node-file-icon', getDeviconForFile(node.name)],
+                  class: [
+                    'flex h-[14px] w-[14px] shrink-0 items-center justify-center overflow-hidden',
+                    getDeviconForFile(node.name),
+                  ],
                   style: { fontSize: '13px', color: fs.color },
                 })
               : h(fs.icon, {
                   size: 13,
                   strokeWidth: 1.6,
-                  class: 'node-file-icon',
+                  class: 'flex h-[14px] w-[14px] shrink-0 items-center justify-center overflow-hidden',
                   style: { color: fs.color },
                 }),
 
         // label
-        h('span', { class: 'node-label' }, node.name),
+        h('span', { class: 'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[12.5px]' }, node.name),
 
         // loading spinner (dir expanding)
-        node.loading ? h(Loader, { size: 11, strokeWidth: 2, class: 'spin node-loader' }) : null,
+        node.loading ? h(Loader, { size: 11, strokeWidth: 2, class: 'animate-spin ml-auto shrink-0 text-[var(--color-text-tertiary)]' }) : null,
       ],
     )
 
@@ -219,22 +230,22 @@ const FileTreeNode = defineComponent({
           )
         : []
 
-    return h('div', { class: 'node-wrap' }, [row, ...children])
+    return h('div', { class: 'flex flex-col' }, [row, ...children])
   },
 })
 </script>
 
 <!-- ── recursive node component ────────────────────────────────────────────── -->
 <template>
-  <div class="tree-root" @click.self="clearSelection">
+  <div class="flex h-full flex-col overflow-x-hidden overflow-y-auto pb-[6px] pt-0" @click.self="clearSelection">
     <!-- loading skeleton -->
-    <div v-if="loadingTree" class="tree-loading">
-      <Loader :size="14" :stroke-width="1.8" class="spin" />
+    <div v-if="loadingTree" class="flex items-center gap-[7px] px-[12px] py-[12px] text-[12px] text-[var(--color-text-tertiary)]">
+      <Loader :size="14" :stroke-width="1.8" class="animate-spin" />
       <span>Reading project…</span>
     </div>
 
     <!-- empty -->
-    <div v-else-if="tree.length === 0" class="tree-empty">
+    <div v-else-if="tree.length === 0" class="flex items-center gap-[7px] px-[12px] py-[12px] text-[12px] text-[var(--color-text-tertiary)]">
       No files found
     </div>
 
@@ -251,126 +262,3 @@ const FileTreeNode = defineComponent({
     </template>
   </div>
 </template>
-
-<style scoped>
-/* ── root ────────────────────────────────────────────────────────────────────── */
-.tree-root {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-top: 0;
-  padding-bottom: 6px;
-}
-
-.tree-loading,
-.tree-empty {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 12px 12px;
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-}
-
-/* ── node ────────────────────────────────────────────────────────────────────── */
-:deep(.node-wrap) {
-  display: flex;
-  flex-direction: column;
-}
-
-:deep(.node-row) {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  width: 100%;
-  height: 24px;
-  padding-right: 8px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  color: var(--color-text-secondary);
-  transition:
-    background 120ms ease,
-    color 120ms ease;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-:deep(.node-row:hover) {
-  background: var(--color-state-hover);
-  color: var(--color-text-primary);
-}
-
-:deep(.node-row--selected) {
-  background: var(--color-accent-muted);
-  color: var(--color-accent-text);
-}
-
-:deep(.node-row--selected:hover) {
-  background: var(--color-accent-muted);
-}
-
-/* chevron */
-:deep(.node-chevron) {
-  flex-shrink: 0;
-  color: var(--color-text-tertiary);
-  transition: transform 120ms ease;
-}
-
-:deep(.node-chevron--open) {
-  transform: rotate(90deg);
-}
-
-:deep(.node-chevron-spacer) {
-  display: inline-block;
-  width: 12px;
-  flex-shrink: 0;
-}
-
-/* icons */
-:deep(.node-folder-icon) {
-  flex-shrink: 0;
-  color: var(--color-warning);
-}
-
-:deep(.node-file-icon) {
-  flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  overflow: hidden;
-}
-
-/* label */
-:deep(.node-label) {
-  font-size: 12.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-/* loader */
-:deep(.node-loader) {
-  margin-left: auto;
-  flex-shrink: 0;
-  color: var(--color-text-tertiary);
-}
-
-/* spinner */
-:deep(.spin) {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>

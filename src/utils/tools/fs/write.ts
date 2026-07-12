@@ -27,7 +27,7 @@ export function createWriteFileTool(
 
 Rules:
 - For new files, just provide file_path and content.
-- For overwriting existing files, you MUST set rewrite: true AND have read the file with read_files first.
+- For overwriting existing files, you MUST have read the file with read_files first.
 - Prefer edit_files for modifying existing files - it only sends the changed section. Only use this tool to create new files or when a complete rewrite is genuinely necessary.
 - Do not use this tool to move or rename files; use the shell for that.
 - If writing a very large file (> 500 lines), the JSON payload may fail. Use append: true to write it in chunks. The first call creates the file, and subsequent calls append to it.`,
@@ -39,11 +39,6 @@ Rules:
       content: z
         .string()
         .describe('The full content to write to the file.'),
-      rewrite: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe('Must be set to true to overwrite an existing file. Default: false.'),
       append: z
         .boolean()
         .optional()
@@ -51,7 +46,7 @@ Rules:
         .describe('If true, appends the content to the existing file instead of overwriting. Useful for chunking large files to avoid JSON payload limits.'),
     }),
 
-    execute: async ({ file_path, content, rewrite, append }) => {
+    execute: async ({ file_path, content, append }) => {
       const normalizedContent = normalizeLineEndings(content)
 
       let fullPath: string
@@ -74,9 +69,6 @@ Rules:
         if (info) {
           if (!info.isFile)
             return `Error: ${file_path} is not a regular file.`
-
-          if (!rewrite && !append)
-            return 'Error: File already exists. Set rewrite: true to overwrite, or use append: true to append, or use edit_files for targeted changes.'
 
           const registryEntry = registry.get(fullPath)
           if (!registryEntry && !append)

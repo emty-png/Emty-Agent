@@ -2,6 +2,7 @@
 import type { Attachment } from '@/stores/chat/attachment-types'
 import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { isStreamingStatus } from '@/stores/chat/agentStatus'
 import { buildChatRequestPreview } from '@/stores/chat/requestPreview'
 import { useSettingsStore } from '@/stores/settings'
 import { estimateChatPrompt } from '@/utils/chatEstimate'
@@ -20,7 +21,7 @@ const emit = defineEmits<{
 const chat = useChatStore()
 const settings = useSettingsStore()
 
-// --- Constants & Formatters (Instantiated once for performance) ---
+// --- Constants & Formatters ---
 const RING_RADIUS = 9
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS // ~56.55
 
@@ -33,12 +34,87 @@ const usdFormatter = new Intl.NumberFormat('en-US', {
 const intFormatter = new Intl.NumberFormat('en-US')
 
 // --- Internal State ---
-let debounceHandle: ReturnType<typeof setTimeout> | null = null
-let activeController: AbortController | null = null
-let activeEstimateTabId: string | null = null
+const debounceHandle = ref<ReturnType<typeof setTimeout> | null>(null)
+const activeController = shallowRef<AbortController | null>(null)
+const activeEstimateTabId = ref<string | null>(null)
 const prevStreaming = shallowRef(false)
 const lastAutoCompactKey = ref('')
 const lastAutoCompactionDebugState = ref('')
+
+// --- Dynamic Positioning & Teleport Controls ---
+const isOpen = ref(false)
+const triggerRef = ref<HTMLElement | null>(null)
+const popoverPos = ref({ x: 0, y: 0 })
+
+const closeTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
+
+function openPopover() {
+  if (closeTimeout.value) {
+    clearTimeout(closeTimeout.value)
+    closeTimeout.value = null
+  }
+  updatePopoverPosition()
+  isOpen.value = true
+}
+
+function closePopover() {
+  if (closeTimeout.value)
+    clearTimeout(closeTimeout.value)
+  closeTimeout.value = setTimeout(() => {
+    isOpen.value = false
+  }, 150) // Small grace period delay to allow cursor transitions
+}
+
+function updatePopoverPosition() {
+  if (!triggerRef.value)
+    return
+
+  const rect = triggerRef.value.getBoundingClientRect()
+  const centerX = rect.left + rect.width / 2
+
+  const vw = document.documentElement.clientWidth || window.innerWidth
+  const popoverWidth = 260
+  const halfWidth = popoverWidth / 2
+  const padding = 12
+
+  // Prevent horizontal popover cutoffs on narrow viewports
+  let boundedX = centerX
+  if (boundedX - halfWidth < padding) {
+    boundedX = halfWidth + padding
+  }
+  else if (boundedX + halfWidth > vw - padding) {
+    boundedX = vw - halfWidth - padding
+  }
+
+  popoverPos.value = {
+    x: Math.round(boundedX),
+    y: Math.round(rect.top - 10),
+  }
+}
+
+let scrollRafId: number | null = null
+function handleScroll() {
+  if (!isOpen.value)
+    return
+  if (!scrollRafId) {
+    scrollRafId = requestAnimationFrame(() => {
+      updatePopoverPosition()
+      scrollRafId = null
+    })
+  }
+}
+
+// Bind resize and scroll triggers only when the popover is active
+watch(isOpen, open => {
+  if (open) {
+    window.addEventListener('resize', updatePopoverPosition, { passive: true })
+    window.addEventListener('scroll', handleScroll, { capture: true, passive: true })
+  }
+  else {
+    window.removeEventListener('resize', updatePopoverPosition)
+    window.removeEventListener('scroll', handleScroll, { capture: true })
+  }
+})
 
 // --- Computed: Model & Estimator State ---
 const estimatorState = computed(() => chat.activeTab.estimator)
@@ -130,9 +206,6 @@ function valueSize(value: unknown): number {
 }
 
 // --- Logic: Fingerprinting & Dependencies ---
-/**
- * Creates an object representing all dependencies that should trigger a re-estimate.
- */
 const estimationDependencies = computed(() => ({
   text: props.text,
   mode: 'build',
@@ -146,7 +219,6 @@ const estimationDependencies = computed(() => ({
     settings.disabledSkillIds.join(),
     settings.mcpServers.length,
   ].join('|'),
-  // Include size-only fingerprints for streaming tool results/reasoning without storing their content here.
   messageSig: chat.activeTab.messages
     .map(
       m => [
@@ -166,7 +238,7 @@ const estimationDependencies = computed(() => ({
 watch(
   estimationDependencies,
   () => {
-    if (chat.activeTab.isStreaming) {
+    if (isStreamingStatus(chat.activeTab.agentStatus)) {
       prevStreaming.value = true
       scheduleEstimate(1200, { keepExisting: true })
     }
@@ -177,13 +249,12 @@ watch(
   { immediate: true },
 )
 
-// Watch streaming explicitly to trigger a fast refresh right when it stops
 watch(
-  () => chat.activeTab.isStreaming,
+  () => isStreamingStatus(chat.activeTab.agentStatus),
   isStreaming => {
     if (!isStreaming && prevStreaming.value) {
       prevStreaming.value = false
-      scheduleEstimate(150) // Shorter debounce for post-stream refresh
+      scheduleEstimate(150)
     }
   },
 )
@@ -195,7 +266,7 @@ watch(
     chat.activeTab.messages.at(-1)?.id ?? '',
     usagePercent.value,
     estimating.value,
-    chat.activeTab.isStreaming,
+    isStreamingStatus(chat.activeTab.agentStatus),
     isCompacting.value,
     autoCompactionEnabled.value,
     autoCompactionThreshold.value,
@@ -212,17 +283,18 @@ watch(
     threshold,
   ]) => {
     const triggerKey = `${tabId}:${messageCount}:${lastMessageId}`
-    const blockedReason = !autoEnabled
-      ? 'disabled'
-      : isEstimating
-        ? 'estimating'
-        : compacting
-          ? 'compacting'
-          : percent < threshold
-            ? 'below-threshold'
-            : lastAutoCompactKey.value === triggerKey
-              ? 'already-triggered'
-              : 'ready'
+    let blockedReason: string
+    if (!autoEnabled)
+      blockedReason = 'disabled'
+    else if (isEstimating)
+      blockedReason = 'estimating'
+    else if (compacting)
+      blockedReason = 'compacting'
+    else if (percent < threshold)
+      blockedReason = 'below-threshold'
+    else if (lastAutoCompactKey.value === triggerKey)
+      blockedReason = 'already-triggered'
+    else blockedReason = 'ready'
 
     if (
       autoEnabled
@@ -259,25 +331,27 @@ watch(
 
 // --- Logic: Fetching & Concurrency ---
 onUnmounted(() => {
-  if (debounceHandle)
-    clearTimeout(debounceHandle)
+  if (debounceHandle.value)
+    clearTimeout(debounceHandle.value)
+  if (closeTimeout.value)
+    clearTimeout(closeTimeout.value)
   cleanupActiveEstimation()
 })
 
 function cleanupActiveEstimation() {
-  if (activeEstimateTabId) {
-    chat.setTabEstimatorState(activeEstimateTabId, { estimating: false })
+  if (activeEstimateTabId.value) {
+    chat.setTabEstimatorState(activeEstimateTabId.value, { estimating: false })
   }
-  activeController?.abort()
+  activeController.value?.abort()
 }
 
 function scheduleEstimate(delay: number, options: { keepExisting?: boolean } = {}) {
-  if (options.keepExisting && debounceHandle)
+  if (options.keepExisting && debounceHandle.value)
     return
-  if (debounceHandle)
-    clearTimeout(debounceHandle)
-  debounceHandle = setTimeout(() => {
-    debounceHandle = null
+  if (debounceHandle.value)
+    clearTimeout(debounceHandle.value)
+  debounceHandle.value = setTimeout(() => {
+    debounceHandle.value = null
     void refreshEstimate()
   }, delay)
 }
@@ -286,16 +360,16 @@ async function refreshEstimate() {
   cleanupActiveEstimation()
 
   const controller = new AbortController()
-  activeController = controller
+  activeController.value = controller
   const tabId = chat.activeTab.id
-  activeEstimateTabId = tabId
+  activeEstimateTabId.value = tabId
 
   const updateState = (payload: Partial<typeof estimatorState.value>) => {
     if (controller.signal.aborted)
       return
     chat.setTabEstimatorState(tabId, payload)
-    if (activeEstimateTabId === tabId)
-      activeEstimateTabId = null
+    if (activeEstimateTabId.value === tabId)
+      activeEstimateTabId.value = null
   }
 
   try {
@@ -322,369 +396,177 @@ async function refreshEstimate() {
     })
   }
 }
+
+// --- Presentation: Tailwind v4 class strings ---
+// The ring's tone/loading state and the popover's open/closed state each
+// used to be driven by CSS descendant selectors keyed off a parent modifier
+// class (`.context-ring--danger .context-ring-progress`, `.estimator-popover--open`).
+// With no stylesheet to hang those selectors on, each state is resolved to a
+// complete class string here so branches never fight over the same property.
+
+const isLoadingRing = computed(() => estimating.value && !estimate.value)
+
+// CSS previously overrode the bound `stroke-dasharray` attribute while loading
+// (an author stylesheet rule beats an SVG presentation attribute) — now that
+// override is just resolved directly in script.
+const displayDasharray = computed(() => (isLoadingRing.value ? '20 56.55' : strokeDasharray.value))
+
+const ringSvgClasses = computed(() =>
+  isLoadingRing.value
+    // The spin animation drives `transform` itself, so the static -90deg
+    // rotation below is intentionally dropped while loading (matches the
+    // original: an animated `transform` fully overrides a static one).
+    ? 'w-[18px] h-[18px] animate-[spin_1.4s_linear_infinite]'
+    : 'w-[18px] h-[18px] [transform:rotate(-90deg)]',
+)
+
+const progressStrokeClass = computed(() => {
+  if (isLoadingRing.value)
+    return 'stroke-[color-mix(in_srgb,var(--color-text-tertiary)_60%,transparent)]'
+  if (usageTone.value === 'danger')
+    return 'stroke-(--color-danger-text)'
+  if (usageTone.value === 'warning')
+    return 'stroke-(--color-warning-text)'
+  return 'stroke-(--color-success-text)'
+})
+
+const CONTEXT_RING_CLASSES = [
+  'flex items-center justify-center w-[30px] h-[30px] p-0 border border-transparent',
+  'rounded-(--radius-md) bg-transparent cursor-pointer shrink-0',
+  '[transition:background_120ms_cubic-bezier(0.4,0,0.2,1),border-color_120ms_cubic-bezier(0.4,0,0.2,1),border-radius_150ms_cubic-bezier(0.16,1,0.3,1)]',
+  '[&:hover,&:focus-visible]:bg-(--color-state-hover) [&:hover,&:focus-visible]:border-(--color-border-mid)',
+  '[&:hover,&:focus-visible]:rounded-(--radius-lg) [&:hover,&:focus-visible]:outline-none',
+  'active:scale-[0.97] active:duration-[80ms]',
+].join(' ')
+
+const POPOVER_BASE_CLASSES = [
+  'fixed w-[260px] p-3 rounded-(--radius-lg) bg-(--color-bg-surface) border border-(--color-border-mid)',
+  'shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)]',
+  '[transition:opacity_120ms_ease-out,transform_120ms_ease-out,visibility_120ms] z-[10020]',
+].join(' ')
+
+const popoverStateClasses = computed(() =>
+  isOpen.value
+    ? 'opacity-100 visible [transform:translate(-50%,-100%)_translateY(0)_scale(1)]'
+    : 'opacity-0 invisible [transform:translate(-50%,-100%)_translateY(6px)_scale(0.98)]',
+)
+
+const COMPACT_BTN_CLASSES = [
+  'inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-(--color-text-secondary)',
+  'bg-transparent border border-transparent rounded-(--radius-md) cursor-pointer',
+  '[transition:background_100ms_cubic-bezier(0.4,0,0.2,1),border-color_100ms_cubic-bezier(0.4,0,0.2,1),color_100ms_cubic-bezier(0.4,0,0.2,1)]',
+  'hover:text-(--color-text-primary) hover:bg-(--color-state-hover) hover:border-(--color-border-subtle)',
+  'active:scale-[0.97] active:duration-[80ms]',
+  'disabled:opacity-[0.55] disabled:cursor-progress disabled:[transform:none]',
+].join(' ')
 </script>
 
 <template>
-  <div v-if="hasModel" class="estimator-wrap" tabindex="-1">
-    <div class="estimator-inline">
+  <div v-if="hasModel" class="relative flex items-center shrink-0 outline-none" tabindex="-1">
+    <div class="flex items-center p-0 bg-transparent border-none">
       <button
+        ref="triggerRef"
         type="button"
-        class="context-ring"
-        :class="[
-          `context-ring--${usageTone}`,
-          { 'context-ring--loading': estimating && !estimate },
-        ]"
+        :class="CONTEXT_RING_CLASSES"
         aria-label="Prompt context and cost details"
         aria-haspopup="dialog"
         aria-controls="estimator-popover"
+        @mouseenter="openPopover"
+        @mouseleave="closePopover"
+        @focus="openPopover"
+        @blur="closePopover"
       >
-        <svg class="context-ring-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg :class="ringSvgClasses" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle
-            class="context-ring-track"
             cx="12"
             cy="12"
             r="9"
             stroke-width="2.5"
             stroke-linecap="round"
+            class="stroke-[color-mix(in_srgb,var(--color-text-tertiary)_20%,transparent)]"
           />
           <circle
-            class="context-ring-progress"
             cx="12"
             cy="12"
             r="9"
             stroke-width="2.5"
             stroke-linecap="round"
-            :stroke-dasharray="strokeDasharray"
+            :stroke-dasharray="displayDasharray"
+            class="[stroke-dashoffset:0] [transition:stroke-dasharray_400ms_ease,stroke_300ms_ease]" :class="[progressStrokeClass]"
           />
         </svg>
       </button>
     </div>
 
-    <!-- Popover Details -->
-    <div id="estimator-popover" class="estimator-popover" role="tooltip">
-      <header class="estimator-header">
-        <div class="estimator-title-row">
-          <span class="estimator-title">Prompt Context</span>
-          <span class="estimator-percent">{{ usagePercent }}%</span>
-        </div>
-        <p class="estimator-summary">
-          {{ contextSummary }}
-        </p>
-        <p class="estimator-subtle">
-          {{ remainingSummary }}
-        </p>
-      </header>
+    <!-- Teleport Popover Details directly to body -->
+    <Teleport to="body">
+      <div
+        v-if="hasModel"
+        id="estimator-popover"
+        :class="[POPOVER_BASE_CLASSES, popoverStateClasses]"
+        :style="{ left: `${popoverPos.x}px`, top: `${popoverPos.y}px` }"
+        role="tooltip"
+        @mouseenter="openPopover"
+        @mouseleave="closePopover"
+      >
+        <header class="pb-2.5 mb-1 border-b border-(--color-border-mid)">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[11px] font-bold text-(--color-text-tertiary) tracking-[0.05em] uppercase">Prompt Context</span>
+            <span class="text-[11px] font-bold text-(--color-text-secondary) tabular-nums">{{ usagePercent }}%</span>
+          </div>
+          <p class="mt-1.5 text-xs font-semibold text-(--color-text-primary)">
+            {{ contextSummary }}
+          </p>
+          <p class="mt-0.5 text-[11px] text-(--color-text-tertiary) leading-[1.4]">
+            {{ remainingSummary }}
+          </p>
+        </header>
 
-      <main v-if="estimate" class="estimator-grid">
-        <div class="estimator-row">
-          <span class="estimator-label">Input cost</span>
-          <span class="estimator-value">{{ usdFormatter.format(estimate.inputCost) }}</span>
-        </div>
-        <div class="estimator-row">
-          <span class="estimator-label">Max output cost</span>
-          <span class="estimator-value">
-            {{ usdFormatter.format(estimate.projectedOutputCost) }}
-          </span>
-        </div>
-        <div
-          v-if="estimate.projectedReasoningTokens > 0 || estimate.projectedReasoningCost > 0"
-          class="estimator-row"
-        >
-          <span class="estimator-label">Reasoning budget</span>
-          <span class="estimator-value">
-            {{ usdFormatter.format(estimate.projectedReasoningCost) }}
-          </span>
-        </div>
-        <div class="estimator-row estimator-row--strong">
-          <span class="estimator-label">Max total est.</span>
-          <span class="estimator-value">
-            {{ usdFormatter.format(estimate.projectedMaxTotalCost) }}
-          </span>
-        </div>
-      </main>
+        <main v-if="estimate" class="grid gap-1.5 pt-2.5">
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Input cost</span>
+            <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">{{ usdFormatter.format(estimate.inputCost) }}</span>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Max output cost</span>
+            <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
+              {{ usdFormatter.format(estimate.projectedOutputCost) }}
+            </span>
+          </div>
+          <div
+            v-if="estimate.projectedReasoningTokens > 0 || estimate.projectedReasoningCost > 0"
+            class="flex items-center justify-between gap-3"
+          >
+            <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Reasoning budget</span>
+            <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
+              {{ usdFormatter.format(estimate.projectedReasoningCost) }}
+            </span>
+          </div>
+          <div class="flex items-center justify-between gap-3 mt-1 pt-2.5 border-t border-(--color-border-mid)">
+            <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Max total est.</span>
+            <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
+              {{ usdFormatter.format(estimate.projectedMaxTotalCost) }}
+            </span>
+          </div>
+        </main>
 
-      <!-- Only shows if there's a calculation error -->
-      <footer v-if="estimateError" class="estimator-footer">
-        <p class="estimator-meta estimator-meta--error" role="alert">
-          {{ estimateError }}
-        </p>
-      </footer>
+        <footer v-if="estimateError" class="grid pt-2.5">
+          <p class="text-[10.5px] leading-[1.4] text-(--color-danger-text) font-medium" role="alert">
+            {{ estimateError }}
+          </p>
+        </footer>
 
-      <!-- Compact Session Action -->
-      <div v-if="manualCompactionEnabled" class="estimator-compact-row">
-        <button
-          type="button"
-          class="estimator-compact-btn"
-          :disabled="isCompacting"
-          @click="emitManualCompaction"
-        >
-          {{ isCompacting ? 'Compacting...' : 'Compact Session' }}
-        </button>
+        <div v-if="manualCompactionEnabled" class="flex justify-center pt-2.5 mt-2.5 border-t border-(--color-border-mid)">
+          <button
+            type="button"
+            :class="COMPACT_BTN_CLASSES"
+            :disabled="isCompacting"
+            @click="emitManualCompaction"
+          >
+            {{ isCompacting ? 'Compacting...' : 'Compact Session' }}
+          </button>
+        </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
-
-<style scoped>
-.estimator-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  outline: none;
-}
-
-.estimator-inline {
-  display: flex;
-  align-items: center;
-  padding: 0;
-  background: transparent;
-  border: none;
-}
-
-.context-ring {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: transparent;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 120ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-radius 150ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.context-ring:hover,
-.context-ring:focus-visible {
-  background: var(--color-state-hover);
-  border-color: var(--color-border-mid);
-  border-radius: var(--radius-lg);
-  outline: none;
-}
-
-.context-ring:active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
-
-.context-ring-svg {
-  width: 18px;
-  height: 18px;
-  transform: rotate(-90deg);
-}
-
-.context-ring-track {
-  stroke: color-mix(in srgb, var(--color-text-tertiary) 20%, transparent);
-}
-
-.context-ring-progress {
-  stroke: color-mix(in srgb, var(--color-text-tertiary) 70%, transparent);
-  stroke-dashoffset: 0;
-  transition:
-    stroke-dasharray 400ms ease,
-    stroke 300ms ease;
-}
-
-.context-ring--safe .context-ring-progress {
-  stroke: var(--color-success-text);
-}
-.context-ring--warning .context-ring-progress {
-  stroke: var(--color-warning-text);
-}
-.context-ring--danger .context-ring-progress {
-  stroke: var(--color-danger-text);
-}
-
-.context-ring--loading .context-ring-svg {
-  animation: estimator-spin 1.4s linear infinite;
-}
-
-.context-ring--loading .context-ring-progress {
-  stroke-dasharray: 20 56.55;
-  stroke: color-mix(in srgb, var(--color-text-tertiary) 60%, transparent);
-}
-
-/* --- POPOVER UPDATES --- */
-.estimator-popover {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 10px);
-  width: 260px;
-  padding: 12px;
-  border-radius: var(--radius-lg);
-
-  background: var(--color-bg-elevated);
-
-  border: 1px solid var(--color-border-bright);
-  box-shadow: var(--color-shadow-floating);
-
-  opacity: 0;
-  visibility: hidden;
-  transform: translateX(-50%) translateY(6px) scale(0.98);
-  transition:
-    opacity 120ms ease-out,
-    transform 120ms ease-out,
-    visibility 120ms;
-  z-index: 10020;
-}
-
-.estimator-wrap:hover .estimator-popover,
-.context-ring:focus-visible + .estimator-popover {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0) scale(1);
-}
-
-/* --- TYPOGRAPHY & LAYOUT --- */
-.estimator-header {
-  padding-bottom: 10px;
-  margin-bottom: 4px; /* Added margin so the grid doesn't hug the line too tightly */
-  /* FIX: Translucent wash instead of a solid opaque line */
-  border-bottom: 1px solid var(--color-border-mid);
-}
-
-.estimator-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.estimator-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.estimator-percent {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.estimator-summary {
-  margin: 6px 0 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.estimator-subtle {
-  margin: 2px 0 0;
-  font-size: 11px;
-  color: var(--color-text-tertiary);
-  line-height: 1.4;
-}
-
-.estimator-grid {
-  display: grid;
-  gap: 6px;
-  padding-top: 10px;
-}
-
-.estimator-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.estimator-row--strong {
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px solid var(--color-border-mid);
-}
-
-.estimator-label {
-  font-size: 11.5px;
-  color: var(--color-text-secondary);
-  font-weight: 400;
-}
-
-.estimator-value {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-
-.estimator-footer {
-  display: grid;
-  padding-top: 10px;
-}
-
-.estimator-meta {
-  margin: 0;
-  font-size: 10.5px;
-  color: var(--color-text-tertiary);
-  line-height: 1.4;
-}
-
-.estimator-meta--error {
-  color: var(--color-danger-text);
-  font-weight: 500;
-}
-
-/* --- Compact Session Button --- */
-.estimator-compact-row {
-  display: flex;
-  justify-content: center;
-  padding-top: 10px;
-  margin-top: 10px;
-  border-top: 1px solid var(--color-border-mid);
-}
-
-.estimator-compact-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition:
-    background 100ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 100ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 100ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.estimator-compact-btn:hover {
-  color: var(--color-text-primary);
-  background: var(--color-state-hover);
-  border-color: var(--color-border-subtle);
-}
-
-.estimator-compact-btn:active {
-  transform: scale(0.97);
-  transition-duration: 80ms;
-}
-
-.estimator-compact-btn:disabled {
-  opacity: 0.55;
-  cursor: progress;
-  transform: none;
-}
-
-@keyframes estimator-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>

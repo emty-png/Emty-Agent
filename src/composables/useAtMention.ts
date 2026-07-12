@@ -20,6 +20,7 @@
 import type { Ref } from 'vue'
 import { readDir } from '@tauri-apps/plugin-fs'
 import { computed, nextTick, ref, watch } from 'vue'
+import { CHIP_PADDING, packMention } from '@/utils/mentionFormat'
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ const ALWAYS_SKIP = new Set([
 ])
 
 /** How deep to recurse when building the file tree. */
-const MAX_DEPTH = 3
+const MAX_DEPTH = 5
 
 /** Hard cap on total entries to avoid memory / UI pressure. */
 const MAX_ENTRIES = 500
@@ -67,7 +68,7 @@ const MAX_VISIBLE = 60
  * Path chars: word chars (a-z A-Z 0-9 _), dot, forward slash, hyphen.
  * The capture group is the query text after "@" or "@[".
  */
-const AT_PATTERN = /@\[?([\w./\-]*)$/
+const AT_PATTERN = /@([\w./\-]*)$/
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -278,18 +279,19 @@ export function useAtMention(
 
   /** Replace the @<query> token in the textarea with the chosen path. */
   function selectEntry(entry: FsEntry): void {
-    // Build the full mention string e.g. "@[src/components/]"
-    const mention = `@[${entry.path}]`
+    // ZWSP-wrapped so the underlying text has zero extra rendered width.
+    // The backdrop chip displays the same inner text — no ghost spacing.
+    const mention = packMention(entry.path)
 
     // Text before "@", text after the query (right of cursor)
     const before = text.value.slice(0, atStart.value)
-    const queryEnd = atStart.value + (text.value.slice(atStart.value).match(AT_PATTERN)?.[0].length ?? 0)
+    const queryEnd = atStart.value + 1 + atQuery.value.length // +1 for '@'
     const after = text.value.slice(queryEnd)
 
-    // Add a trailing space so the user can keep typing naturally,
-    // unless the next char is already whitespace.
-    const trailingSpace = /^\s/.test(after) ? '' : ' '
-    text.value = `${before}${mention}${trailingSpace}${after}`
+    // Add physical spaces of padding around the chip
+    // The chatInputTokens.ts parser explicitly absorbs this padding into the token bounds
+    // so they are deleted atomically alongside the chip.
+    text.value = `${before}${CHIP_PADDING}${mention}${CHIP_PADDING}${after}`
 
     close()
 
@@ -298,7 +300,7 @@ export function useAtMention(
       const el = textareaRef.value
       if (!el)
         return
-      const pos = before.length + mention.length + trailingSpace.length
+      const pos = before.length + CHIP_PADDING.length + mention.length + CHIP_PADDING.length
       el.setSelectionRange(pos, pos)
       el.focus()
       // Recalculate height in case text grew or shrunk.
