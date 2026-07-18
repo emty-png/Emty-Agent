@@ -12,51 +12,15 @@ const { enabledModels } = storeToRefs(s)
 const pickerOpen = ref(false)
 const pickerSearch = ref('')
 const searchInputRef = ref<HTMLInputElement | null>(null)
-const triggerRef = ref<HTMLElement | null>(null)
-const popupRef = ref<HTMLElement | null>(null)
-
-let rafId: number | null = null
-
-// Continuously update position directly to the DOM for zero-latency tracking
-function trackPosition() {
-  if (pickerOpen.value) {
-    if (triggerRef.value && popupRef.value) {
-      const rect = triggerRef.value.getBoundingClientRect()
-
-      // The pop-up is strictly w-[300px], so subtract 150px for a perfect center
-      const left = rect.left + rect.width / 2 - 150
-
-      // Anchor the bottom of the popup exactly 8px above the top of the trigger.
-      // Using `bottom` strictly enforces it ALWAYS stays above, independent of CSS transforms.
-      const bottom = window.innerHeight - rect.top + 8
-
-      popupRef.value.style.left = `${left}px`
-      popupRef.value.style.bottom = `${bottom}px`
-    }
-    rafId = requestAnimationFrame(trackPosition)
-  }
-}
 
 function openPicker() {
   pickerOpen.value = true
   pickerSearch.value = ''
-
-  if (rafId !== null)
-    cancelAnimationFrame(rafId)
-
-  // Wait for the popup to be mounted by Vue, then track and focus
-  nextTick(() => {
-    searchInputRef.value?.focus()
-    trackPosition()
-  })
+  nextTick(() => searchInputRef.value?.focus())
 }
 
 function closePicker() {
   pickerOpen.value = false
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-  }
 }
 
 function selectModel(uid: string) {
@@ -102,8 +66,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydownGlobal)
-  if (rafId !== null)
-    cancelAnimationFrame(rafId)
 })
 
 // ── Presentation: Tailwind v4 class strings ─────────────────────────────────
@@ -144,24 +106,22 @@ function modelRowClasses(isActive: boolean) {
 <template>
   <div class="relative">
     <!-- ── Trigger ──────────────────────────────────────────────────────────── -->
-    <div ref="triggerRef">
-      <button
-        :class="modelBtnClasses"
-        aria-label="Select model"
-        @click="openPicker"
-      >
-        <Zap v-if="!activeModel" :size="13" :stroke-width="2.5" class="text-(--color-text-tertiary) shrink-0" />
-        <span class="text-[13px] font-semibold text-(--color-text-primary) tracking-[0.01em] whitespace-nowrap overflow-hidden text-ellipsis shrink">{{ activeLabel }}</span>
-        <ChevronDown
-          :size="13"
-          :stroke-width="2.5"
-          :class="chevronClasses"
-        />
-      </button>
-    </div>
+    <button
+      :class="modelBtnClasses"
+      aria-label="Select model"
+      @click="openPicker"
+    >
+      <Zap v-if="!activeModel" :size="13" :stroke-width="2.5" class="text-(--color-text-tertiary) shrink-0" />
+      <span class="text-[13px] font-semibold text-(--color-text-primary) tracking-[0.01em] whitespace-nowrap overflow-hidden text-ellipsis shrink">{{ activeLabel }}</span>
+      <ChevronDown
+        :size="13"
+        :stroke-width="2.5"
+        :class="chevronClasses"
+      />
+    </button>
 
-    <!-- ── Dropdown ────────────────────────────────────────────────────────── -->
-    <Teleport to="body">
+    <!-- ── Dropdown (always above trigger) ──────────────────────────────────── -->
+    <div class="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 z-[10000]">
       <Transition
         enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-bottom"
         enter-from-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"
@@ -172,9 +132,7 @@ function modelRowClasses(isActive: boolean) {
       >
         <div
           v-if="pickerOpen"
-          ref="popupRef"
-          class="fixed w-[300px] max-h-[300px] bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden z-[10000]"
-          style="will-change: transform, left, bottom;"
+          class="w-[300px] max-h-[300px] bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden"
         >
           <!-- Search toolbar -->
           <div class="flex items-center gap-1.5 px-2.5 pt-2.5 pb-2 border-b border-(--color-border-mid) shrink-0">
@@ -258,7 +216,7 @@ function modelRowClasses(isActive: boolean) {
           </div>
         </div>
       </Transition>
-    </Teleport>
+    </div>
 
     <!-- Backdrop -->
     <div v-if="pickerOpen" class="fixed inset-0 z-[9999] bg-transparent" @click="closePicker" />

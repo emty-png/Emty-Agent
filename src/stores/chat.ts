@@ -1,4 +1,4 @@
-import type { AgentStatus, ChatDraftState, ChatEstimatorState, ChatTab, Message } from './chat/types'
+import type { AgentStatus, ChatDraftState, ChatEstimatorState, ChatMode, ChatTab, Message } from './chat/types'
 import type { ToolPermissionDecision, ToolPermissionRequest } from '@/utils/tools/permissions'
 import type { QuestionAnswer } from '@/utils/tools/questions'
 import { defineStore } from 'pinia'
@@ -20,7 +20,7 @@ import { STATUS_IDLE } from './chat/agentStatus'
 import { compactConversationSession, persistCompactionMessages } from './chat/compaction'
 import { SESSION_COMPACTING_DIVIDER } from './chat/constants'
 import { createSendMessage } from './chat/sendMessage'
-import { createEmptyDraft, createEmptyEstimatorState, makeId, newTab } from './chat/utils'
+import { createEmptyDraft, createEmptyEstimatorState, makeId, newDesignTab, newTab } from './chat/utils'
 
 export type {
   AgentStatus,
@@ -115,17 +115,18 @@ export const useChatStore = defineStore('chat', () => {
     activeId.value = tab.id
   }
 
+  function addDesignTab(): void {
+    const tab = newDesignTab()
+    tab.workspacePath = useProjectStore().projectPath
+    tabs.value.push(tab)
+    activeId.value = tab.id
+  }
+
   function markInterruptedAssistantMessage(tab: ChatTab, reason: string): void {
     const lastAssistant = [...tab.messages].reverse().find(m => m.role === 'assistant')
     if (!lastAssistant)
       return
 
-    const note = `[Assistant turn ended with error/interruption: ${reason}]`
-    if (!/\[Assistant turn ended with error\/interruption:/.test(lastAssistant.content)) {
-      lastAssistant.content = lastAssistant.content.trim()
-        ? `${lastAssistant.content}\n\n${note}`
-        : note
-    }
     lastAssistant.error = reason
     if (tab.conversationId) {
       void dbUpdateMessage(lastAssistant.id, {
@@ -205,6 +206,10 @@ export const useChatStore = defineStore('chat', () => {
     workspacePath?: string | null
     workspaceMeta?: ChatTab['workspaceMeta']
     subAgent?: ChatTab['subAgent']
+    isDesignTab?: boolean
+    mode?: ChatMode
+    designs?: ChatTab['designs']
+    activeDesignId?: string | null
   }): void {
     const existing = tabs.value.find(t => t.conversationId === payload.conversationId)
     if (existing) {
@@ -232,6 +237,7 @@ export const useChatStore = defineStore('chat', () => {
       pendingQuestions: null,
       pendingPermissions: [],
       readRegistry: new Map(),
+      ...(payload.isDesignTab ? { isDesignTab: true, mode: 'design' as ChatMode, designs: payload.designs ?? [], activeDesignId: payload.activeDesignId ?? null } : {}),
     }
 
     tabs.value.push(tab)
@@ -514,7 +520,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // ── Checkpoint restore ────────────────────────────────────────────────────
 
-  async function restoreToCheckpoint(tabId: string, checkpointId: string): Promise<{ ok: boolean; error?: string }> {
+  async function restoreToCheckpoint(tabId: string, checkpointId: string, mode: 'full' | 'conversation' | 'files' = 'full'): Promise<{ ok: boolean; error?: string }> {
     const tab = tabs.value.find(t => t.id === tabId)
     if (!tab)
       return { ok: false, error: 'Tab not found' }
@@ -523,7 +529,7 @@ export const useChatStore = defineStore('chat', () => {
 
     try {
       const { useCheckpointStore } = await import('./checkpoints')
-      return await useCheckpointStore().restoreToCheckpoint(tab, checkpointId)
+      return await useCheckpointStore().restoreToCheckpoint(tab, checkpointId, mode)
     }
     catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : 'Restore failed' }
@@ -538,6 +544,7 @@ export const useChatStore = defineStore('chat', () => {
     activeTab,
     conversationStateCache,
     addTab,
+    addDesignTab,
     closeTab,
     openConversation,
     updateTabDraft,

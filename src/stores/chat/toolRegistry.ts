@@ -28,6 +28,9 @@ export interface ToolRegistryContext {
   initialTasks?: TaskItem[]
   subAgentSpawnCallback?: (args: { personality: SubAgentPersonality; mission: string }) => Promise<{ tabId: string; completionPromise: Promise<import('@/utils/tools/subagent').SubAgentOutcome> }>
   subAgentAbortCallback?: (tabId: string) => void
+  onDesignCreate?: (artifact: import('@/stores/chat/types').DesignArtifact) => void
+  onDesignEdit?: (id: string, patch: Partial<Omit<import('@/stores/chat/types').DesignArtifact, 'id' | 'createdAt'>>) => void
+  runtimeEvents?: import('@/utils/tools/shell').ShellToolRuntimeEvents
 }
 
 export type ToolProfileFactory = (ctx: ToolRegistryContext) => ToolSet | Promise<ToolSet>

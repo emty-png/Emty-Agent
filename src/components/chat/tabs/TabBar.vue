@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ChevronDown, ChevronLeft, ChevronRight, Globe, Palette, Plus, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
 import { isStreamingStatus } from '@/stores/chat/agentStatus'
@@ -10,9 +10,6 @@ import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
 import { useTerminalStore } from '@/stores/terminal'
 
-const emit = defineEmits<{
-  newDesign: []
-}>()
 const chat = useChatStore()
 const browser = useBrowserStore()
 const gitPane = useGitPaneStore()
@@ -20,6 +17,8 @@ const project = useProjectStore()
 const terminal = useTerminalStore()
 const { tabs, activeId } = storeToRefs(chat)
 
+const activeTab = computed(() => tabs.value.find(t => t.id === activeId.value))
+const isDesignTab = computed(() => activeTab.value?.isDesignTab === true)
 const activeBrowserOwner = computed(() => browser.getOwner(activeId.value))
 const activeGitOwner = computed(() => gitPane.getOwner(activeId.value))
 const activeTerminalOwner = computed(() => terminal.getOwner(activeId.value))
@@ -58,28 +57,13 @@ const TOLERANCE = 2
 const newTabMenuOpen = ref(false)
 const newTabTriggerRef = ref<HTMLElement | null>(null)
 const newTabMenuRef = ref<HTMLElement | null>(null)
-const newTabMenuPosition = ref({ top: 0, left: 0 })
 
-function updateNewTabMenuPosition() {
-  const trigger = newTabTriggerRef.value
-  if (!trigger)
-    return
-  const rect = trigger.getBoundingClientRect()
-  newTabMenuPosition.value = {
-    top: rect.bottom + 6,
-    left: rect.left - 75,
-  }
-}
-
-async function toggleNewTabMenu() {
+function toggleNewTabMenu() {
   if (newTabMenuOpen.value) {
     closeNewTabMenu()
     return
   }
-  updateNewTabMenuPosition()
   newTabMenuOpen.value = true
-  await nextTick()
-  updateNewTabMenuPosition()
 }
 
 function closeNewTabMenu() {
@@ -92,7 +76,7 @@ function handleNewTab() {
 }
 
 function handleNewDesign() {
-  emit('newDesign')
+  chat.addDesignTab()
   closeNewTabMenu()
 }
 
@@ -113,6 +97,11 @@ function onDocumentKeydown(event: KeyboardEvent) {
 }
 
 function onWindowResize() {
+  if (newTabMenuOpen.value)
+    closeNewTabMenu()
+}
+
+function onWheel(_e: WheelEvent) {
   if (newTabMenuOpen.value)
     closeNewTabMenu()
 }
@@ -163,6 +152,7 @@ onMounted(() => {
   document.addEventListener('pointerdown', onDocumentPointerDown)
   document.addEventListener('keydown', onDocumentKeydown)
   window.addEventListener('resize', onWindowResize)
+  window.addEventListener('wheel', onWheel, { passive: true })
 })
 
 onUnmounted(() => {
@@ -172,6 +162,7 @@ onUnmounted(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown)
   document.removeEventListener('keydown', onDocumentKeydown)
   window.removeEventListener('resize', onWindowResize)
+  window.removeEventListener('wheel', onWheel)
 })
 </script>
 
@@ -195,7 +186,19 @@ onUnmounted(() => {
           :class="tab.id === activeId ? 'cursor-default border-b-[var(--color-bg-base)] border-l-[var(--color-border-subtle)] border-r-[var(--color-border-subtle)] border-t-[var(--color-border-subtle)] bg-[var(--color-bg-base)] text-[var(--color-text-primary)]' : 'cursor-pointer border-b-[var(--color-border-subtle)] border-l-transparent border-r-transparent border-t-transparent bg-transparent text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]'"
           @click="activeId = tab.id"
         >
-          <span v-if="isStreamingStatus(tab.agentStatus)" class="h-[6px] w-[6px] shrink-0 animate-[tab-pulse_1.4s_ease-in-out_infinite] rounded-full bg-[var(--color-accent-bright)]" />
+          <span v-if="isStreamingStatus(tab.agentStatus)" class="gs-wrap">
+            <svg viewBox="0 0 28 28" width="14" height="14">
+              <defs>
+                <linearGradient :id="`gs-${tab.id}`" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color: var(--color-accent-bright); stop-opacity: 0.1" />
+                  <stop offset="50%" style="stop-color: var(--color-accent-bright); stop-opacity: 0.5" />
+                  <stop offset="100%" style="stop-color: var(--color-accent-bright); stop-opacity: 1" />
+                </linearGradient>
+              </defs>
+              <circle cx="14" cy="14" r="11" fill="none" stroke="var(--color-border-subtle)" stroke-width="2.5" />
+              <circle cx="14" cy="14" r="11" fill="none" :stroke="`url(#gs-${tab.id})`" stroke-width="2.5" stroke-linecap="round" class="gs-spin" />
+            </svg>
+          </span>
           <span class="min-w-0 flex-1 overflow-hidden text-ellipsis">{{ tab.title }}</span>
           <span
             class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-[opacity,background] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-primary)]"
@@ -220,38 +223,39 @@ onUnmounted(() => {
     </div>
 
     <div class="flex shrink-0 items-center gap-[1px] pb-[4px] pl-[2px]">
-      <div ref="newTabTriggerRef" class="flex shrink-0 items-center">
-        <button
-          class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-l-[var(--radius-sm)] border-none bg-transparent text-[var(--color-text-tertiary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
-          aria-label="New chat"
-          @click="chat.addTab"
-        >
-          <Plus :size="14" :stroke-width="1.8" />
-        </button>
-        <button
-          class="ml-[1px] flex h-[26px] w-[16px] shrink-0 cursor-pointer items-center justify-center rounded-r-[var(--radius-sm)] border-none bg-transparent text-[var(--color-text-tertiary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] aria-expanded:bg-[var(--color-bg-hover)] aria-expanded:text-[var(--color-text-primary)]"
-          aria-label="New tab options"
-          aria-haspopup="menu"
-          :aria-expanded="newTabMenuOpen"
-          @click="toggleNewTabMenu"
-        >
-          <ChevronDown :size="12" :stroke-width="2" />
-        </button>
-      </div>
+      <div ref="newTabTriggerRef" class="relative shrink-0">
+        <div class="flex items-center">
+          <button
+            class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-l-[var(--radius-sm)] border-none bg-transparent text-[var(--color-text-tertiary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
+            aria-label="New chat"
+            @click="chat.addTab"
+          >
+            <Plus :size="14" :stroke-width="1.8" />
+          </button>
+          <button
+            class="ml-[1px] flex h-[26px] w-[16px] shrink-0 cursor-pointer items-center justify-center rounded-r-[var(--radius-sm)] border-none bg-transparent text-[var(--color-text-tertiary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] aria-expanded:bg-[var(--color-bg-hover)] aria-expanded:text-[var(--color-text-primary)]"
+            aria-label="New tab options"
+            aria-haspopup="menu"
+            :aria-expanded="newTabMenuOpen"
+            @click="toggleNewTabMenu"
+          >
+            <ChevronDown :size="12" :stroke-width="2" />
+          </button>
+        </div>
 
-      <Teleport to="body">
         <Transition
-          enter-active-class="transition-[opacity,transform] duration-[120ms] ease-[ease]"
-          enter-from-class="opacity-0 -translate-y-[4px] scale-[0.98]"
-          leave-active-class="transition-[opacity,transform] duration-[120ms] ease-[ease]"
-          leave-to-class="opacity-0 -translate-y-[4px] scale-[0.98]"
+          enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-top"
+          enter-from-class="opacity-0 [transform:translateY(-8px)_scale(0.96)]"
+          enter-to-class="opacity-100 [transform:translateY(0)_scale(1)]"
+          leave-active-class="transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.7,0,0.84,0)] origin-top"
+          leave-from-class="opacity-100 [transform:translateY(0)_scale(1)]"
+          leave-to-class="opacity-0 [transform:translateY(-8px)_scale(0.96)]"
         >
           <div
             v-if="newTabMenuOpen"
             ref="newTabMenuRef"
-            class="fixed z-[1000] min-w-[180px] origin-top-left rounded-[var(--radius-md)] border border-[var(--color-border-mid)] bg-[var(--color-bg-surface)] p-[6px] [box-shadow:0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)]"
+            class="absolute left-1/2 -translate-x-1/2 top-[calc(100%+6px)] z-[1000] min-w-[180px] origin-top rounded-[var(--radius-md)] border border-[var(--color-border-mid)] bg-[var(--color-bg-surface)] p-[6px] [box-shadow:0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)]"
             role="menu"
-            :style="{ top: `${newTabMenuPosition.top}px`, left: `${newTabMenuPosition.left}px` }"
           >
             <div class="mb-1 flex items-center border-b border-[var(--color-border-subtle)] px-[10px] py-0.5">
               <span class="select-none text-[10.5px] font-bold uppercase tracking-[0.08em] text-[var(--color-text-dim)]">New</span>
@@ -266,23 +270,25 @@ onUnmounted(() => {
             </button>
           </div>
         </Transition>
-      </Teleport>
+      </div>
 
       <div class="mx-[3px] h-[14px] w-[1px] shrink-0 bg-[var(--color-border-subtle)]" />
 
       <button
-        class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border-none transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
-        :class="activeBrowserOwner.isPanelOpen ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent-text)]' : 'bg-transparent text-[var(--color-text-tertiary)]'"
+        class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border-none transition-[background,color] duration-[120ms] ease-[ease]"
+        :class="isDesignTab ? 'cursor-not-allowed text-[var(--color-text-dim)] opacity-30' : `cursor-pointer hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]${activeBrowserOwner.isPanelOpen ? ' bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent-text)]' : ' bg-transparent text-[var(--color-text-tertiary)]'}`"
         aria-label="Toggle embedded browser"
+        :disabled="isDesignTab"
         @click="toggleBrowser"
       >
         <Globe :size="14" :stroke-width="1.8" />
       </button>
 
       <button
-        class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border-none transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
-        :class="activeTerminalOwner.isPanelOpen ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent-text)]' : 'bg-transparent text-[var(--color-text-tertiary)]'"
+        class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border-none transition-[background,color] duration-[120ms] ease-[ease]"
+        :class="isDesignTab ? 'cursor-not-allowed text-[var(--color-text-dim)] opacity-30' : `cursor-pointer hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]${activeTerminalOwner.isPanelOpen ? ' bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent-text)]' : ' bg-transparent text-[var(--color-text-tertiary)]'}`"
         aria-label="Toggle terminal panel"
+        :disabled="isDesignTab"
         @click="toggleTerminal"
       >
         <!-- Collapsed: outline with horizontal divider -->
@@ -299,9 +305,10 @@ onUnmounted(() => {
       </button>
 
       <button
-        class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border-none transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
-        :class="activeGitOwner.isPanelOpen ? 'bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent-text)]' : 'bg-transparent text-[var(--color-text-tertiary)]'"
+        class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border-none transition-[background,color] duration-[120ms] ease-[ease]"
+        :class="isDesignTab ? 'cursor-not-allowed text-[var(--color-text-dim)] opacity-30' : `cursor-pointer hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]${activeGitOwner.isPanelOpen ? ' bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent-text)]' : ' bg-transparent text-[var(--color-text-tertiary)]'}`"
         aria-label="Git Menu"
+        :disabled="isDesignTab"
         @click="toggleGitPane"
       >
         <!-- Collapsed: outline only -->
@@ -330,15 +337,22 @@ onUnmounted(() => {
 }
 
 /* Unscoped global style block to ensure keyframes are available to arbitrary Tailwind values */
-@keyframes tab-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
+@keyframes gsSpin {
+  to {
+    transform: rotate(360deg);
   }
-  50% {
-    opacity: 0.35;
-    transform: scale(0.65);
-  }
+}
+
+.gs-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.gs-spin {
+  animation: gsSpin 1.8s linear infinite;
+  transform-origin: center;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 30%, transparent));
 }
 </style>

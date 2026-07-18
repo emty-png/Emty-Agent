@@ -44,6 +44,31 @@ export function newTab(): ChatTab {
   }
 }
 
+export function newDesignTab(): ChatTab {
+  return {
+    id: makeId(),
+    title: 'New Design',
+    messages: [],
+    conversationId: null,
+    workspacePath: null,
+    workspaceMeta: null,
+    workspaceLocked: false,
+    agentStatus: { type: 'idle' },
+    todos: [],
+    modelUid: null,
+    draft: createEmptyDraft(),
+    estimator: createEmptyEstimatorState(),
+    isCompacting: false,
+    pendingQuestions: null,
+    pendingPermissions: [],
+    readRegistry: new Map(),
+    mode: 'design',
+    isDesignTab: true,
+    designs: [],
+    activeDesignId: null,
+  }
+}
+
 // ── tool result helpers ─────────────────────────────────────────────────────
 
 /**
@@ -62,7 +87,73 @@ function wrapToolOutput(value: unknown): { type: 'text'; value: string } | { typ
 /**
  * Smartly compresses previous turn tool results to save maximum tokens without losing knowledge of the tool call.
  */
+const MAX_TOOL_ARG_CHARS = 50_000
+
+function truncateArgField(value: string, max: number): string {
+  if (value.length <= max)
+    return value
+  const half = Math.floor(max / 2)
+  return `${value.slice(0, half).trimEnd()}
+
+[... truncated ${Math.round((value.length - max) / 1024)} KB — head and tail shown ...]
+
+${value.slice(-half).trimStart()}`
+}
+
+function compressToolArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (toolName === 'write_file') {
+    const content = typeof args.content === 'string' ? args.content : null
+    if (content && content.length > MAX_TOOL_ARG_CHARS)
+      return { ...args, content: truncateArgField(content, MAX_TOOL_ARG_CHARS) }
+    return args
+  }
+
+  if (toolName === 'edit_files') {
+    let changed = false
+    const next = { ...args } as Record<string, unknown>
+    if (Array.isArray(next.edits)) {
+      next.edits = next.edits.map((edit: unknown) => {
+        if (typeof edit !== 'object' || edit === null)
+          return edit
+        const e = { ...edit } as Record<string, unknown>
+        for (const key of ['old_string', 'new_string'] as const) {
+          if (typeof e[key] === 'string' && (e[key] as string).length > MAX_TOOL_ARG_CHARS) {
+            e[key] = truncateArgField(e[key] as string, MAX_TOOL_ARG_CHARS)
+            changed = true
+          }
+        }
+        return e
+      })
+    }
+    return changed ? next : args
+  }
+
+  if (toolName === 'create_design') {
+    let changed = false
+    const next = { ...args } as Record<string, unknown>
+    for (const key of ['html', 'css', 'js'] as const) {
+      if (typeof next[key] === 'string' && (next[key] as string).length > MAX_TOOL_ARG_CHARS) {
+        next[key] = truncateArgField(next[key] as string, MAX_TOOL_ARG_CHARS)
+        changed = true
+      }
+    }
+    return changed ? next : args
+  }
+
+  // Global ceiling: if any tool produces unexpectedly large args
+  const serialized = JSON.stringify(args)
+  if (serialized && serialized.length > MAX_TOOL_ARG_CHARS * 2)
+    return { _compressed: true, summary: `Args were ${Math.round(serialized.length / 1024)} KB — truncated to avoid context bloat. Re-read files if needed.` }
+
+  return args
+}
+
 function smartCompressToolResult(toolName: string, result: unknown): unknown {
+  // Preserve full file read / edit results so the model can reference prior
+  // content on subsequent turns without re-reading the file.
+  if (toolName === 'read_files' || toolName === 'read_file' || toolName === 'edit_files')
+    return result
+
   if (typeof result !== 'object' || result === null) {
     if (typeof result === 'string' && result.length > 2500)
       return `...[truncated]...\n${result.slice(-2500)}`
@@ -172,12 +263,7 @@ export function toModelMessages(
         ? `${mentionContext}\n\n${text}`
         : mentionContext
       : text
-    const hasPersistedErrorNote = /\[Assistant turn ended with error\/interruption:/.test(baseText)
-    const messageText = errorText && !hasPersistedErrorNote
-      ? baseText
-        ? `${baseText}\n\n[Assistant turn ended with error/interruption: ${errorText}]`
-        : `[Assistant turn ended with error/interruption: ${errorText}]`
-      : baseText
+    const messageText = baseText
 
     // ── User messages ─────────────────────────────────────────────────
     if (m.role === 'user') {
@@ -246,7 +332,7 @@ export function toModelMessages(
         type: 'tool-call',
         toolCallId: event.id,
         toolName: event.toolName,
-        input: event.args ?? {},
+        input: event.args ? compressToolArgs(event.toolName, event.args) : {},
       })
     }
 

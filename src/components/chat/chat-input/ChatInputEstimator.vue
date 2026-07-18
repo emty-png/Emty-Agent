@@ -43,8 +43,6 @@ const lastAutoCompactionDebugState = ref('')
 
 // --- Dynamic Positioning & Teleport Controls ---
 const isOpen = ref(false)
-const triggerRef = ref<HTMLElement | null>(null)
-const popoverPos = ref({ x: 0, y: 0 })
 
 const closeTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
 
@@ -53,7 +51,6 @@ function openPopover() {
     clearTimeout(closeTimeout.value)
     closeTimeout.value = null
   }
-  updatePopoverPosition()
   isOpen.value = true
 }
 
@@ -64,57 +61,6 @@ function closePopover() {
     isOpen.value = false
   }, 150) // Small grace period delay to allow cursor transitions
 }
-
-function updatePopoverPosition() {
-  if (!triggerRef.value)
-    return
-
-  const rect = triggerRef.value.getBoundingClientRect()
-  const centerX = rect.left + rect.width / 2
-
-  const vw = document.documentElement.clientWidth || window.innerWidth
-  const popoverWidth = 260
-  const halfWidth = popoverWidth / 2
-  const padding = 12
-
-  // Prevent horizontal popover cutoffs on narrow viewports
-  let boundedX = centerX
-  if (boundedX - halfWidth < padding) {
-    boundedX = halfWidth + padding
-  }
-  else if (boundedX + halfWidth > vw - padding) {
-    boundedX = vw - halfWidth - padding
-  }
-
-  popoverPos.value = {
-    x: Math.round(boundedX),
-    y: Math.round(rect.top - 10),
-  }
-}
-
-let scrollRafId: number | null = null
-function handleScroll() {
-  if (!isOpen.value)
-    return
-  if (!scrollRafId) {
-    scrollRafId = requestAnimationFrame(() => {
-      updatePopoverPosition()
-      scrollRafId = null
-    })
-  }
-}
-
-// Bind resize and scroll triggers only when the popover is active
-watch(isOpen, open => {
-  if (open) {
-    window.addEventListener('resize', updatePopoverPosition, { passive: true })
-    window.addEventListener('scroll', handleScroll, { capture: true, passive: true })
-  }
-  else {
-    window.removeEventListener('resize', updatePopoverPosition)
-    window.removeEventListener('scroll', handleScroll, { capture: true })
-  }
-})
 
 // --- Computed: Model & Estimator State ---
 const estimatorState = computed(() => chat.activeTab.estimator)
@@ -440,16 +386,9 @@ const CONTEXT_RING_CLASSES = [
 ].join(' ')
 
 const POPOVER_BASE_CLASSES = [
-  'fixed w-[260px] p-3 rounded-(--radius-lg) bg-(--color-bg-surface) border border-(--color-border-mid)',
+  'w-[260px] p-3 rounded-(--radius-lg) bg-(--color-bg-surface) border border-(--color-border-mid)',
   'shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)]',
-  '[transition:opacity_120ms_ease-out,transform_120ms_ease-out,visibility_120ms] z-[10020]',
 ].join(' ')
-
-const popoverStateClasses = computed(() =>
-  isOpen.value
-    ? 'opacity-100 visible [transform:translate(-50%,-100%)_translateY(0)_scale(1)]'
-    : 'opacity-0 invisible [transform:translate(-50%,-100%)_translateY(6px)_scale(0.98)]',
-)
 
 const COMPACT_BTN_CLASSES = [
   'inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium text-(--color-text-secondary)',
@@ -465,7 +404,6 @@ const COMPACT_BTN_CLASSES = [
   <div v-if="hasModel" class="relative flex items-center shrink-0 outline-none" tabindex="-1">
     <div class="flex items-center p-0 bg-transparent border-none">
       <button
-        ref="triggerRef"
         type="button"
         :class="CONTEXT_RING_CLASSES"
         aria-label="Prompt context and cost details"
@@ -498,75 +436,83 @@ const COMPACT_BTN_CLASSES = [
       </button>
     </div>
 
-    <!-- Teleport Popover Details directly to body -->
-    <Teleport to="body">
-      <div
-        v-if="hasModel"
-        id="estimator-popover"
-        :class="[POPOVER_BASE_CLASSES, popoverStateClasses]"
-        :style="{ left: `${popoverPos.x}px`, top: `${popoverPos.y}px` }"
-        role="tooltip"
-        @mouseenter="openPopover"
-        @mouseleave="closePopover"
+    <!-- Popover always above trigger -->
+    <div class="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 z-[10020]">
+      <Transition
+        enter-active-class="transition-[opacity,transform] duration-150 ease-out origin-bottom"
+        enter-from-class="opacity-0 [transform:translateY(6px)_scale(0.98)]"
+        enter-to-class="opacity-100 [transform:translateY(0)_scale(1)]"
+        leave-active-class="transition-[opacity,transform] duration-100 ease-in origin-bottom"
+        leave-from-class="opacity-100 [transform:translateY(0)_scale(1)]"
+        leave-to-class="opacity-0 [transform:translateY(6px)_scale(0.98)]"
       >
-        <header class="pb-2.5 mb-1 border-b border-(--color-border-mid)">
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-[11px] font-bold text-(--color-text-tertiary) tracking-[0.05em] uppercase">Prompt Context</span>
-            <span class="text-[11px] font-bold text-(--color-text-secondary) tabular-nums">{{ usagePercent }}%</span>
-          </div>
-          <p class="mt-1.5 text-xs font-semibold text-(--color-text-primary)">
-            {{ contextSummary }}
-          </p>
-          <p class="mt-0.5 text-[11px] text-(--color-text-tertiary) leading-[1.4]">
-            {{ remainingSummary }}
-          </p>
-        </header>
+        <div
+          v-if="isOpen"
+          id="estimator-popover"
+          :class="POPOVER_BASE_CLASSES"
+          role="tooltip"
+          @mouseenter="openPopover"
+          @mouseleave="closePopover"
+        >
+          <header class="pb-2.5 mb-1 border-b border-(--color-border-mid)">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-[11px] font-bold text-(--color-text-tertiary) tracking-[0.05em] uppercase">Prompt Context</span>
+              <span class="text-[11px] font-bold text-(--color-text-secondary) tabular-nums">{{ usagePercent }}%</span>
+            </div>
+            <p class="mt-1.5 text-xs font-semibold text-(--color-text-primary)">
+              {{ contextSummary }}
+            </p>
+            <p class="mt-0.5 text-[11px] text-(--color-text-tertiary) leading-[1.4]">
+              {{ remainingSummary }}
+            </p>
+          </header>
 
-        <main v-if="estimate" class="grid gap-1.5 pt-2.5">
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Input cost</span>
-            <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">{{ usdFormatter.format(estimate.inputCost) }}</span>
-          </div>
-          <div class="flex items-center justify-between gap-3">
-            <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Max output cost</span>
-            <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
-              {{ usdFormatter.format(estimate.projectedOutputCost) }}
-            </span>
-          </div>
-          <div
-            v-if="estimate.projectedReasoningTokens > 0 || estimate.projectedReasoningCost > 0"
-            class="flex items-center justify-between gap-3"
-          >
-            <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Reasoning budget</span>
-            <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
-              {{ usdFormatter.format(estimate.projectedReasoningCost) }}
-            </span>
-          </div>
-          <div class="flex items-center justify-between gap-3 mt-1 pt-2.5 border-t border-(--color-border-mid)">
-            <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Max total est.</span>
-            <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
-              {{ usdFormatter.format(estimate.projectedMaxTotalCost) }}
-            </span>
-          </div>
-        </main>
+          <main v-if="estimate" class="grid gap-1.5 pt-2.5">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Input cost</span>
+              <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">{{ usdFormatter.format(estimate.inputCost) }}</span>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Max output cost</span>
+              <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
+                {{ usdFormatter.format(estimate.projectedOutputCost) }}
+              </span>
+            </div>
+            <div
+              v-if="estimate.projectedReasoningTokens > 0 || estimate.projectedReasoningCost > 0"
+              class="flex items-center justify-between gap-3"
+            >
+              <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Reasoning budget</span>
+              <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
+                {{ usdFormatter.format(estimate.projectedReasoningCost) }}
+              </span>
+            </div>
+            <div class="flex items-center justify-between gap-3 mt-1 pt-2.5 border-t border-(--color-border-mid)">
+              <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Max total est.</span>
+              <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums tracking-[-0.01em]">
+                {{ usdFormatter.format(estimate.projectedMaxTotalCost) }}
+              </span>
+            </div>
+          </main>
 
-        <footer v-if="estimateError" class="grid pt-2.5">
-          <p class="text-[10.5px] leading-[1.4] text-(--color-danger-text) font-medium" role="alert">
-            {{ estimateError }}
-          </p>
-        </footer>
+          <footer v-if="estimateError" class="grid pt-2.5">
+            <p class="text-[10.5px] leading-[1.4] text-(--color-danger-text) font-medium" role="alert">
+              {{ estimateError }}
+            </p>
+          </footer>
 
-        <div v-if="manualCompactionEnabled" class="flex justify-center pt-2.5 mt-2.5 border-t border-(--color-border-mid)">
-          <button
-            type="button"
-            :class="COMPACT_BTN_CLASSES"
-            :disabled="isCompacting"
-            @click="emitManualCompaction"
-          >
-            {{ isCompacting ? 'Compacting...' : 'Compact Session' }}
-          </button>
+          <div v-if="manualCompactionEnabled" class="flex justify-center pt-2.5 mt-2.5 border-t border-(--color-border-mid)">
+            <button
+              type="button"
+              :class="COMPACT_BTN_CLASSES"
+              :disabled="isCompacting"
+              @click="emitManualCompaction"
+            >
+              {{ isCompacting ? 'Compacting...' : 'Compact Session' }}
+            </button>
+          </div>
         </div>
-      </div>
-    </Teleport>
+      </Transition>
+    </div>
   </div>
 </template>

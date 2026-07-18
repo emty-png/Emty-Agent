@@ -182,6 +182,22 @@ export const useTerminalStore = defineStore('terminal', () => {
         appendDebug(match.session, `exit code=${event.exitCode} success=${event.success}`)
         if (!event.success)
           appendSystemLine(match.session, `[terminal] Process exited with code ${event.exitCode}`)
+        // Auto-remove dead session from the owner's tab list
+        {
+          const owner = ensureOwner(match.ownerId)
+          const idx = owner.sessions.findIndex(s => s.id === event.sessionId)
+          if (idx !== -1) {
+            owner.sessions.splice(idx, 1)
+            if (owner.activeSessionId === event.sessionId) {
+              owner.activeSessionId = owner.sessions[Math.max(0, idx - 1)]?.id
+                ?? owner.sessions[0]?.id
+                ?? null
+            }
+            if (!owner.sessions.length)
+              owner.isPanelOpen = false
+          }
+          outputSubscribers.delete(event.sessionId)
+        }
         break
 
       case 'error':
@@ -327,6 +343,17 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (index === -1)
       return
 
+    outputSubscribers.delete(sessionId)
+
+    // Kill the process first, then clean up UI
+    try {
+      await closeTerminalSession(sessionId)
+    }
+    catch (error) {
+      console.warn('[TerminalStore] Failed to close terminal session:', error)
+    }
+
+    // Now safe to remove from UI
     owner.sessions.splice(index, 1)
 
     if (owner.activeSessionId === sessionId) {
@@ -337,9 +364,6 @@ export const useTerminalStore = defineStore('terminal', () => {
 
     if (!owner.sessions.length)
       owner.isPanelOpen = false
-
-    outputSubscribers.delete(sessionId)
-    await closeTerminalSession(sessionId).catch(() => {})
   }
 
   async function disposeOwner(ownerId: string) {

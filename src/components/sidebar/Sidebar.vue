@@ -16,6 +16,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   dbCountConversationsByWorkspace,
   dbListConversationsByWorkspace,
+  dbListConversationsByWorkspaceAll,
   dbListProjectsWithLatestChat,
 } from '@/db/database'
 import { useChatStore } from '@/stores/chat'
@@ -46,6 +47,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectView: [view: ViewId]
   openSettings: []
+  contextMenuOpen: []
+  contextMenuClose: []
 }>()
 
 const sidebar = useSidebarStore()
@@ -148,6 +151,11 @@ function toggleProject(path: string) {
     collapsedProjects.value.add(path)
 }
 
+async function showAllConversations(project: ProjectItem) {
+  const allConversations = await dbListConversationsByWorkspaceAll(project.workspace_path)
+  project.conversations = allConversations
+}
+
 onMounted(loadProjects)
 
 // refresh projects when conversations change (new chat created, renamed, deleted)
@@ -163,6 +171,7 @@ const menuPos = ref({ x: 0, y: 0 })
 function openMenu(e: MouseEvent, id: string) {
   e.stopPropagation()
   menuOpen.value = id
+  emit('contextMenuOpen')
   const btn = e.currentTarget as HTMLElement
   const rect = btn.getBoundingClientRect()
   const menuW = 140
@@ -177,19 +186,20 @@ function openMenu(e: MouseEvent, id: string) {
 
 function closeMenu() {
   menuOpen.value = null
+  emit('contextMenuClose')
 }
 
 // ── rename ────────────────────────────────────────────────────────────────────
 const renamingId = ref<string | null>(null)
 const renameValue = ref('')
-const renameInputRef = ref<HTMLInputElement | null>(null)
+const renameInputRef = ref<HTMLInputElement[]>([])
 
 async function startRename(conv: ConversationRow) {
   closeMenu()
   renamingId.value = conv.id
   renameValue.value = conv.title
   await nextTick()
-  renameInputRef.value?.select()
+  renameInputRef.value[0]?.select()
 }
 
 async function commitRename(id: string) {
@@ -384,10 +394,10 @@ function labelClasses(isActive: boolean) {
 
             <!-- show more -->
             <button
-              v-if="project.totalCount > PROJECT_CHAT_LIMIT"
+              v-if="project.totalCount > PROJECT_CHAT_LIMIT && project.conversations.length === PROJECT_CHAT_LIMIT"
               type="button"
               class="sidebar-show-more"
-              @click="emit('selectView', 'projects')"
+              @click.stop="showAllConversations(project)"
             >
               Show {{ project.totalCount - PROJECT_CHAT_LIMIT }} more...
             </button>
@@ -541,7 +551,7 @@ function labelClasses(isActive: boolean) {
   width: 100%;
   height: 26px;
   padding-left: 30px;
-  padding-right: 24px;
+  padding-right: 64px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;

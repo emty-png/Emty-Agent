@@ -37,6 +37,8 @@ export function parseSkillMarkdown(options: {
     result.allowedTools = parsed.allowedTools
   if (parsed.paths)
     result.paths = parsed.paths
+  if (parsed.modes)
+    result.modes = parsed.modes
 
   return result
 }
@@ -65,6 +67,8 @@ export function parseSkillContent(content: string, fallbackTitle: string): Parse
     result.allowedTools = frontmatter.allowedTools
   if (frontmatter.paths)
     result.paths = frontmatter.paths
+  if (frontmatter.modes)
+    result.modes = frontmatter.modes
 
   return result
 }
@@ -107,10 +111,10 @@ export function extractLabeledValue(content: string, label: string): string | nu
   return null
 }
 
-export function extractFrontmatter(content: string): { name: string | null; description: string | null; tags: string[]; commands: SkillCommand[]; whenToUse: string | null; model: string | null; allowedTools: string[] | null; paths: string[] | null } {
+export function extractFrontmatter(content: string): { name: string | null; description: string | null; tags: string[]; commands: SkillCommand[]; whenToUse: string | null; model: string | null; allowedTools: string[] | null; paths: string[] | null; modes: string[] | null } {
   const lines = content.split(/\r?\n/)
   if (lines[0]?.trim() !== '---')
-    return { name: null, description: null, tags: [], commands: [], whenToUse: null, model: null, allowedTools: null, paths: null }
+    return { name: null, description: null, tags: [], commands: [], whenToUse: null, model: null, allowedTools: null, paths: null, modes: null }
 
   const values = new Map<string, string>()
   const commands: SkillCommand[] = []
@@ -169,6 +173,7 @@ export function extractFrontmatter(content: string): { name: string | null; desc
 
   const rawAllowedTools = values.get('allowed-tools')
   const rawPaths = values.get('paths')
+  const rawModes = values.get('modes')
 
   return {
     name: values.get('name') ?? null,
@@ -185,6 +190,9 @@ export function extractFrontmatter(content: string): { name: string | null; desc
       : null,
     paths: rawPaths
       ? rawPaths.split(',').map(p => p.trim()).filter(Boolean)
+      : null,
+    modes: rawModes
+      ? rawModes.split(',').map(m => m.trim()).filter(Boolean)
       : null,
   }
 }

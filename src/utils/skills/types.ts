@@ -22,6 +22,7 @@ export interface SkillMetadata {
   model?: string
   allowedTools?: string[]
   paths?: string[]
+  modes?: string[]
 }
 
 export interface SkillResource {
@@ -57,4 +58,5 @@ export interface ParsedSkillContent {
   model?: string
   allowedTools?: string[]
   paths?: string[]
+  modes?: string[]
 }

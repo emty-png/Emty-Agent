@@ -84,6 +84,10 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 - `MAX_CONTEXT_CHARS` truncates injected context at ~18k characters; keep `AGENTS.md` concise.
 - Built-in skills live in `src/skills/builtin/<skill-name>/SKILL.md` with YAML frontmatter.
 
+### Rules
+
+- For the new .vue files make sure to use tailwind v4 cause most of the files are now ported to tailwind v4 EXECPT few exceptions, those files should be written with the styling that they already contain.
+
 ### Style / lint
 
 | Rule            | Value                                                                |

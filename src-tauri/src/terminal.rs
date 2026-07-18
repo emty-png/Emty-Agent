@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     env,
     io::{Read, Write},
+    os::windows::process::CommandExt,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
@@ -20,7 +21,9 @@ pub struct TerminalState {
 struct TerminalSession {
     master: Mutex<Box<dyn portable_pty::MasterPty + Send>>,
     writer: Mutex<Box<dyn Write + Send>>,
-    child: Mutex<Box<dyn portable_pty::Child + Send>>,
+    #[allow(dead_code)]
+    process_id: Option<u32>,
+    #[allow(dead_code)] // used on non-Windows via #[cfg(not(windows))]
     killer: Mutex<Box<dyn portable_pty::ChildKiller + Send + Sync>>,
 }
 
@@ -243,6 +246,7 @@ pub fn terminal_start(
         .spawn_command(command)
         .map_err(|error| format!("Failed to start shell: {error}"))?;
     let killer = child.clone_killer();
+    let process_id = child.process_id();
     drop(pair.slave);
 
     let reader = pair
@@ -257,7 +261,7 @@ pub fn terminal_start(
     let session = Arc::new(TerminalSession {
         master: Mutex::new(pair.master),
         writer: Mutex::new(writer),
-        child: Mutex::new(child),
+        process_id,
         killer: Mutex::new(killer),
     });
 
@@ -308,13 +312,9 @@ pub fn terminal_start(
 
     let wait_app = app.clone();
     let wait_session_id = request.session_id.clone();
-    let wait_session = Arc::clone(&session);
+    let mut child = child;
     thread::spawn(move || {
-        let exit_result = wait_session
-            .child
-            .lock()
-            .map_err(|_| String::from("Terminal child lock poisoned"))
-            .and_then(|mut child| child.wait().map_err(|error| error.to_string()));
+        let exit_result = child.wait().map_err(|error| error.to_string());
 
         match exit_result {
             Ok(status) => emit_terminal_event(
@@ -418,13 +418,35 @@ pub fn terminal_close(
         .remove(&request.session_id)
         .ok_or_else(|| String::from("Terminal session not found"))?;
 
-    let mut killer = session
-        .killer
-        .lock()
-        .map_err(|_| String::from("Terminal killer lock poisoned"))?;
-    killer
-        .kill()
-        .map_err(|error| format!("Failed to kill terminal process: {error}"))?;
+    // On Windows, use taskkill to kill the entire process tree.
+    // portable_pty's ChildKiller::kill() only terminates the immediate
+    // child (the shell), leaving spawned grandchildren (npm, node, etc.) alive.
+    #[cfg(windows)]
+    {
+        let pid = session.process_id;
+
+        // Drop all locks before spawning taskkill to avoid deadlocks
+        // with the reader/wait threads that hold Arc<Session> clones.
+        drop(session);
+
+        if let Some(pid) = pid {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .output();
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let mut killer = session
+            .killer
+            .lock()
+            .map_err(|_| String::from("Terminal killer lock poisoned"))?;
+        killer
+            .kill()
+            .map_err(|error| format!("Failed to kill terminal process: {error}"))?;
+    }
 
     Ok(())
 }

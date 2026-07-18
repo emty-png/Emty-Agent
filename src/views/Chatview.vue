@@ -20,6 +20,7 @@ import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
 import { useTerminalStore } from '@/stores/terminal'
 import { useThemeStore } from '@/stores/themes'
+import DesignView from '@/views/DesignView.vue'
 
 const SPLIT_MIN = 35
 const SPLIT_MAX = 70
@@ -346,7 +347,14 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
         :style="mainPaneStyle"
       >
         <div class="chat-main-content" :style="mainContentStyle">
-          <Transition name="fade" mode="out-in">
+          <!-- Design mode layout -->
+          <DesignView
+            v-if="activeTab && activeTab.isDesignTab"
+            :key="`design-${activeTab.id}`"
+            :tab="activeTab"
+          />
+          <!-- Normal chat layout -->
+          <Transition v-else-if="activeTab" name="fade" mode="out-in">
             <div
               v-if="activeTab.messages.length === 0 && !isSubAgentTab"
               :key="`landing-${activeTab.id}`"
@@ -356,6 +364,7 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
               <div class="center-col">
                 <ChatInput
                   :agent-status="activeTab.agentStatus"
+                  :show-project-picker="true"
                   @send="send"
                   @stop="stop"
                 />
@@ -468,6 +477,8 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
                 <div class="center-col">
                   <ChatInput
                     :agent-status="activeTab.agentStatus"
+                    :show-project-picker="false"
+                    :show-estimator="true"
                     @send="send"
                     @stop="stop"
                   />
@@ -652,7 +663,7 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
 
 .center-col {
   width: 100%;
-  max-width: 720px;
+  max-width: min(720px, 90%);
   margin-inline: auto;
   padding-inline: 20px;
 }
@@ -707,12 +718,12 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
 
 .thread-inner {
   width: 100%;
-  max-width: 670px;
+  max-width: min(670px, 90%);
   margin-inline: auto;
   padding-inline: 20px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
 }
 
 .scroll-blur-top,

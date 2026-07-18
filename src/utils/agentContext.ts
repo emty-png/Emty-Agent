@@ -12,6 +12,7 @@ export interface AgentPromptBuilderOptions {
   autoContext: AutoContextSettings
   disabledSkillIds: string[]
   supportsToolCalls: boolean
+  mode?: string | undefined
   workspaceContext?: string
   memoryContext?: string
   recoveryContext?: string
@@ -43,6 +44,7 @@ export async function buildAgentSystemPrompt(
     autoContext,
     disabledSkillIds,
     supportsToolCalls,
+    mode,
     workspaceContext,
     memoryContext,
     recoveryContext,
@@ -53,14 +55,16 @@ export async function buildAgentSystemPrompt(
     getEnabledSkills(projectPath, disabledSkillIds),
   ])
 
+  const filteredSkills = filterSkillsByMode(enabledSkills, mode)
+
   const preloadedSkills = supportsToolCalls
     ? []
-    : await loadPreloadedSkills(selectRelevantSkills(enabledSkills, requestText), projectPath)
+    : await loadPreloadedSkills(selectRelevantSkills(filteredSkills, requestText), projectPath)
 
   const prompt = composeAgentPrompt({
     basePrompt,
     contextFiles,
-    availableSkills: enabledSkills,
+    availableSkills: filteredSkills,
     preloadedSkills,
     supportsToolCalls,
     ...(workspaceContext ? { workspaceContext } : {}),
@@ -72,7 +76,7 @@ export async function buildAgentSystemPrompt(
     prompt,
     promptFingerprint: hashPrompt(prompt),
     contextFiles,
-    availableSkills: enabledSkills,
+    availableSkills: filteredSkills,
     preloadedSkills,
   }
 }
@@ -228,6 +232,12 @@ function trimContextContent(content: string, maxChars = MAX_CONTEXT_CHARS): stri
   const head = Math.floor(maxChars * 0.7)
   const tail = maxChars - head
   return `${minified.slice(0, head).trimEnd()}\n\n[... context trimmed ...]\n\n${minified.slice(-tail).trimStart()}`
+}
+
+function filterSkillsByMode(skills: SkillMetadata[], mode?: string): SkillMetadata[] {
+  if (!mode)
+    return skills
+  return skills.filter(skill => !skill.modes || skill.modes.length === 0 || skill.modes.includes(mode))
 }
 
 function hashPrompt(input: string): string {

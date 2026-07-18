@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { Globe, Image, Plus, Zap } from 'lucide-vue-next'
+import { Globe, Image, Mic, Plus, Zap } from 'lucide-vue-next'
 import { ref } from 'vue'
 import BuiltInProviders from './BuiltInProviders.vue'
 import CompatibleProviders from './CompatibleProviders.vue'
 import ImageGenProviders from './ImageGenProviders.vue'
+import VoiceProviders from './VoiceProviders.vue'
 import WebProviders from './WebProviders.vue'
 
 const emit = defineEmits<{ browseProviders: [] }>()
 
-const providerView = ref<'models' | 'web' | 'image'>('models')
+const providerView = ref<'models' | 'web' | 'image' | 'voice'>('models')
 </script>
 
 <template>
@@ -43,6 +44,14 @@ const providerView = ref<'models' | 'web' | 'image'>('models')
         <Image :size="16" :stroke-width="1.8" />
         <span class="view-tab-title">Image Gen Providers</span>
       </button>
+      <button
+        class="view-tab"
+        :class="{ 'view-tab--active': providerView === 'voice' }"
+        @click="providerView = 'voice'"
+      >
+        <Mic :size="16" :stroke-width="1.8" />
+        <span class="view-tab-title">Voice</span>
+      </button>
     </div>
 
     <!-- Model Providers view -->
@@ -70,6 +79,11 @@ const providerView = ref<'models' | 'web' | 'image'>('models')
     <!-- Image Gen Providers view -->
     <template v-if="providerView === 'image'">
       <ImageGenProviders />
+    </template>
+
+    <!-- Voice Providers view -->
+    <template v-if="providerView === 'voice'">
+      <VoiceProviders />
     </template>
   </section>
 </template>

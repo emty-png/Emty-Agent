@@ -1,4 +1,5 @@
 import type { Ref } from 'vue'
+import type { ChatMode } from '@/stores/chat/types'
 import { computed, nextTick, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { CHIP_PADDING, packSkill } from '@/utils/mentionFormat'
@@ -19,6 +20,7 @@ export function useSlashCommand(
   textareaRef: Ref<HTMLTextAreaElement | null>,
   text: Ref<string>,
   projectPath: Ref<string | null>,
+  mode?: Ref<ChatMode | undefined>,
 ) {
   const settings = useSettingsStore()
   const isOpen = ref(false)
@@ -27,35 +29,46 @@ export function useSlashCommand(
   const selectedIdx = ref(0)
   const loading = ref(false)
 
-  const allCommands = ref<CommandEntry[]>([])
+  const baseCommands = ref<CommandEntry[]>([])
 
   async function loadCommands() {
     loading.value = true
     try {
       const skills = await getEnabledSkills(projectPath.value, settings.disabledSkillIds)
+      const currentMode = mode?.value
 
-      const commands: CommandEntry[] = [
-        {
-          id: 'new',
-          label: '/new',
-          description: 'Open a new chat tab and close the current one',
-          type: 'action',
-        },
-        {
-          id: 'plan',
-          label: '/plan',
-          description: 'Enter plan mode to design the implementation without making code changes',
-          type: 'action',
-        },
-        {
-          id: 'init',
-          label: '/init',
-          description: 'Generate or update AGENTS.md for this project',
-          type: 'action',
-        },
-      ]
+      // Action commands — filter by mode
+      const commands: CommandEntry[] = []
+      if (currentMode !== 'design') {
+        commands.push(
+          {
+            id: 'new',
+            label: '/new',
+            description: 'Open a new chat tab and close the current one',
+            type: 'action',
+          },
+          {
+            id: 'init',
+            label: '/init',
+            description: 'Generate or update AGENTS.md for this project',
+            type: 'action',
+          },
+          {
+            id: 'restore',
+            label: '/restore',
+            description: 'Browse checkpoints and restore to a previous state',
+            type: 'action',
+          },
+        )
+      }
 
+      // Skills — filter by mode compatibility
       for (const skill of skills) {
+        const skillModes = skill.modes
+        const skillMatchesMode = !skillModes || skillModes.length === 0 || (currentMode && skillModes.includes(currentMode))
+        if (!skillMatchesMode)
+          continue
+
         if (skill.commands.length > 0) {
           for (const cmd of skill.commands) {
             commands.push({
@@ -80,7 +93,7 @@ export function useSlashCommand(
         }
       }
 
-      allCommands.value = commands
+      baseCommands.value = commands
     }
     catch {
       // ignore
@@ -89,6 +102,26 @@ export function useSlashCommand(
       loading.value = false
     }
   }
+
+  const planCommand = computed<CommandEntry | null>(() => {
+    if (mode?.value === 'design')
+      return null
+    return mode?.value === 'plan'
+      ? {
+          id: 'exit-plan',
+          label: '/exit-plan',
+          description: 'Exit plan mode and return to build mode',
+          type: 'action',
+        }
+      : {
+          id: 'plan',
+          label: '/plan',
+          description: 'Enter plan mode to design the implementation without making code changes',
+          type: 'action',
+        }
+  })
+
+  const allCommands = computed<CommandEntry[]>(() => [planCommand.value, ...baseCommands.value].filter((c): c is CommandEntry => c !== null))
 
   const filteredCommands = computed<CommandEntry[]>(() => {
     const q = slashQuery.value.toLowerCase()

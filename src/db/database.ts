@@ -175,6 +175,16 @@ const MIGRATIONS: string[] = [
 
   // v9 — elapsed seconds for assistant messages
   'ALTER TABLE messages ADD COLUMN elapsed_sec INTEGER',
+
+  // v10 — model UID per assistant message
+  'ALTER TABLE messages ADD COLUMN model_uid TEXT',
+
+  // v11 — model name per assistant message
+  'ALTER TABLE messages ADD COLUMN model_name TEXT',
+
+  // v12 — design tab persistence
+  'ALTER TABLE conversations ADD COLUMN is_design_tab INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE conversations ADD COLUMN designs TEXT DEFAULT NULL',
 ]
 
 // ── column existence helper ───────────────────────────────────────────────────
@@ -230,12 +240,17 @@ async function migrate(instance: Database): Promise<void> {
     // is_complete = 0 means streaming was interrupted; 1 means fully saved.
     // DEFAULT 1 so all pre-existing rows are treated as complete.
     { name: 'is_complete', definition: 'INTEGER NOT NULL DEFAULT 1' },
+    { name: 'elapsed_sec', definition: 'INTEGER' },
+    { name: 'model_uid', definition: 'TEXT' },
+    { name: 'model_name', definition: 'TEXT' },
   ])
 
   await ensureColumns(instance, 'conversations', [
     { name: 'created_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'updated_at', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'is_subagent', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'is_design_tab', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'designs', definition: 'TEXT DEFAULT NULL' },
   ])
 
   await ensureColumns(instance, 'memories', [
@@ -272,6 +287,8 @@ export interface ConversationRow {
   workspace_path?: string | null
   workspace_meta?: string | null
   is_subagent?: number
+  is_design_tab?: number
+  designs?: string | null
 }
 
 export interface MessageRow {
@@ -293,6 +310,8 @@ export interface MessageRow {
    */
   is_complete?: number
   elapsed_sec?: number | null
+  model_uid?: string | null
+  model_name?: string | null
 }
 
 export interface CheckpointRow {
@@ -371,8 +390,8 @@ export async function dbInsertConversation(
 ): Promise<void> {
   const d = await getDb()
   await d.execute(
-    `INSERT INTO conversations (id, title, created_at, updated_at, msg_count, workspace_path, workspace_meta, is_subagent)
-     VALUES (?, ?, ?, ?, 0, ?, ?, ?)`,
+    `INSERT INTO conversations (id, title, created_at, updated_at, msg_count, workspace_path, workspace_meta, is_subagent, is_design_tab, designs)
+     VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
     [
       conv.id,
       conv.title,
@@ -381,6 +400,8 @@ export async function dbInsertConversation(
       conv.workspace_path ?? null,
       conv.workspace_meta ?? null,
       conv.is_subagent ?? 0,
+      conv.is_design_tab ?? 0,
+      conv.designs ?? null,
     ],
   )
 }
@@ -417,6 +438,16 @@ export async function dbUpdateConversationWorkspace(
 
   const d = await getDb()
   await d.execute(`UPDATE conversations SET ${sets.join(', ')} WHERE id = ?`, values)
+}
+
+export async function dbUpdateConversationDesigns(id: string, designs: string | null): Promise<void> {
+  if (!id)
+    throw new Error('dbUpdateConversationDesigns: id is required')
+  const d = await getDb()
+  await d.execute(
+    'UPDATE conversations SET designs = ?, updated_at = ? WHERE id = ?',
+    [designs, Date.now(), id],
+  )
 }
 
 export async function dbUpdateConversationTitle(id: string, title: string): Promise<void> {
@@ -536,8 +567,8 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
   await d.execute(
     `INSERT INTO messages
         (id, conversation_id, role, content, created_at,
-         mention_context, tool_events, parts, attachments, cache_stats, is_complete, elapsed_sec)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         mention_context, tool_events, parts, attachments, cache_stats, is_complete, elapsed_sec, model_uid, model_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       msg.id,
       msg.conversation_id,
@@ -551,6 +582,8 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
       msg.cache_stats ?? null,
       msg.is_complete ?? 1,
       msg.elapsed_sec ?? null,
+      msg.model_uid ?? null,
+      msg.model_name ?? null,
     ],
   )
 }
@@ -1012,6 +1045,18 @@ export async function dbListConversationsByWorkspace(
      ORDER BY updated_at DESC
      LIMIT ?`,
     [workspacePath, Math.max(1, limit)],
+  )
+}
+
+export async function dbListConversationsByWorkspaceAll(
+  workspacePath: string,
+): Promise<ConversationRow[]> {
+  const d = await getDb()
+  return d.select<ConversationRow[]>(
+    `SELECT * FROM conversations
+     WHERE workspace_path = ? AND is_subagent = 0
+     ORDER BY updated_at DESC`,
+    [workspacePath],
   )
 }
 

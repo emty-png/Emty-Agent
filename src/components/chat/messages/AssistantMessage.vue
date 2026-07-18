@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Message, ToolEvent } from '@/stores/chat'
 import type { AgentStatus } from '@/stores/chat/types'
-import { AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle, Check, Copy } from 'lucide-vue-next'
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { isStreamingStatus } from '@/stores/chat/agentStatus'
 import ActionGroupBlock from './ActionGroupBlock.vue'
@@ -164,10 +164,6 @@ const layout = computed(() => {
   }
 })
 
-const hasRestText = computed(() => {
-  return layout.value.rest.some(g => g.type === 'text' && g.hasText)
-})
-
 const hasVisibleWork = computed(() => {
   if (!layout.value.work || layout.value.work.length === 0)
     return false
@@ -201,6 +197,33 @@ const displayError = computed(() => {
           ? (props.msg.error as { message: unknown }).message
           : props.msg.error,
       )
+})
+
+function friendlyErrorMessage(raw: string): string {
+  const lower = raw.toLowerCase()
+  if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('network request failed'))
+    return 'Network connection lost. Check your internet and try again.'
+  if (lower.includes('econnrefused'))
+    return 'Connection refused. The server may be unreachable.'
+  if (lower.includes('econnreset'))
+    return 'Connection was reset. The server may have dropped the request.'
+  if (lower.includes('etimedout') || lower.includes('timed out'))
+    return 'Request timed out. The server took too long to respond.'
+  if (lower.includes('enotfound') || lower.includes('getaddrinfo'))
+    return 'DNS lookup failed. Check your network connection.'
+  if (lower.includes('abort') || lower.includes('interrupted'))
+    return 'Generation was interrupted.'
+  if (lower.includes('rate limit') || lower.includes('429'))
+    return 'Rate limited by the provider. Please wait a moment and try again.'
+  if (lower.includes('401') || lower.includes('403') || lower.includes('unauthorized') || lower.includes('forbidden'))
+    return 'Authentication failed. Check your API key in Settings.'
+  return raw
+}
+
+const friendlyError = computed(() => {
+  if (!displayError.value)
+    return null
+  return friendlyErrorMessage(displayError.value)
 })
 
 // ── View States & Timeouts ────────────────────────────────────────────────────
@@ -270,9 +293,9 @@ function toggleBlock(key: string) {
 
 const copiedKey = ref<string | null>(null)
 
-async function copyThinking(key: string, text: string) {
+function copyThinking(key: string, text: string) {
   try {
-    await navigator.clipboard.writeText(text)
+    navigator.clipboard.writeText(text)
     copiedKey.value = key
     clearTimeout(copyTimeout)
     copyTimeout = window.setTimeout(() => {
@@ -282,31 +305,56 @@ async function copyThinking(key: string, text: string) {
   catch {}
 }
 
-async function copyAction() {
+// ── Footer: copy last text, time, model ──────────────────────────────────
+
+const lastTextContent = computed(() => {
+  const allGroups = [...layout.value.rest, ...layout.value.work]
+  for (let i = allGroups.length - 1; i >= 0; i--) {
+    const g = allGroups[i]!
+    if ((g.type === 'text' || g.type === 'reasoning') && g.hasText)
+      return g.text
+  }
+  return ''
+})
+
+const footerCopied = ref(false)
+let footerCopyTimer: number | undefined
+
+async function copyLastText() {
+  if (!lastTextContent.value)
+    return
   try {
-    const parts = layout.value.work.filter(g => g.type === 'reasoning' && g.hasText).map(g => g.text)
-    if (parts.length === 0)
-      return
-    const text = parts.join('\n\n')
-    await navigator.clipboard.writeText(text)
-    copiedKey.value = 'action'
-    clearTimeout(copyTimeout)
-    copyTimeout = window.setTimeout(() => {
-      copiedKey.value = null
-    }, 2000)
+    await navigator.clipboard.writeText(lastTextContent.value)
+    footerCopied.value = true
+    clearTimeout(footerCopyTimer)
+    footerCopyTimer = window.setTimeout(() => { footerCopied.value = false }, 2000)
   }
   catch {}
 }
+
+const modelName = computed(() => props.msg.modelName ?? null)
+
+function formatTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
+}
+
+const finishedTime = computed(() => {
+  const elapsed = props.msg.elapsedSec
+  if (elapsed != null && elapsed > 0) {
+    return formatTime(new Date(props.msg.timestamp.getTime() + elapsed * 1000))
+  }
+  return formatTime(props.msg.timestamp)
+})
 </script>
 
 <template>
-  <div class="flex max-w-full flex-col items-start gap-2.5 py-2">
+  <div class="group flex max-w-full flex-col items-start gap-2.5 py-1">
     <div
       v-if="displayError"
-      class="mx-auto mb-2.5 flex w-[calc(100%-24px)] max-w-full items-center gap-2.5 whitespace-pre-wrap break-words rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--color-danger)_40%,var(--color-border-bright))] bg-[var(--color-bg-card)] px-3.5 py-2.5 text-[13px] text-[var(--color-danger-text)] transition-[border-color,box-shadow] duration-[120ms] ease-[ease] hover:border-[color-mix(in_srgb,var(--color-danger)_55%,var(--color-border-bright))] hover:shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
+      class="mx-auto mb-2.5 flex w-[calc(100%-24px)] max-w-full items-start gap-2 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-bg-card))] px-3 py-2 text-[12.5px] leading-[1.5]"
     >
-      <AlertTriangle :size="14" :stroke-width="2" class="shrink-0 text-[var(--color-danger)]" />
-      <span class="flex-1 min-w-0 font-[var(--font-mono)]">{{ displayError }}</span>
+      <AlertTriangle :size="13" :stroke-width="2" class="shrink-0 mt-px text-[var(--color-danger)]" />
+      <span class="flex-1 min-w-0 text-[var(--color-text-secondary)]">{{ friendlyError }}</span>
     </div>
 
     <ActionGroupBlock
@@ -315,10 +363,8 @@ async function copyAction() {
       :streaming="isStreaming"
       :is-open="!isWorkCollapsed"
       :status-label="workLabel"
-      :copied="copiedKey !== null"
-      :has-rest-text="hasRestText"
+      :has-rest-content="layout.rest.length > 0"
       @toggle="isWorkCollapsed = !isWorkCollapsed"
-      @copy="copyAction"
     />
 
     <!-- ── 2. Rest Block ── -->
@@ -344,6 +390,21 @@ async function copyAction() {
         @copy="copyThinking(group.key, group.text)"
       />
     </template>
+
+    <!-- Footer: copy + time + model (hover reveal) -->
+    <div v-if="!isStreaming" class="mr-1 flex items-center gap-1.5 opacity-0 transition-opacity duration-[150ms] group-hover:opacity-100">
+      <button
+        class="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border border-transparent bg-transparent text-(--color-text-tertiary) transition-colors duration-[120ms] hover:border-(--color-border-mid) hover:bg-(--color-state-hover) hover:text-(--color-text-secondary)"
+        :class="{ '!text-(--color-success-text)': footerCopied }"
+        :title="footerCopied ? 'Copied!' : 'Copy message'"
+        @click="copyLastText"
+      >
+        <Copy v-if="!footerCopied" :size="12" :stroke-width="2" />
+        <Check v-else :size="12" :stroke-width="2.5" />
+      </button>
+      <span class="text-[11px] text-(--color-text-tertiary)">{{ finishedTime }}</span>
+      <span v-if="modelName" class="text-[11px] text-(--color-text-dim)">{{ modelName }}</span>
+    </div>
 
     <TypingIndicator :is-streaming="showTypingIndicator" />
   </div>

@@ -6,6 +6,7 @@ export const useProjectStore = defineStore(
   () => {
     const projectPath = ref<string | null>(null)
     const openProjects = ref<string[]>([])
+    const splitPercent = ref(30)
 
     // derive the folder name from the full path — works on both / and \ separators
     const projectName = computed(() => {
@@ -50,7 +51,7 @@ export const useProjectStore = defineStore(
         projectPath.value = openProjects.value[openProjects.value.length - 1] ?? null
     }
 
-    return { projectPath, openProjects, projectName, setProject, clearProject, addProject, removeProject }
+    return { projectPath, openProjects, projectName, splitPercent, setProject, clearProject, addProject, removeProject }
   },
   { persist: true },
 )

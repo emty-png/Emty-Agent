@@ -135,6 +135,7 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
     autoContext: settings.autoContext,
     disabledSkillIds: effectiveDisabledSkillIds,
     supportsToolCalls: activeModel.supportsToolCalls,
+    mode: tab.mode,
     workspaceContext: buildWorkspacePromptContext(workspaceSnapshot),
     memoryContext,
     recoveryContext,

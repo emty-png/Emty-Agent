@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Message } from '@/stores/chat'
 import type { Attachment } from '@/stores/chat/attachment-types'
-import { Copy, FileText } from 'lucide-vue-next'
+import { BookOpen, Copy, FileText } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { formatFileSize } from '@/stores/chat/attachment-types'
 
@@ -14,6 +14,21 @@ const emit = defineEmits<{
 }>()
 
 const attachments = computed(() => props.msg.attachments ?? [])
+
+const MENTION_RE = /@\[([\w./\-]+)\]/g
+const mentionedPaths = computed(() => {
+  const seen = new Set<string>()
+  const paths: string[] = []
+  let match: RegExpExecArray | null = MENTION_RE.exec(props.msg.content)
+  while (match !== null) {
+    if (!seen.has(match[1]!)) {
+      seen.add(match[1]!)
+      paths.push(match[1]!)
+    }
+    match = MENTION_RE.exec(props.msg.content)
+  }
+  return paths
+})
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -69,8 +84,8 @@ function renderInline(raw: string): string {
     )
 
     // Custom App Tokens
-    t = t.replace(/@\[([\w./\-]+)\]/g, '<span class="mention-chip">$1</span>')
-    t = t.replace(/\[skill:([^\]]+)\]/g, '<span class="skill-chip">$1</span>')
+    t = t.replace(/@\[([\w./\-]+)\]/g, '$1')
+    t = t.replace(/\[skill:([^\]]+)\]/g, '$1')
 
     return t
   }).join('')
@@ -293,8 +308,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="group flex flex-col items-end gap-1 py-1.5">
-    <div class="flex min-w-0 w-full flex-col rounded-[var(--radius-lg)] border border-[var(--color-accent-dim)] bg-[var(--color-accent-muted-plus)] px-3.5 py-2.5 text-[var(--color-text-primary)]">
+  <div class="group flex flex-col items-end gap-1 py-0.5">
+    <div class="flex min-w-0 w-full flex-col rounded-[var(--radius-lg)] bg-[var(--color-accent-muted-plus)] px-3.5 py-2.5 text-[var(--color-text-primary)]">
       <!-- Rendered Markdown Content with Masking -->
       <div
         v-if="msg.content"
@@ -309,6 +324,19 @@ onUnmounted(() => {
         <button class="cursor-pointer border-none bg-transparent px-2.5 py-1 text-[12px] font-semibold text-inherit opacity-60 transition-all duration-[150ms] hover:underline hover:opacity-100" @click="isCollapsed = !isCollapsed">
           {{ isCollapsed ? 'Show more' : 'Show less' }}
         </button>
+      </div>
+
+      <!-- Mention Indicators -->
+      <div v-if="mentionedPaths.length > 0" class="mt-2 flex flex-col gap-1 border-t border-[var(--color-accent-dim)] pt-2">
+        <div
+          v-for="path in mentionedPaths"
+          :key="path"
+          class="flex items-center gap-1.5 text-[11.5px] leading-none text-[var(--color-text-tertiary)]"
+        >
+          <BookOpen :size="11" :stroke-width="1.8" class="shrink-0 opacity-60" />
+          <span class="opacity-70">Read</span>
+          <span class="truncate font-mono text-[11px] text-[var(--color-text-secondary)] opacity-80">{{ path }}</span>
+        </div>
       </div>
 
       <!-- Attachments -->
@@ -553,30 +581,5 @@ onUnmounted(() => {
 }
 .um-root :deep(tr:last-child .um-td) {
   border-bottom: none;
-}
-
-/* Custom Mention & Skill Chips (now natively parsed in MD) */
-.um-root :deep(.mention-chip) {
-  display: inline-flex;
-  align-items: center;
-  color: var(--color-accent-text);
-  background: color-mix(in srgb, var(--color-accent-text) 10%, transparent);
-  border-radius: 4px;
-  padding: 1px 5px;
-  margin: 0 2px;
-  vertical-align: baseline;
-  font-weight: 500;
-}
-
-.um-root :deep(.skill-chip) {
-  display: inline-flex;
-  align-items: center;
-  color: var(--color-success-text);
-  background: color-mix(in srgb, var(--color-success) 12%, transparent);
-  border-radius: 4px;
-  padding: 1px 5px;
-  margin: 0 2px;
-  vertical-align: baseline;
-  font-weight: 500;
 }
 </style>

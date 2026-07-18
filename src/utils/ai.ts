@@ -13,7 +13,9 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { APICallError, isLoopFinished, RetryError, streamText } from 'ai'
 import { buildPrompt } from '@/prompts/build'
+import { buildDesignPrompt } from '@/prompts/design'
 import { platformFetch } from '@/utils/platformFetch'
+import { repairJson } from '@/utils/repairJson'
 
 export type { LanguageModel, ToolSet }
 export type ChatMode = 'build' | 'plan' | 'chat' | 'design'
@@ -322,7 +324,25 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
       model,
       ...(systemPrompt ? { system: systemPrompt } : {}),
       messages,
-      ...(hasTools ? { tools, stopWhen: isLoopFinished() } : {}),
+      ...(hasTools
+        ? {
+            tools,
+            stopWhen: isLoopFinished(),
+            experimental_repairToolCall: async ({ toolCall }) => {
+              const raw = typeof toolCall.input === 'string' ? toolCall.input : JSON.stringify(toolCall.input)
+              const repaired = repairJson(raw)
+              if (repaired === null || repaired === raw)
+                return null
+              try {
+                const parsed = JSON.parse(repaired)
+                return { ...toolCall, input: parsed }
+              }
+              catch {
+                return null
+              }
+            },
+          }
+        : {}),
       maxOutputTokens,
       ...(providerOptions ? { providerOptions } : {}),
       ...(signal ? { abortSignal: signal } : {}),
@@ -396,5 +416,7 @@ export function buildSystemPrompt(
   osInfo?: OsInfo,
   coAuthor?: boolean,
 ): string {
+  if (_mode === 'design')
+    return buildDesignPrompt()
   return buildPrompt(projectPath, osInfo, coAuthor)
 }

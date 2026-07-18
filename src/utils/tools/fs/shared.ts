@@ -615,11 +615,12 @@ export function createUnifiedDiff(
   newText: string,
   options: {
     contextLines?: number
+    /** When set, omit changed lines beyond this count. Unset = full diff (UI review). */
     maxChangedLines?: number
   } = {},
 ): string {
   const contextLines = options.contextLines ?? 3
-  const maxChangedLines = options.maxChangedLines ?? 400
+  const maxChangedLines = options.maxChangedLines
   const ops = createLineDiffOps(oldText, newText)
   const hunks = buildDiffHunks(ops, contextLines)
   if (hunks.length === 0)
@@ -637,7 +638,7 @@ export function createUnifiedDiff(
 
     for (const op of hunk.ops) {
       if (op.type !== 'ctx') {
-        if (changedLines >= maxChangedLines) {
+        if (maxChangedLines != null && changedLines >= maxChangedLines) {
           omitted++
           continue
         }

@@ -21,15 +21,29 @@ import {
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { defineComponent, h, resolveComponent } from 'vue'
+import CreateItemDialog from '@/components/project/CreateItemDialog.vue'
+import { useFileTabsStore } from '@/stores/fileTabs'
 import { useFileTreeStore } from '@/stores/fileTree'
+import { useProjectStore } from '@/stores/project'
+
 import { getDeviconForFile } from '@/utils/icons'
 
 const ft = useFileTreeStore()
-const { tree, selectedPath, loadingTree, fileContent } = storeToRefs(ft)
+const tabs = useFileTabsStore()
+const { tree, loadingTree } = storeToRefs(ft)
+const { activeTab } = storeToRefs(tabs)
 
-function clearSelection() {
-  selectedPath.value = null
-  fileContent.value = null
+const showCreateDialog = defineModel<boolean>('showCreateDialog', { default: false })
+
+const project = useProjectStore()
+const { projectPath } = storeToRefs(project)
+
+async function handleCreate(type: 'file' | 'folder', name: string) {
+  if (type === 'file')
+    await ft.createFile(projectPath.value ?? '', name)
+  else
+    await ft.createFolder(projectPath.value ?? '', name)
+  showCreateDialog.value = false
 }
 
 // ── file icon / color by extension ───────────────────────────────────────────
@@ -133,7 +147,7 @@ const FileTreeNode = defineComponent({
   name: 'FileTreeNode',
   props: {
     node: { type: Object as PropType<FileNode>, required: true },
-    selectedPath: { type: String as PropType<string | null>, default: null },
+    activeTabPath: { type: String as PropType<string | null>, default: null },
     toggleDir: { type: Function as PropType<(node: FileNode) => void>, required: true },
     selectFile: { type: Function as PropType<(node: FileNode) => void>, required: true },
   },
@@ -150,13 +164,13 @@ const FileTreeNode = defineComponent({
     return { onClick, fileStyle }
   },
   render() {
-    const { node, selectedPath } = this
+    const { node, activeTabPath } = this
     const fs = fileStyle(node.name)
     const { icon: FolderIcon, color: folderColor } = folderStyle(node.name, node.expanded || false)
     const FileTreeNodeComp = resolveComponent('FileTreeNode')
 
     const indent = { paddingLeft: `${node.depth * 14 + 8}px` }
-    const isSelected = !node.isDir && node.path === selectedPath
+    const isSelected = !node.isDir && node.path === activeTabPath
 
     const row = h(
       'button',
@@ -223,7 +237,7 @@ const FileTreeNode = defineComponent({
             h(FileTreeNodeComp, {
               key: child.path,
               node: child,
-              selectedPath,
+              activeTabPath,
               toggleDir: this.toggleDir,
               selectFile: this.selectFile,
             }),
@@ -235,9 +249,8 @@ const FileTreeNode = defineComponent({
 })
 </script>
 
-<!-- ── recursive node component ────────────────────────────────────────────── -->
 <template>
-  <div class="flex h-full flex-col overflow-x-hidden overflow-y-auto pb-[6px] pt-0" @click.self="clearSelection">
+  <div class="flex h-full flex-col overflow-x-hidden overflow-y-auto pb-[6px] pt-0">
     <!-- loading skeleton -->
     <div v-if="loadingTree" class="flex items-center gap-[7px] px-[12px] py-[12px] text-[12px] text-[var(--color-text-tertiary)]">
       <Loader :size="14" :stroke-width="1.8" class="animate-spin" />
@@ -251,14 +264,23 @@ const FileTreeNode = defineComponent({
 
     <!-- tree -->
     <template v-else>
-      <FileTreeNode
-        v-for="treeNode in tree"
-        :key="treeNode.path"
-        :node="treeNode"
-        :selected-path="selectedPath"
-        :toggle-dir="ft.toggleDir"
-        :select-file="ft.selectFile"
-      />
+      <div class="relative flex-1">
+        <FileTreeNode
+          v-for="treeNode in tree"
+          :key="treeNode.path"
+          :node="treeNode"
+          :active-tab-path="activeTab?.path ?? null"
+          :toggle-dir="ft.toggleDir"
+          :select-file="tabs.openFile"
+        />
+      </div>
     </template>
+
+    <!-- create item dialog -->
+    <CreateItemDialog
+      v-if="showCreateDialog"
+      @create="handleCreate"
+      @close="showCreateDialog = false"
+    />
   </div>
 </template>

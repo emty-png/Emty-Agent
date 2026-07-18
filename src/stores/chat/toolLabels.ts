@@ -1,4 +1,5 @@
 import { browserToolDisplayLabel } from '@/utils/tools/browser'
+import { designToolDisplayLabel } from '@/utils/tools/createDesign'
 import { toolDisplayLabel as fsToolDisplayLabel } from '@/utils/tools/filesystem'
 import { imageGenToolDisplayLabel } from '@/utils/tools/imageGen'
 import { mcpToolDisplayLabel } from '@/utils/tools/mcp'
@@ -37,6 +38,7 @@ const RESOLVERS: LabelResolver[] = [
   adapt(memoryToolDisplayLabel),
   adapt(imageGenToolDisplayLabel),
   adapt(subAgentDisplayLabel),
+  adapt(designToolDisplayLabel),
 ]
 
 export function getCoreToolDisplayLabel(name: string, args: Record<string, unknown>): string {

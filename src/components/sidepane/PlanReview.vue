@@ -601,7 +601,7 @@ watch(conversationId, () => {
                     Cancel
                   </button>
                   <button
-                    class="inline-flex items-center justify-center h-[26px] px-3 rounded text-[11px] font-medium cursor-pointer border border-transparent bg-[var(--color-accent)] text-white hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-100"
+                    class="inline-flex items-center justify-center h-[26px] px-3 rounded text-[11px] font-medium cursor-pointer border border-transparent bg-[var(--color-text-primary)] text-[var(--color-bg-base)] hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-100"
                     :disabled="!commentText.trim()"
                     @click="stageComment(line.index)"
                   >

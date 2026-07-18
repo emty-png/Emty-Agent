@@ -18,8 +18,10 @@
  */
 
 import type { Ref } from 'vue'
+import type { ChatMode } from '@/stores/chat/types'
 import { readDir } from '@tauri-apps/plugin-fs'
 import { computed, nextTick, ref, watch } from 'vue'
+import { useChatStore } from '@/stores/chat'
 import { CHIP_PADDING, packMention } from '@/utils/mentionFormat'
 
 // ── constants ─────────────────────────────────────────────────────────────────
@@ -88,7 +90,9 @@ export function useAtMention(
   textareaRef: Ref<HTMLTextAreaElement | null>,
   text: Ref<string>,
   projectPath: Ref<string | null>,
+  mode?: Ref<ChatMode | undefined>,
 ) {
+  const chat = useChatStore()
   // ── reactive state ──────────────────────────────────────────────────────────
 
   const isOpen = ref(false)
@@ -159,6 +163,16 @@ export function useAtMention(
   }
 
   async function loadEntries(): Promise<void> {
+    if (mode?.value === 'design') {
+      const designs = chat.activeTab.designs ?? []
+      allEntries.value = designs.map(d => ({
+        path: d.id,
+        name: d.name,
+        isDir: false,
+        depth: 0,
+      }))
+      return
+    }
     const path = projectPath.value
     if (!path || loadedForPath.value === path)
       return

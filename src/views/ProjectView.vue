@@ -1,27 +1,25 @@
 <script setup lang="ts">
-import { SquarePlus } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import FileContent from '@/components/project/FileContent.vue'
+import FileFuzzyFinder from '@/components/project/FileFuzzyFinder.vue'
+import FileTabBar from '@/components/project/FileTabBar.vue'
 import FileTree from '@/components/project/FileTree.vue'
-import ScaffoldModal from '@/components/scaffold/ScaffoldModal.vue'
+import { useFileFuzzyFinder } from '@/composables/useFileFuzzyFinder'
+import { useFileTabsStore } from '@/stores/fileTabs'
 import { useFileTreeStore } from '@/stores/fileTree'
 import { useProjectStore } from '@/stores/project'
 
 const project = useProjectStore()
 const ft = useFileTreeStore()
-const { projectPath, projectName } = storeToRefs(project)
+const fileTabs = useFileTabsStore()
+const { projectPath, projectName, splitPercent } = storeToRefs(project)
+const { tabs } = storeToRefs(fileTabs)
 
-const scaffoldOpen = ref(false)
-
-async function handleScaffoldSuccess(payload: { projectPath: string; templateId: string }) {
-  scaffoldOpen.value = false
-  if (payload.projectPath)
-    await project.setProject(payload.projectPath)
-}
+const fuzzyFinder = useFileFuzzyFinder()
+const showCreateDialog = ref(false)
 
 // ── load tree when project changes ───────────────────────────────────────────
-// fires when the user picks a NEW folder mid-session
 watch(projectPath, async (newPath, oldPath) => {
   if (newPath === oldPath)
     return
@@ -33,9 +31,7 @@ watch(projectPath, async (newPath, oldPath) => {
 // ── resizable split ───────────────────────────────────────────────────────────
 const SPLIT_MIN = 18 // %
 const SPLIT_MAX = 60 // %
-const SPLIT_DEFAULT = 30
 
-const splitPercent = ref(SPLIT_DEFAULT)
 const containerRef = ref<HTMLElement | null>(null)
 const dragging = ref(false)
 
@@ -60,8 +56,6 @@ onMounted(async () => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
 
-  // persistence has rehydrated by the time onMounted runs —
-  // load the tree if a project path was already saved
   if (projectPath.value)
     await ft.loadTree()
 })
@@ -93,21 +87,31 @@ onUnmounted(() => {
       <div class="split-panel split-panel--left" :style="{ width: `${splitPercent}%` }">
         <div class="panel-header">
           <span class="panel-title">{{ projectName }}</span>
-          <button
-            class="panel-action"
-            aria-label="Create new project"
-            title="Scaffold new project"
-            @click="scaffoldOpen = true"
-          >
-            <SquarePlus :size="13" :stroke-width="1.8" />
-          </button>
+          <div class="ml-auto flex items-center gap-[2px]">
+            <button
+              v-if="ft.tree.length > 0"
+              class="panel-header-btn"
+              title="New file or folder"
+              @click="showCreateDialog = true"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+            </button>
+            <button
+              v-if="ft.tree.length > 0"
+              class="panel-header-btn"
+              title="Collapse all folders"
+              @click="ft.collapseAll()"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 20 5-5 5 5" /><path d="m7 4 5 5 5-5" /></svg>
+            </button>
+          </div>
         </div>
         <div class="panel-body">
-          <FileTree />
+          <FileTree v-model:show-create-dialog="showCreateDialog" />
         </div>
       </div>
 
-      <!-- drag handle (Cleaned up, no inner line needed) -->
+      <!-- drag handle -->
       <div
         class="split-handle"
         :class="{ 'split-handle--active': dragging }"
@@ -116,14 +120,22 @@ onUnmounted(() => {
 
       <!-- right: file content -->
       <div class="split-panel split-panel--right">
+        <FileTabBar v-if="tabs.length > 0" />
         <FileContent />
       </div>
     </div>
 
-    <ScaffoldModal
-      v-if="scaffoldOpen"
-      @close="scaffoldOpen = false"
-      @success="handleScaffoldSuccess"
+    <!-- ── fuzzy finder overlay ────────────────────────────────────── -->
+    <FileFuzzyFinder
+      v-if="fuzzyFinder.isOpen.value"
+      :query="fuzzyFinder.query.value"
+      :selected-idx="fuzzyFinder.selectedIdx.value"
+      :filtered-files="fuzzyFinder.filteredFiles.value"
+      @update:query="fuzzyFinder.query.value = $event"
+      @select="fuzzyFinder.selectFile($event)"
+      @hover="fuzzyFinder.selectedIdx.value = $event"
+      @close="fuzzyFinder.close()"
+      @keydown="fuzzyFinder.handleKeydown($event)"
     />
   </div>
 </template>
@@ -181,7 +193,6 @@ onUnmounted(() => {
 
 .split--dragging {
   cursor: col-resize;
-  /* prevent text selection while dragging */
   user-select: none;
   -webkit-user-select: none;
 }
@@ -227,12 +238,11 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
-.panel-action {
-  margin-left: auto;
+.panel-header-btn {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -243,9 +253,9 @@ onUnmounted(() => {
     color 120ms ease;
 }
 
-.panel-action:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-accent-text);
+.panel-header-btn:hover {
+  background: var(--color-state-hover);
+  color: var(--color-text-secondary);
 }
 
 .panel-body {
@@ -255,10 +265,10 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* ── drag handle (Fixed) ─────────────────────────────────────────────────────── */
+/* ── drag handle ─────────────────────────────────────────────────────────────── */
 .split-handle {
   position: relative;
-  width: 1px; /* Visual width is exactly 1px for a clean look */
+  width: 1px;
   background: var(--color-border-subtle);
   cursor: col-resize;
   flex-shrink: 0;
@@ -268,7 +278,6 @@ onUnmounted(() => {
     box-shadow 150ms ease;
 }
 
-/* Invisible expanded hit area so it's easy to grab with the mouse */
 .split-handle::after {
   content: '';
   position: absolute;
@@ -279,11 +288,9 @@ onUnmounted(() => {
   z-index: 11;
 }
 
-/* Hover and active dragging states */
 .split-handle:hover,
 .split-handle--active {
-  background: var(--color-accent, #10b981); /* Green accent highlight */
-  /* Adds a tiny glow to make the 1px line feel more substantial when dragging */
+  background: var(--color-accent, #10b981);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent, #10b981) 20%, transparent);
 }
 </style>

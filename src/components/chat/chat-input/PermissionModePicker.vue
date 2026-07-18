@@ -73,12 +73,12 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
     -->
     <div class="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 z-[10000]">
       <Transition
-        enter-active-class="transition-[opacity,transform] duration-150 ease-out origin-bottom"
-        leave-active-class="transition-[opacity,transform] duration-100 ease-in origin-bottom"
-        enter-from-class="opacity-0 translate-y-2 scale-96"
-        enter-to-class="opacity-100 translate-y-0 scale-100"
-        leave-from-class="opacity-100 translate-y-0 scale-100"
-        leave-to-class="opacity-0 translate-y-2 scale-96"
+        enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-bottom"
+        enter-from-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"
+        enter-to-class="opacity-100 [transform:translateY(0)_scale(1)]"
+        leave-active-class="transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.7,0,0.84,0)] origin-bottom"
+        leave-from-class="opacity-100 [transform:translateY(0)_scale(1)]"
+        leave-to-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"
       >
         <!-- The Animated Dropdown -->
         <div

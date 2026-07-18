@@ -112,6 +112,8 @@ export const useHistoryStore = defineStore('history', () => {
       title: conv.title,
       workspacePath: conv.workspace_path ?? null,
       ...(workspaceMeta ? { workspaceMeta } : {}),
+      ...(conv.is_design_tab ? { isDesignTab: true, mode: 'design' as const } : {}),
+      ...(conv.designs ? { designs: JSON.parse(conv.designs) } : {}),
       messages: rows.map(r => {
         let toolEvents
         if (r.tool_events) {
@@ -158,6 +160,8 @@ export const useHistoryStore = defineStore('history', () => {
           ...(attachments ? { attachments } : {}),
           ...(cacheStats ? { cacheStats } : {}),
           ...(r.elapsed_sec != null ? { elapsedSec: r.elapsed_sec } : {}),
+          ...(r.model_uid ? { modelUid: r.model_uid } : {}),
+          ...(r.model_name ? { modelName: r.model_name } : {}),
           ...(r.is_complete === 0 ? { error: 'Interrupted during generation.' } : {}),
         }
       }),

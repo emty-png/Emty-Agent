@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { Message, ToolEvent } from '@/stores/chat'
+import type { UsageStats } from '@/utils/contextCaching'
 import type { SubAgentPersonality } from '@/utils/tools/subagent'
 import { CircleX, Loader2 } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { dbFindSubAgentConversation, dbGetConversation, dbLoadMessages } from '@/db/database'
 import { useChatStore } from '@/stores/chat'
+import { safeJsonParse } from '@/utils/repairJson'
 
 const props = defineProps<{
   event: ToolEvent
@@ -227,9 +229,11 @@ async function openSubAgentTab() {
       role: r.role,
       content: r.content,
       timestamp: new Date(r.created_at),
-      toolEvents: r.tool_events ? JSON.parse(r.tool_events) : undefined,
-      parts: r.parts ? JSON.parse(r.parts) : undefined,
-      cacheStats: r.cache_stats ? JSON.parse(r.cache_stats) : undefined,
+      ...(r.tool_events ? { toolEvents: safeJsonParse(r.tool_events, []) } : {}),
+      ...(r.parts ? { parts: safeJsonParse(r.parts, []) } : {}),
+      ...(r.cache_stats ? { cacheStats: safeJsonParse<UsageStats>(r.cache_stats, { providerId: '', promptTokens: 0, completionTokens: 0, totalTokens: 0 }) } : {}),
+      ...(r.model_uid ? { modelUid: r.model_uid } : {}),
+      ...(r.model_name ? { modelName: r.model_name } : {}),
       ...(r.is_complete === 0 ? { error: 'Interrupted during generation.' } : {}),
     }))
 
@@ -238,7 +242,7 @@ async function openSubAgentTab() {
       title: conv.title,
       messages,
       workspacePath: conv.workspace_path ?? null,
-      workspaceMeta: conv.workspace_meta ? JSON.parse(conv.workspace_meta) : null,
+      workspaceMeta: conv.workspace_meta ? safeJsonParse(conv.workspace_meta, null) : null,
       subAgent: {
         personality: personality.value ?? 'general',
         mission: typeof props.event.args?.mission === 'string' ? props.event.args.mission : '',

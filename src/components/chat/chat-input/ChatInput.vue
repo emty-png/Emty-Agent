@@ -2,21 +2,30 @@
 import type { CommandEntry } from '@/composables/useSlashCommand'
 import type { Attachment } from '@/stores/chat/attachment-types'
 import type { AgentStatus } from '@/stores/chat/types'
-import { ArrowUp, Plus, Square } from 'lucide-vue-next'
+import type { DictationContext } from '@/utils/voicePostProcess'
+import type { VoiceStreamSession } from '@/utils/voiceStreamApi'
+import { ArrowUp, Mic, Plus, Square } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { INIT_PROMPT } from '@/composables/ChatInput.initPrompt'
 import { findTokenAfter, findTokenBefore, findTokenContaining, snapToTokenBoundary, splitMentions } from '@/composables/chatInputTokens'
 import { useAtMention } from '@/composables/useAtMention'
 import { useChatAttachments } from '@/composables/useChatAttachments'
+import { useRestoreOverlay } from '@/composables/useRestoreOverlay'
 import { useSlashCommand } from '@/composables/useSlashCommand'
+import { useVoiceRecorder } from '@/composables/useVoiceRecorder'
 import { useChatStore } from '@/stores/chat'
 import { isStreamingStatus } from '@/stores/chat/agentStatus'
 import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useProjectStore } from '@/stores/project'
+import { useSettingsStore } from '@/stores/settings'
 import { serializeForSend } from '@/utils/mentionFormat'
+import { transcribeAudio } from '@/utils/voiceApi'
+import { processTranscript } from '@/utils/voicePostProcess'
+import { isStreamingSupported, startStreamingSession } from '@/utils/voiceStreamApi'
 import AtMentionOverlay from '../chat-input-overlay/AtMentionOverlay.vue'
 import PermissionOverlay from '../chat-input-overlay/PermissionOverlay.vue'
 import QuestionOverlay from '../chat-input-overlay/QuestionOverlay.vue'
+import RestoreOverlay from '../chat-input-overlay/RestoreOverlay.vue'
 import SlashCommandOverlay from '../chat-input-overlay/SlashCommandOverlay.vue'
 import TodoOverlay from '../chat-input-overlay/TodoOverlay.vue'
 import AttachmentPreview from './AttachmentPreview.vue'
@@ -25,9 +34,13 @@ import ChatInputEstimator from './ChatInputEstimator.vue'
 import ModelPicker from './ModelPicker.vue'
 import PermissionModePicker from './PermissionModePicker.vue'
 import ProjectPicker from './ProjectPicker.vue'
+import ReconnectingBanner from './ReconnectingBanner.vue'
+import VoiceOverlay from './VoiceOverlay.vue'
 
 const props = defineProps<{
   agentStatus?: AgentStatus
+  showProjectPicker?: boolean
+  showEstimator?: boolean
 }>()
 const emit = defineEmits<{
   send: [value: string, attachments: Attachment[]]
@@ -65,10 +78,200 @@ onMounted(() => {
   onUnmounted(() => ro.disconnect())
 })
 
-const mention = useAtMention(textareaRef, text, projectPath)
-const slash = useSlashCommand(textareaRef, text, projectPath)
+const mode = computed(() => chat.activeTab.mode)
+const mention = useAtMention(textareaRef, text, projectPath, mode)
+const slash = useSlashCommand(textareaRef, text, projectPath, mode)
+const restoreOverlay = useRestoreOverlay()
 
+const settings = useSettingsStore()
 const { attachments, previewAttachment, onPaste, removeAttachment, handleOpenFileDialog } = useChatAttachments()
+const voice = useVoiceRecorder()
+const voiceOverlayOpen = ref(false)
+const voiceTranscribing = ref(false)
+const voiceError = ref<string | null>(null)
+const voiceUploadingFile = ref<string | null>(null)
+const streamingTranscript = ref('')
+let activeStreamSession: VoiceStreamSession | null = null
+
+const dictationContext = computed<DictationContext>(() => {
+  const t = text.value
+  if (t.startsWith('/'))
+    return 'command'
+  if (t.startsWith('```'))
+    return 'code'
+  return 'chat'
+})
+
+async function startVoiceRecording() {
+  voiceError.value = null
+  voiceTranscribing.value = false
+  streamingTranscript.value = ''
+  voiceOverlayOpen.value = true
+  try {
+    await voice.start()
+    // Start streaming session if provider supports it
+    if (isStreamingSupported(settings.sttProvider)) {
+      const config = settings.stt[settings.sttProvider]
+      activeStreamSession = startStreamingSession(settings.sttProvider, config, event => {
+        if (event.isFinal)
+          streamingTranscript.value += (streamingTranscript.value ? ' ' : '') + event.text
+        else
+          streamingTranscript.value = (streamingTranscript.value ? `${streamingTranscript.value} ` : '') + event.text
+      })
+      voice.setOnAudioChunk(chunk => {
+        activeStreamSession?.sendAudio(chunk)
+      })
+    }
+  }
+  catch (e: unknown) {
+    voiceOverlayOpen.value = false
+    voiceError.value = e instanceof DOMException && e.name === 'NotAllowedError'
+      ? 'Microphone permission denied. Please allow microphone access in your browser settings.'
+      : `Could not start recording: ${e instanceof Error ? e.message : String(e)}`
+  }
+}
+
+async function stopVoiceRecording() {
+  // Guard: recording never started (e.g. getUserMedia rejected or was too slow)
+  if (!voice.recording.value) {
+    cancelVoiceRecording()
+    return
+  }
+  voiceTranscribing.value = true
+  voice.setOnAudioChunk(null)
+  const streamSession = activeStreamSession
+  activeStreamSession = null
+  try {
+    const blob = await voice.stop()
+    // If streaming produced a transcript, use it (no need for batch STT)
+    if (streamSession && streamSession.finalTranscript.trim()) {
+      streamSession.close()
+      const transcript = processTranscript(streamSession.finalTranscript, settings.voiceProcessing, dictationContext.value, settings.voiceDictionary, settings.voiceSnippets)
+      if (transcript) {
+        text.value = text.value ? `${text.value.trimEnd()} ${transcript}` : transcript
+        await nextTick()
+        autoResize()
+        syncScroll()
+      }
+      voiceOverlayOpen.value = false
+      voiceTranscribing.value = false
+      return
+    }
+    streamSession?.close()
+    // Guard: empty blob (shouldn't happen after recording, but be safe)
+    if (blob.size === 0) {
+      cancelVoiceRecording()
+      return
+    }
+    const config = settings.stt[settings.sttProvider]
+    const rawTranscript = await transcribeAudio(blob, settings.sttProvider, config)
+    const transcript = processTranscript(rawTranscript, settings.voiceProcessing, dictationContext.value, settings.voiceDictionary, settings.voiceSnippets)
+    if (transcript) {
+      text.value = text.value ? `${text.value.trimEnd()} ${transcript}` : transcript
+      await nextTick()
+      autoResize()
+      syncScroll()
+    }
+    voiceOverlayOpen.value = false
+    voiceTranscribing.value = false
+  }
+  catch (e: unknown) {
+    voiceError.value = e instanceof Error ? e.message : String(e)
+    voiceTranscribing.value = false
+  }
+}
+
+function cancelVoiceRecording() {
+  voice.setOnAudioChunk(null)
+  activeStreamSession?.close()
+  activeStreamSession = null
+  streamingTranscript.value = ''
+  voice.cancel()
+  voiceOverlayOpen.value = false
+  voiceTranscribing.value = false
+  voiceError.value = null
+  voiceUploadingFile.value = null
+}
+
+function pauseVoiceRecording() {
+  voice.cancel()
+}
+
+// ── Push-to-talk (Ctrl+Space) ──────────────────────────────────────────────
+const pushToTalkHeld = ref(false)
+const voiceStarting = ref(false)
+let pendingStop = false
+
+async function onPushToTalkDown(e: KeyboardEvent) {
+  if (e.code !== 'Space' || !e.ctrlKey)
+    return
+  if (pushToTalkHeld.value || voiceOverlayOpen.value || voiceTranscribing.value || isStreaming.value)
+    return
+  e.preventDefault()
+  pushToTalkHeld.value = true
+  pendingStop = false
+  voiceStarting.value = true
+  await startVoiceRecording()
+  voiceStarting.value = false
+  // If the key was released while getUserMedia was resolving
+  if (pendingStop) {
+    pendingStop = false
+    if (voiceOverlayOpen.value && !voiceTranscribing.value)
+      stopVoiceRecording()
+  }
+}
+
+function onPushToTalkUp(e: KeyboardEvent) {
+  if (e.code !== 'Space' || !e.ctrlKey)
+    return
+  if (!pushToTalkHeld.value)
+    return
+  e.preventDefault()
+  pushToTalkHeld.value = false
+  // Recording not yet active — defer stop until start resolves
+  if (voiceStarting.value) {
+    pendingStop = true
+    return
+  }
+  if (voiceOverlayOpen.value && !voiceTranscribing.value)
+    stopVoiceRecording()
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', onPushToTalkDown)
+  document.addEventListener('keyup', onPushToTalkUp)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', onPushToTalkDown)
+  document.removeEventListener('keyup', onPushToTalkUp)
+})
+
+async function handleVoiceUpload(file: File) {
+  voiceUploadingFile.value = file.name
+  voiceError.value = null
+  voiceTranscribing.value = true
+  voiceOverlayOpen.value = true
+  try {
+    const config = settings.stt[settings.sttProvider]
+    const rawTranscript = await transcribeAudio(file, settings.sttProvider, config)
+    const transcript = processTranscript(rawTranscript, settings.voiceProcessing, dictationContext.value, settings.voiceDictionary, settings.voiceSnippets)
+    if (transcript) {
+      text.value = text.value ? `${text.value.trimEnd()} ${transcript}` : transcript
+      await nextTick()
+      autoResize()
+      syncScroll()
+    }
+    voiceOverlayOpen.value = false
+    voiceTranscribing.value = false
+    voiceUploadingFile.value = null
+  }
+  catch (e: unknown) {
+    voiceError.value = e instanceof Error ? e.message : String(e)
+    voiceTranscribing.value = false
+    voiceUploadingFile.value = null
+  }
+}
 
 function handleSlashSelect(entry: CommandEntry) {
   if (entry.id === 'new') {
@@ -81,8 +284,17 @@ function handleSlashSelect(entry: CommandEntry) {
     text.value = ''
     slash.close()
   }
+  else if (entry.id === 'exit-plan') {
+    chat.activeTab.mode = 'build'
+    text.value = ''
+    slash.close()
+  }
   else if (entry.id === 'init') {
     slash.replaceWithText(INIT_PROMPT)
+  }
+  else if (entry.id === 'restore') {
+    slash.close()
+    restoreOverlay.open()
   }
   else if (entry.type === 'skill' && entry.skillId) {
     slash.insertSkillChip(entry)
@@ -121,6 +333,11 @@ async function handleCompactSession(payload: { source: 'auto' | 'manual' }) {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && restoreOverlay.isOpen.value) {
+    e.preventDefault()
+    restoreOverlay.close()
+    return
+  }
   if (slash.handleKeydown(e, handleSlashSelect))
     return
   if (mention.handleKeydown(e))
@@ -227,7 +444,8 @@ const canSend = computed(() => (text.value.trim().length > 0 || attachments.valu
 const hasPermissionPrompt = computed(() => chat.activeTab.pendingPermissions.length > 0)
 const hasQuestions = computed(() => !!chat.activeTab.pendingQuestions)
 const hasTodos = computed(() => chat.activeTab.todos.length > 0)
-const showTodos = computed(() => hasTodos.value && !hasPermissionPrompt.value && !hasQuestions.value && !mention.isOpen.value && !slash.isOpen.value)
+const todosAllDone = computed(() => hasTodos.value && chat.activeTab.todos.every(t => t.status === 'completed'))
+const showTodos = computed(() => hasTodos.value && !todosAllDone.value && !hasPermissionPrompt.value && !hasQuestions.value && !mention.isOpen.value && !slash.isOpen.value)
 
 watch(
   () => [chat.activeTab.id, text.value],
@@ -291,27 +509,18 @@ const fieldClasses = [
   'placeholder:text-transparent disabled:opacity-45 disabled:cursor-not-allowed',
 ].join(' ')
 
-const chipBase = [
-  'inline-flex items-center gap-0 rounded-[4px] font-[inherit]',
-  'whitespace-pre-wrap overflow-visible [text-overflow:unset] align-baseline',
-  'px-[5px] py-[1px] leading-[inherit] mx-[-5px]',
-].join(' ')
-
-const mentionClasses = [
-  chipBase,
-  'text-(--color-accent-text)',
-  'bg-[color-mix(in_srgb,var(--color-accent-text)_10%,transparent)]',
-].join(' ')
-
-const skillClasses = [
-  chipBase,
-  'text-(--color-success-text)',
-  'bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)]',
-].join(' ')
-
 const btnTransition = '[transition:background_120ms_cubic-bezier(0.4,0,0.2,1),border-color_120ms_cubic-bezier(0.4,0,0.2,1),color_120ms_cubic-bezier(0.4,0,0.2,1),border-radius_150ms_cubic-bezier(0.16,1,0.3,1)]'
 
 const uploadBtnClasses = [
+  'flex items-center justify-center w-[30px] h-[30px] border border-transparent rounded-(--radius-md)',
+  'bg-transparent text-(--color-text-primary) cursor-pointer shrink-0',
+  btnTransition,
+  'hover:bg-(--color-state-hover) hover:border-(--color-border-mid) hover:rounded-(--radius-lg) hover:text-(--color-text-secondary)',
+  'active:scale-[0.97] active:duration-[80ms]',
+  'disabled:opacity-30 disabled:cursor-not-allowed disabled:transform-none',
+].join(' ')
+
+const micBtnClasses = [
   'flex items-center justify-center w-[30px] h-[30px] border border-transparent rounded-(--radius-md)',
   'bg-transparent text-(--color-text-primary) cursor-pointer shrink-0',
   btnTransition,
@@ -342,11 +551,12 @@ const sendBtnClasses = computed(() => {
     </Transition>
     <Transition v-bind="overlayTransitions">
       <AtMentionOverlay
-        v-if="mention.isOpen.value && !hasQuestions && !hasPermissionPrompt"
+        v-if="mention.isOpen.value && !hasQuestions && !hasPermissionPrompt && !restoreOverlay.isOpen.value"
         :entries="mention.filteredEntries.value"
         :selected-idx="mention.selectedIdx.value"
         :loading="mention.loading.value"
         :query="mention.atQuery.value"
+        :header-label="mode === 'design' ? 'Link a design' : 'Link file or folder'"
         @select="mention.selectEntry($event)"
         @hover="mention.setSelectedIdx($event)"
         @close="mention.close()"
@@ -354,7 +564,7 @@ const sendBtnClasses = computed(() => {
     </Transition>
     <Transition v-bind="overlayTransitions">
       <SlashCommandOverlay
-        v-if="slash.isOpen.value && !hasQuestions && !hasPermissionPrompt"
+        v-if="slash.isOpen.value && !hasQuestions && !hasPermissionPrompt && !restoreOverlay.isOpen.value"
         :entries="slash.filteredCommands.value"
         :selected-idx="slash.selectedIdx.value"
         :loading="slash.loading.value"
@@ -365,8 +575,41 @@ const sendBtnClasses = computed(() => {
       />
     </Transition>
     <Transition v-bind="overlayTransitions">
-      <TodoOverlay v-if="showTodos" />
+      <RestoreOverlay
+        v-if="restoreOverlay.isOpen.value"
+        :checkpoints="restoreOverlay.checkpoints.value"
+        :loading="restoreOverlay.loading.value"
+        :expanded-id="restoreOverlay.expandedId.value"
+        :file-diffs="restoreOverlay.fileDiffs.value"
+        :loading-diffs="restoreOverlay.loadingDiffs.value"
+        :selected-mode="restoreOverlay.selectedMode.value"
+        @close="restoreOverlay.close()"
+        @toggle="restoreOverlay.toggleCheckpoint($event)"
+        @restore="restoreOverlay.restore($event)"
+        @update:mode="restoreOverlay.setMode($event)"
+      />
     </Transition>
+    <Transition v-bind="overlayTransitions">
+      <TodoOverlay v-if="showTodos && !restoreOverlay.isOpen.value" />
+    </Transition>
+
+    <Transition v-bind="overlayTransitions">
+      <VoiceOverlay
+        v-if="voiceOverlayOpen"
+        :frequency-data="voice.frequencyData.value"
+        :duration="voice.duration.value"
+        :transcribing="voiceTranscribing"
+        :error="voiceError"
+        :uploading-file-name="voiceUploadingFile ?? ''"
+        :streaming-transcript="streamingTranscript"
+        @stop="stopVoiceRecording"
+        @cancel="cancelVoiceRecording"
+        @pause="pauseVoiceRecording"
+        @upload="handleVoiceUpload"
+      />
+    </Transition>
+
+    <ReconnectingBanner v-bind="props.agentStatus !== undefined ? { agentStatus: props.agentStatus } : {}" />
 
     <div :class="shellClasses">
       <!-- Scanner track & spinning head -->
@@ -388,14 +631,8 @@ const sendBtnClasses = computed(() => {
             {{ 'Ask anything\u2026 (@ to link files)' }}
           </span>
           <template v-else>
-            <template v-for="(part, i) in parsedParts" :key="i">
-              <span v-if="part.type === 'mention'" :class="mentionClasses" :title="part.value">
-                {{ part.display }}
-              </span>
-              <span v-else-if="part.type === 'skill'" :class="skillClasses" :title="part.value">
-                {{ part.display }}
-              </span>
-              <span v-else>{{ part.display }}</span>
+            <template v-for="part in parsedParts" :key="part.display">
+              <span>{{ part.display }}</span>
             </template>
             <br v-if="text.endsWith('\n')">
           </template>
@@ -434,14 +671,24 @@ const sendBtnClasses = computed(() => {
           <Plus :size="14" :stroke-width="2" />
         </button>
 
+        <button
+          :class="micBtnClasses"
+          aria-label="Voice input"
+          :disabled="isStreaming || voiceTranscribing"
+          @click="startVoiceRecording"
+        >
+          <Mic :size="14" :stroke-width="2" />
+        </button>
+
         <PermissionModePicker :is-plan-mode="chat.activeTab.mode === 'plan'" :compact="compactToolbar" />
 
-        <ProjectPicker :compact="compactToolbar" />
+        <ProjectPicker v-if="props.showProjectPicker !== false" :compact="compactToolbar" />
 
         <div class="flex-1" />
 
         <div class="flex items-center gap-2 shrink-0">
           <ChatInputEstimator
+            v-if="showEstimator"
             :text="text"
             mode="build"
             :attachments="attachments"

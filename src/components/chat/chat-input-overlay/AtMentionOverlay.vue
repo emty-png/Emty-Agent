@@ -29,12 +29,15 @@ import { computed, ref, watchEffect } from 'vue'
 import { highlightParts } from '@/utils/highlightParts'
 import { getDeviconForFile } from '@/utils/icons'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   entries: FsEntry[]
   selectedIdx: number
   loading: boolean
   query: string
-}>()
+  headerLabel?: string
+}>(), {
+  headerLabel: 'Link file or folder',
+})
 
 const emit = defineEmits<{
   select: [entry: FsEntry]
@@ -188,9 +191,9 @@ const dirBadgeClasses = 'text-[9.5px] font-bold tracking-[0.05em] uppercase text
 </script>
 
 <template>
-  <div :class="rootClasses" role="listbox" aria-label="Link a file or folder">
+  <div :class="rootClasses" role="listbox" :aria-label="props.headerLabel">
     <div :class="headerClasses">
-      <span :class="headerTitleClasses">Link file or folder</span>
+      <span :class="headerTitleClasses">{{ props.headerLabel }}</span>
       <span v-if="query" :class="queryChipClasses">@{{ query }}</span>
       <button :class="closeBtnClasses" aria-label="Close file picker" @click="emit('close')">
         <X :size="13" :stroke-width="2" />

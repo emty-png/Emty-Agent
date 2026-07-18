@@ -1,8 +1,11 @@
 import { join } from '@tauri-apps/api/path'
-import { readDir, readTextFile } from '@tauri-apps/plugin-fs'
+import { mkdir, readDir, writeTextFile } from '@tauri-apps/plugin-fs'
 import { defineStore, storeToRefs } from 'pinia'
 import { ref } from 'vue'
 import { useProjectStore } from '@/stores/project'
+
+// re-export for backward compatibility
+export type { FileDisplayType } from '@/utils/fileClassify'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 export interface FileNode {
@@ -93,15 +96,25 @@ async function readLevel(dirPath: string, depth: number): Promise<FileNode[]> {
   return sortNodes(nodes)
 }
 
+function findNodeByPath(nodes: FileNode[], targetPath: string): FileNode | null {
+  for (const n of nodes) {
+    if (n.path === targetPath)
+      return n
+    if (n.isDir && n.children) {
+      const found = findNodeByPath(n.children, targetPath)
+      if (found)
+        return found
+    }
+  }
+  return null
+}
+
 // ── store ─────────────────────────────────────────────────────────────────────
 export const useFileTreeStore = defineStore('fileTree', () => {
   const project = useProjectStore()
   const { projectPath } = storeToRefs(project)
 
   const tree = ref<FileNode[]>([])
-  const selectedPath = ref<string | null>(null)
-  const fileContent = ref<string | null>(null)
-  const loadingFile = ref(false)
   const loadingTree = ref(false)
   const error = ref<string | null>(null)
 
@@ -150,50 +163,130 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     node.expanded = true
   }
 
-  // ── select & read file ─────────────────────────────────────────────────────
-  async function selectFile(node: FileNode) {
-    if (node.isDir) {
-      await toggleDir(node)
-      return
+  // ── collapse all folders ──────────────────────────────────────────────────
+  function collapseAll() {
+    function walk(nodes: FileNode[]) {
+      for (const n of nodes) {
+        if (n.isDir) {
+          n.expanded = false
+          if (n.children)
+            walk(n.children)
+        }
+      }
     }
-    if (selectedPath.value === node.path)
+    walk(tree.value)
+  }
+
+  // ── expand to path (for fuzzy finder) ─────────────────────────────────────
+  async function expandToPath(targetPath: string) {
+    if (!projectPath.value)
       return
 
-    selectedPath.value = node.path
-    fileContent.value = null
-    loadingFile.value = true
-    error.value = null
+    const normalized = targetPath.replace(/\\/g, '/')
+    const rootNormalized = projectPath.value.replace(/\\/g, '/')
 
-    try {
-      fileContent.value = await readTextFile(node.path)
+    if (!normalized.startsWith(rootNormalized))
+      return
+
+    const relative = normalized.slice(rootNormalized.length).replace(/^\/+/, '')
+    const segments = relative.split('/').slice(0, -1) // exclude filename
+
+    let currentNodes = tree.value
+
+    for (const segment of segments) {
+      const dirNode = currentNodes.find(
+        n => n.isDir && n.name === segment,
+      )
+
+      if (!dirNode)
+        return
+
+      if (!dirNode.expanded)
+        await toggleDir(dirNode)
+
+      currentNodes = dirNode.children ?? []
     }
-    catch (e) {
-      error.value = String(e)
-      fileContent.value = null
+  }
+
+  // ── create file ───────────────────────────────────────────────────────────
+  async function createFile(parentPath: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed)
+      return
+
+    const fullPath = await join(parentPath, trimmed)
+    await writeTextFile(fullPath, '')
+
+    // Refresh parent's children
+    const parentNode = findNodeByPath(tree.value, parentPath)
+    if (parentNode && parentNode.isDir) {
+      const newNodes = await readLevel(parentPath, parentNode.depth + 1)
+      parentNode.children = newNodes
+      parentNode.expanded = true
     }
-    finally {
-      loadingFile.value = false
+  }
+
+  // ── create folder ─────────────────────────────────────────────────────────
+  async function createFolder(parentPath: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed)
+      return
+
+    const fullPath = await join(parentPath, trimmed)
+    await mkdir(fullPath)
+
+    // Refresh parent's children
+    const parentNode = findNodeByPath(tree.value, parentPath)
+    if (parentNode && parentNode.isDir) {
+      const newNodes = await readLevel(parentPath, parentNode.depth + 1)
+      parentNode.children = newNodes
+      parentNode.expanded = true
     }
+  }
+
+  // ── find node by path ─────────────────────────────────────────────────────
+  function findNode(path: string): FileNode | null {
+    return findNodeByPath(tree.value, path)
+  }
+
+  // ── get all file paths (recursive) ────────────────────────────────────────
+  function getAllFilePaths(): string[] {
+    const paths: string[] = []
+
+    function walk(nodes: FileNode[]) {
+      for (const n of nodes) {
+        if (n.isDir) {
+          if (n.children)
+            walk(n.children)
+        }
+        else {
+          paths.push(n.path)
+        }
+      }
+    }
+
+    walk(tree.value)
+    return paths
   }
 
   // reload when project changes
   function reset() {
     tree.value = []
-    selectedPath.value = null
-    fileContent.value = null
     error.value = null
   }
 
   return {
     tree,
-    selectedPath,
-    fileContent,
-    loadingFile,
     loadingTree,
     error,
     loadTree,
     toggleDir,
-    selectFile,
+    collapseAll,
+    expandToPath,
+    createFile,
+    createFolder,
+    findNode,
+    getAllFilePaths,
     reset,
   }
 })

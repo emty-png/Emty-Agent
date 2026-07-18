@@ -17,7 +17,20 @@ export type ChatMode
   = | 'build' // Full agent — all tools
     | 'plan' // Read-only agent — write/shell tools return error stubs
     | 'chat' // Minimal streaming — questions, sleep, web, memory only
-    | 'design' // Isolated HTML/CSS/JS sandbox — browser, imageGen, web (no user fs/shell)
+    | 'design' // Isolated HTML/CSS/JS sandbox — create_design + edit_design only
+
+// ── Design artifacts ─────────────────────────────────────────────────────────
+
+export interface DesignArtifact {
+  id: string
+  name: string
+  html: string
+  css: string
+  js: string
+  description: string
+  createdAt: number
+  updatedAt: number
+}
 
 // ── Agent status ──────────────────────────────────────────────────────────────
 
@@ -44,6 +57,7 @@ export type AgentStatus
     | { type: 'waiting-questions' }
     | { type: 'waiting-permission'; toolName: string }
     | { type: 'compacting' }
+    | { type: 'reconnecting'; attempt: number; maxAttempts: number; nextRetryMs: number }
     | { type: 'error'; message: string }
 
 // ── Tool events ───────────────────────────────────────────────────────────────
@@ -89,6 +103,8 @@ export interface Message {
   attachments?: Attachment[]
   skillId?: string
   elapsedSec?: number | null
+  modelUid?: string | null
+  modelName?: string | null
 }
 
 // ── Draft / estimator ─────────────────────────────────────────────────────────
@@ -140,6 +156,12 @@ export interface ChatTab {
   /** Present only on sub-agent tabs (ephemeral, not persisted). */
   subAgent?: SubAgentInfo
   mode?: ChatMode
+  /** Design mode — true for tabs created via "New Design" */
+  isDesignTab?: boolean
+  /** All design artifacts produced by the agent in this tab. */
+  designs?: DesignArtifact[]
+  /** ID of the design currently shown in the canvas. */
+  activeDesignId?: string | null
 }
 
 export type { Attachment, SubAgentInfo, SubAgentPersonality, TaskItem, ToolPermissionDecision }

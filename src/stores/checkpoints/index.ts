@@ -310,6 +310,7 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
   async function restoreToCheckpoint(
     tab: ChatTab,
     checkpointId: string,
+    mode: 'full' | 'conversation' | 'files' = 'full',
   ): Promise<{ ok: boolean; error?: string }> {
     const tabCheckpoints = checkpointsByTab.value[tab.id]
     if (!tabCheckpoints)
@@ -324,70 +325,74 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
     // Gather all checkpoints that will be removed (target and everything after)
     const toRemove = tabCheckpoints.slice(targetIdx)
 
-    // ── Step 1: Collect file snapshots to restore ──────────────────────────
-    // For each unique path, use the EARLIEST snapshot (from the target checkpoint)
-    // because that represents the true "before" state.
-    const fileRestoreMap = new Map<string, CheckpointFileRow>()
+    if (mode !== 'conversation') {
+      // ── Step 1: Collect file snapshots to restore ──────────────────────────
+      // For each unique path, use the EARLIEST snapshot (from the target checkpoint)
+      // because that represents the true "before" state.
+      const fileRestoreMap = new Map<string, CheckpointFileRow>()
 
-    for (const cp of toRemove) {
-      if (!cp.conversationId)
-        continue
-      try {
-        const files = await dbLoadCheckpointFiles(cp.id)
-        for (const f of files) {
-          const key = f.absolute_path.toLowerCase()
-          if (!fileRestoreMap.has(key)) {
-            fileRestoreMap.set(key, f)
+      for (const cp of toRemove) {
+        if (!cp.conversationId)
+          continue
+        try {
+          const files = await dbLoadCheckpointFiles(cp.id)
+          for (const f of files) {
+            const key = f.absolute_path.toLowerCase()
+            if (!fileRestoreMap.has(key)) {
+              fileRestoreMap.set(key, f)
+            }
           }
         }
+        catch (e) {
+          console.warn('[checkpoints] Failed to load snapshots for', cp.id, e)
+        }
       }
-      catch (e) {
-        console.warn('[checkpoints] Failed to load snapshots for', cp.id, e)
+
+      // ── Step 2: Restore files ──────────────────────────────────────────────
+      const errors: string[] = []
+
+      for (const [, snapshot] of fileRestoreMap) {
+        try {
+          if (snapshot.existed && snapshot.content !== null) {
+            await writeTextFile(snapshot.absolute_path, snapshot.content)
+          }
+          else {
+            try {
+              await remove(snapshot.absolute_path)
+            }
+            catch {
+              // File may have already been deleted, that's fine
+            }
+          }
+        }
+        catch (e) {
+          errors.push(`${snapshot.relative_path}: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+
+      if (errors.length > 0)
+        console.warn('[checkpoints] Some files failed to restore:', errors)
+    }
+
+    if (mode !== 'files') {
+      // ── Step 3: Truncate in-memory messages ────────────────────────────────
+      const messagesToRemove = tab.messages.slice(target.messageIndex)
+      tab.messages.splice(target.messageIndex)
+
+      // ── Step 4: Delete DB messages ────────────────────────────────────────
+      if (tab.conversationId) {
+        const idsToDelete = messagesToRemove.map((m: Message) => m.id)
+        try {
+          await dbDeleteMessages(idsToDelete)
+          await dbUpdateConversationMsgCount(tab.conversationId, tab.messages.length)
+        }
+        catch (e) {
+          console.warn('[checkpoints] Failed to delete DB messages:', e)
+        }
       }
     }
 
-    // ── Step 2: Restore files ──────────────────────────────────────────────
-    const restored: string[] = []
-    const errors: string[] = []
-
-    for (const [_key, snapshot] of fileRestoreMap) {
-      try {
-        if (snapshot.existed && snapshot.content !== null) {
-          // File existed before — write back original content
-          await writeTextFile(snapshot.absolute_path, snapshot.content)
-          restored.push(`Restored ${snapshot.relative_path}`)
-        }
-        else {
-          // File was created by the agent — delete it
-          try {
-            await remove(snapshot.absolute_path)
-            restored.push(`Deleted ${snapshot.relative_path}`)
-          }
-          catch {
-            // File may have already been deleted, that's fine
-          }
-        }
-      }
-      catch (e) {
-        errors.push(`${snapshot.relative_path}: ${e instanceof Error ? e.message : String(e)}`)
-      }
-    }
-
-    // ── Step 3: Truncate in-memory messages ────────────────────────────────
-    const messagesToRemove = tab.messages.slice(target.messageIndex)
-    tab.messages.splice(target.messageIndex)
-
-    // ── Step 4: Delete DB messages ────────────────────────────────────────
     if (tab.conversationId) {
-      const idsToDelete = messagesToRemove.map((m: Message) => m.id)
-      try {
-        await dbDeleteMessages(idsToDelete)
-        await dbUpdateConversationMsgCount(tab.conversationId, tab.messages.length)
-      }
-      catch (e) {
-        console.warn('[checkpoints] Failed to delete DB messages:', e)
-      }
-
       // ── Step 5: Delete checkpoints from DB ──────────────────────────────
       try {
         await dbDeleteCheckpointsFrom(tab.conversationId, target.timestamp)
@@ -412,10 +417,6 @@ export const useCheckpointStore = defineStore('checkpoints', () => {
     }
     catch {
       // File tree refresh is non-critical
-    }
-
-    if (errors.length > 0) {
-      console.warn('[checkpoints] Some files failed to restore:', errors)
     }
 
     return { ok: true }

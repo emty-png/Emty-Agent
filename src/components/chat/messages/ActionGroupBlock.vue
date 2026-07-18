@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ToolEvent } from '@/stores/chat'
 import { Brain, ChevronDown, ChevronRight, FileCode, FileText, Folder, Search, Terminal, Wrench } from 'lucide-vue-next'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import MarkdownMessage from './MarkdownMessage.vue'
 import ThinkingMarkdown from './ThinkingMarkdown.vue'
 import ToolCallBadge from './ToolCallBadge.vue'
@@ -26,13 +26,11 @@ const props = defineProps<{
   streaming: boolean
   isOpen: boolean
   statusLabel?: string
-  copied?: boolean
-  hasRestText?: boolean
+  hasRestContent?: boolean
 }>()
 
 const emit = defineEmits<{
   toggle: []
-  copy: []
 }>()
 
 // ── Body chunks: split interleaved items into text/actions segments ──
@@ -113,67 +111,81 @@ function computeSummaryParts(groups: ProcessedGroup[]) {
   return parts
 }
 
-// ── Per-actions-chunk open/close state ──
+// ── Per-actions-chunk open/close state (key-based, no index mismatch) ──
 
-const actionsOpenStates = ref<boolean[]>([])
+const expandedChunks = ref<Set<string>>(new Set())
 
-// Ensure we have a state per actions chunk, streaming → open
-watch(
-  [bodyChunks, () => props.streaming],
-  ([chunks, streaming]) => {
-    const actionsChunks = (chunks as BodyChunk[]).filter(c => c.type === 'actions')
-    const states: boolean[] = []
-    for (let i = 0; i < actionsChunks.length; i++) {
-      const prev = actionsOpenStates.value[i]
-      states.push(prev !== undefined ? prev : !!streaming)
-    }
-    actionsOpenStates.value = states
-  },
-  { immediate: true },
-)
-
-function isActionsOpen(chunkIdx: number): boolean {
-  return actionsOpenStates.value[chunkIdx] ?? false
+function getActionsChunkKey(chunk: BodyChunk): string {
+  return chunk.groups[0]?.key ?? 'unknown'
 }
 
-function toggleActions(chunkIdx: number) {
-  actionsOpenStates.value[chunkIdx] = !actionsOpenStates.value[chunkIdx]
+function isActionsExpanded(chunkKey: string): boolean {
+  return expandedChunks.value.has(chunkKey)
 }
 
-// When outer "Worked" block is expanded, also open all actions
-watch(() => props.isOpen, open => {
-  if (open) {
-    actionsOpenStates.value = actionsOpenStates.value.map(() => true)
+function toggleActionsChunk(chunkKey: string) {
+  const next = new Set(expandedChunks.value)
+  if (next.has(chunkKey))
+    next.delete(chunkKey)
+  else
+    next.add(chunkKey)
+  expandedChunks.value = next
+}
+
+// ── Latest actions chunk: identify for bright header ──
+
+const lastActionsChunkKey = computed(() => {
+  for (let i = bodyChunks.value.length - 1; i >= 0; i--) {
+    if (bodyChunks.value[i]!.type === 'actions')
+      return getActionsChunkKey(bodyChunks.value[i]!)
   }
+  return null
 })
 
-// ── Smart preview: last text + last actions when collapsed ──
+function isLatestActionsChunk(chunk: BodyChunk): boolean {
+  return lastActionsChunkKey.value !== null && getActionsChunkKey(chunk) === lastActionsChunkKey.value
+}
+
+// ── Collapsed preview: last text + last actions summary ──
 
 const lastTextChunk = computed(() => {
   const textChunks = bodyChunks.value.filter(c => c.type === 'text')
-  return textChunks.length > 0 ? textChunks[textChunks.length - 1]! : null
+  return textChunks.length > 0 ? textChunks[textChunks.length - 1] : null
+})
+
+const lastText = computed(() => {
+  if (!lastTextChunk.value)
+    return ''
+  return lastTextChunk.value.groups
+    .filter(g => g.type === 'text' && g.hasText)
+    .map(g => g.text)
+    .join('\n')
 })
 
 const lastActionsChunk = computed(() => {
   const actionsChunks = bodyChunks.value.filter(c => c.type === 'actions')
-  return actionsChunks.length > 0 ? actionsChunks[actionsChunks.length - 1]! : null
+  return actionsChunks.length > 0 ? actionsChunks[actionsChunks.length - 1] : null
 })
 
-const hasSmartPreview = computed(() => {
-  if (props.streaming || props.isOpen)
-    return false
-  if (props.hasRestText)
-    return false
-  return !!(lastTextChunk.value || lastActionsChunk.value)
-})
-
-const previewSummaryParts = computed(() => {
+const lastActionsSummary = computed(() => {
   if (!lastActionsChunk.value)
     return []
   return computeSummaryParts(lastActionsChunk.value.groups)
 })
 
-const previewActionsOpen = ref(false)
+// ── Interrupt detection: agent was interrupted if last item is not text ──
+
+const wasInterrupted = computed(() => !props.hasRestContent)
+
+function expandFromPreview() {
+  if (lastActionsChunk.value) {
+    const key = getActionsChunkKey(lastActionsChunk.value)
+    const next = new Set(expandedChunks.value)
+    next.add(key)
+    expandedChunks.value = next
+  }
+  emit('toggle')
+}
 </script>
 
 <template>
@@ -207,55 +219,25 @@ const previewActionsOpen = ref(false)
       />
     </button>
 
-    <!-- ── Smart preview: visible when collapsed and not streaming ── -->
-    <div v-if="hasSmartPreview" class="flex flex-col gap-2.5">
-      <div v-if="lastTextChunk" class="max-h-[80px] overflow-hidden text-[14px] leading-[1.6] text-[var(--color-text)]">
-        <MarkdownMessage
-          v-for="group in lastTextChunk.groups.filter(g => g.type === 'text' && g.hasText)"
-          :key="group.key"
-          :content="group.text"
-          :streaming="false"
-        />
+    <!-- ── Collapsed preview: shown only when agent was interrupted ── -->
+    <div v-if="wasInterrupted && !isOpen && !streaming && (lastText || lastActionsSummary.length > 0)" class="flex flex-col gap-2 pl-2">
+      <div v-if="lastText" class="max-h-[80px] overflow-hidden text-[14px] leading-[1.6] text-[var(--color-text)]">
+        <MarkdownMessage :content="lastText" :streaming="false" />
       </div>
-      <div v-if="lastActionsChunk && previewSummaryParts.length > 0" class="flex flex-col gap-[2px]">
-        <button
-          class="group/header flex w-full min-h-[30px] cursor-pointer select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)] transition-[color,background,border-color,transform] duration-150 ease-[ease] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)] active:scale-[0.98]"
-          :aria-expanded="previewActionsOpen"
-          @click.stop="previewActionsOpen = !previewActionsOpen"
+      <button
+        v-if="lastActionsSummary.length > 0"
+        class="flex flex-wrap items-center gap-2 cursor-pointer rounded-[var(--radius-sm)] border border-transparent px-2 py-[5px] -mx-2 text-left transition-[background,border-color] duration-100 ease hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] active:scale-[0.98]"
+        @click="expandFromPreview"
+      >
+        <span
+          v-for="(part, i) in lastActionsSummary"
+          :key="i"
+          class="flex items-center gap-1 whitespace-nowrap text-[11.5px] font-normal text-[var(--color-text-dim)]"
         >
-          <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <span
-              v-for="(part, i) in previewSummaryParts"
-              :key="i"
-              class="flex items-center gap-1 whitespace-nowrap text-[11.5px] font-normal text-[var(--color-text-secondary)]"
-            >
-              <component :is="part.icon" :size="12" :stroke-width="1.75" class="text-inherit opacity-75" />
-              {{ part.label }}
-            </span>
-          </div>
-          <ChevronRight
-            :size="12"
-            class="shrink-0 text-inherit opacity-[0.45] transition-[transform,opacity] duration-[350ms,150ms] ease-[cubic-bezier(0.34,1.56,0.64,1),ease] motion-reduce:transition-none group-hover/header:opacity-75"
-            :class="previewActionsOpen ? 'rotate-90 !opacity-75' : ''"
-            aria-hidden="true"
-          />
-        </button>
-
-        <div class="grid grid-rows-[0fr] transition-[grid-template-rows] duration-[340ms] ease-[cubic-bezier(0.25,1,0.5,1)] will-change-[grid-template-rows] motion-reduce:transition-none" :class="previewActionsOpen ? 'grid-rows-[1fr]' : ''">
-          <div class="min-h-0 -translate-y-[3px] overflow-hidden opacity-0 transition-[opacity,transform] duration-[200ms,340ms] ease-[ease,cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none" :class="previewActionsOpen ? 'translate-y-0 opacity-100 delay-[40ms,40ms] duration-[280ms,340ms]' : ''">
-            <div class="relative ml-2 flex flex-col gap-1 border-l-[1.5px] border-[var(--color-border-subtle)] py-1 pl-[14px] transition-colors duration-300 ease-[ease]">
-              <template v-for="(group, idx) in lastActionsChunk.groups" :key="group.key || idx">
-                <div v-if="group.type === 'tools'" class="flex flex-col gap-2.5">
-                  <ToolCallBadge v-for="ev in group.events" :key="ev.id" :event="ev" />
-                </div>
-                <div v-else-if="group.type === 'reasoning'" class="block text-[13px] leading-[1.6]">
-                  <ThinkingMarkdown :content="group.text" :streaming="false" />
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
-      </div>
+          <component :is="part.icon" :size="12" :stroke-width="1.75" class="text-inherit opacity-75" />
+          {{ part.label }}
+        </span>
+      </button>
     </div>
 
     <!-- ── Outer body (slides open when isOpen or streaming) ── -->
@@ -282,13 +264,15 @@ const previewActionsOpen = ref(false)
               <!-- Sub-header: summary pills + chevron -->
               <div
                 v-if="streaming"
-                class="group/header pointer-events-none flex min-h-[30px] w-full cursor-default select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)]"
+                class="group/header pointer-events-none flex min-h-[30px] w-full cursor-default select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left"
+                :class="isLatestActionsChunk(chunk) ? 'text-[var(--color-accent-text)]' : 'text-[var(--color-text-dim)]'"
               >
                 <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <span
                     v-for="(part, i) in computeSummaryParts(chunk.groups)"
                     :key="i"
-                    class="flex items-center gap-1 whitespace-nowrap text-[11.5px] font-normal text-[var(--color-text-secondary)]"
+                    class="flex items-center gap-1 whitespace-nowrap text-[11.5px] font-normal"
+                    :class="isLatestActionsChunk(chunk) ? 'text-[var(--color-accent-text)]' : 'text-[var(--color-text-dim)]'"
                   >
                     <component :is="part.icon" :size="12" :stroke-width="1.75" class="text-inherit opacity-75" />
                     {{ part.label }}
@@ -298,15 +282,19 @@ const previewActionsOpen = ref(false)
 
               <button
                 v-else
-                class="group/header flex w-full min-h-[30px] cursor-pointer select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)] transition-[color,background,border-color,transform] duration-150 ease-[ease] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)] active:scale-[0.98]"
-                :aria-expanded="isActionsOpen(chunkIdx)"
-                @click.stop="toggleActions(chunkIdx)"
+                class="group/header flex w-full min-h-[30px] cursor-pointer select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left transition-[color,background,border-color,transform] duration-150 ease-[ease] active:scale-[0.98]"
+                :class="isLatestActionsChunk(chunk)
+                  ? 'text-[var(--color-accent-text)] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-accent-text)]'
+                  : 'text-[var(--color-text-dim)] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)]'"
+                :aria-expanded="isActionsExpanded(getActionsChunkKey(chunk))"
+                @click.stop="toggleActionsChunk(getActionsChunkKey(chunk))"
               >
                 <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <span
                     v-for="(part, i) in computeSummaryParts(chunk.groups)"
                     :key="i"
-                    class="flex items-center gap-1 whitespace-nowrap text-[11.5px] font-normal text-[var(--color-text-secondary)]"
+                    class="flex items-center gap-1 whitespace-nowrap text-[11.5px] font-normal"
+                    :class="isLatestActionsChunk(chunk) ? 'text-[var(--color-accent-text)]' : 'text-[var(--color-text-dim)]'"
                   >
                     <component :is="part.icon" :size="12" :stroke-width="1.75" class="text-inherit opacity-75" />
                     {{ part.label }}
@@ -315,14 +303,14 @@ const previewActionsOpen = ref(false)
                 <ChevronRight
                   :size="12"
                   class="shrink-0 text-inherit opacity-[0.45] transition-[transform,opacity] duration-[350ms,150ms] ease-[cubic-bezier(0.34,1.56,0.64,1),ease] motion-reduce:transition-none group-hover/header:opacity-75"
-                  :class="isActionsOpen(chunkIdx) ? 'rotate-90 !opacity-75' : ''"
+                  :class="isActionsExpanded(getActionsChunkKey(chunk)) ? 'rotate-90 !opacity-75' : ''"
                   aria-hidden="true"
                 />
               </button>
 
               <!-- Sub-body: tool badges + thinking blocks -->
-              <div class="grid grid-rows-[0fr] transition-[grid-template-rows] duration-[340ms] ease-[cubic-bezier(0.25,1,0.5,1)] will-change-[grid-template-rows] motion-reduce:transition-none" :class="isActionsOpen(chunkIdx) || streaming ? 'grid-rows-[1fr]' : ''">
-                <div class="min-h-0 -translate-y-[3px] overflow-hidden opacity-0 transition-[opacity,transform] duration-[200ms,340ms] ease-[ease,cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none" :class="isActionsOpen(chunkIdx) || streaming ? 'translate-y-0 opacity-100 delay-[40ms,40ms] duration-[280ms,340ms]' : ''">
+              <div class="grid grid-rows-[0fr] transition-[grid-template-rows] duration-[340ms] ease-[cubic-bezier(0.25,1,0.5,1)] will-change-[grid-template-rows] motion-reduce:transition-none" :class="isActionsExpanded(getActionsChunkKey(chunk)) || streaming ? 'grid-rows-[1fr]' : ''">
+                <div class="min-h-0 -translate-y-[3px] overflow-hidden opacity-0 transition-[opacity,transform] duration-[200ms,340ms] ease-[ease,cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none" :class="isActionsExpanded(getActionsChunkKey(chunk)) || streaming ? 'translate-y-0 opacity-100 delay-[40ms,40ms] duration-[280ms,340ms]' : ''">
                   <div
                     class="relative ml-2 flex flex-col gap-1 border-l-[1.5px] border-[var(--color-border-subtle)] py-1 pl-[14px] transition-colors duration-300 ease-[ease]"
                     :class="streaming ? 'before:absolute before:-left-[1.75px] before:top-0 before:bottom-0 before:z-[1] before:w-[2px] before:rounded-[2px] before:bg-[var(--color-accent)] before:content-[\'\'] before:animate-[rail-pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite_alternate] motion-reduce:before:animate-none' : ''"

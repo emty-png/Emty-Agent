@@ -1,3 +1,4 @@
+import type { ChatMode, DesignArtifact } from './types'
 import type { FileReadRegistry } from '@/utils/tools/fs'
 import { sha256Text, updateReadRegistry } from '@/utils/tools/fs/shared'
 
@@ -57,13 +58,34 @@ export function parseAtMentions(text: string): string[] {
   return results
 }
 
-export async function buildMentionContext(messageText: string, projectPath: string | null, registry?: FileReadRegistry): Promise<string> {
+export async function buildMentionContext(messageText: string, projectPath: string | null, registry?: FileReadRegistry, mode?: ChatMode, designs?: DesignArtifact[]): Promise<string> {
   if (!projectPath)
     return ''
   const paths = parseAtMentions(messageText)
   if (paths.length === 0)
     return ''
 
+  // ── Design mode: resolve design artifacts ────────────────────────────────
+  if (mode === 'design' && designs) {
+    const blocks: string[] = [
+      '<context>',
+      'The user has referenced the following designs. Read and use this context before responding:',
+    ]
+    for (const id of paths) {
+      const design = designs.find(d => d.id === id)
+      if (!design)
+        continue
+      blocks.push(
+        `\n<design name="${design.name}" id="${design.id}">\nHTML:\n${design.html}\n\nCSS:\n${design.css}\n${design.js ? `\nJS:\n${design.js}\n` : ''}\nDescription: ${design.description}\n</design>`,
+      )
+    }
+    if (blocks.length <= 1)
+      return ''
+    blocks.push('</context>')
+    return blocks.join('\n')
+  }
+
+  // ── Normal mode: resolve file/directory paths ────────────────────────────
   const [{ readDir, readTextFile, stat }, { join, normalize }] = await Promise.all([
     import('@tauri-apps/plugin-fs'),
     import('@tauri-apps/api/path'),

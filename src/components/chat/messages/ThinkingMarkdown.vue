@@ -54,20 +54,20 @@ function renderInline(raw: string): string {
 
   return parts.map((part, i) => {
     if (i % 2 === 1) {
-      return `<code class="[font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] text-[0.92em] bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] px-[5px] py-[1px] rounded-[var(--radius-sm)] border border-[var(--color-border-mid)] whitespace-pre">${escHtml(part.slice(1, -1))}</code>`
+      return `<code class="[font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] text-[0.92em] bg-[var(--color-bg-elevated)] text-[var(--color-text-dim)] px-[5px] py-[1px] rounded-[var(--radius-sm)] border border-[var(--color-border-mid)] whitespace-pre">${escHtml(part.slice(1, -1))}</code>`
     }
 
     let t = escHtml(part)
 
     // bold + italic (must be tested before bold or italic individually)
-    t = t.replace(/\*\*\*(.+?)\*\*\*/gs, '<strong class="font-semibold text-[var(--color-text-secondary)]"><em class="italic text-[var(--color-text-secondary)]">$1</em></strong>')
-    t = t.replace(/___(.+?)___/gs, '<strong class="font-semibold text-[var(--color-text-secondary)]"><em class="italic text-[var(--color-text-secondary)]">$1</em></strong>')
+    t = t.replace(/\*\*\*(.+?)\*\*\*/gs, '<strong class="font-semibold text-[var(--color-text-dim)]"><em class="italic text-[var(--color-text-dim)]">$1</em></strong>')
+    t = t.replace(/___(.+?)___/gs, '<strong class="font-semibold text-[var(--color-text-dim)]"><em class="italic text-[var(--color-text-dim)]">$1</em></strong>')
     // bold
-    t = t.replace(/\*\*(.+?)\*\*/gs, '<strong class="font-semibold text-[var(--color-text-secondary)]">$1</strong>')
-    t = t.replace(/__(.+?)__/gs, '<strong class="font-semibold text-[var(--color-text-secondary)]">$1</strong>')
+    t = t.replace(/\*\*(.+?)\*\*/gs, '<strong class="font-semibold text-[var(--color-text-dim)]">$1</strong>')
+    t = t.replace(/__(.+?)__/gs, '<strong class="font-semibold text-[var(--color-text-dim)]">$1</strong>')
     // italic (* and _)
-    t = t.replace(/\*([^\s*][^*]*)\*/g, '<em class="italic text-[var(--color-text-secondary)]">$1</em>')
-    t = t.replace(/_([^\s_][^_]*)_/g, '<em class="italic text-[var(--color-text-secondary)]">$1</em>')
+    t = t.replace(/\*([^\s*][^*]*)\*/g, '<em class="italic text-[var(--color-text-dim)]">$1</em>')
+    t = t.replace(/_([^\s_][^_]*)_/g, '<em class="italic text-[var(--color-text-dim)]">$1</em>')
     // strikethrough
     t = t.replace(/~~(.+?)~~/g, '<del class="line-through text-[var(--color-text-dim)]">$1</del>')
 
@@ -233,7 +233,7 @@ function renderBlock(block: Block): string {
     case 'heading': {
       const tag = `h${block.level}`
       const size = block.level === 1 ? 'text-[1.3em]' : block.level === 2 ? 'text-[1.15em]' : block.level === 3 ? 'text-[1.05em]' : 'text-[1em]'
-      return `<${tag} class="${size} font-semibold leading-[1.3] text-[var(--color-text-secondary)] mt-[14px] mb-[6px] first:mt-0 last:mb-0">${renderInline(block.text)}</${tag}>`
+      return `<${tag} class="${size} font-semibold leading-[1.3] text-[var(--color-text-dim)] mt-[14px] mb-[6px] first:mt-0 last:mb-0">${renderInline(block.text)}</${tag}>`
     }
     case 'paragraph':
       return `<p class="mb-[10px] last:mb-0">${block.lines.map(l => renderInline(l)).join('<br>')}</p>`
@@ -269,8 +269,8 @@ function renderBlock(block: Block): string {
     case 'code': {
       const { lang, code, closed } = block
       const body = closed
-        ? `<pre class="m-0 px-[12px] py-[10px] [font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] text-[1em] leading-[1.55] text-[var(--color-text-secondary)] whitespace-pre-wrap break-words [overflow-wrap:anywhere] bg-transparent"><code class="[font-family:inherit] bg-transparent text-[inherit] whitespace-inherit p-0 border-none">${escHtml(code)}</code></pre>`
-        : `<pre class="m-0 px-[12px] py-[10px] [font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] text-[1em] leading-[1.55] text-[var(--color-text-secondary)] whitespace-pre-wrap break-words [overflow-wrap:anywhere] bg-transparent"><code class="[font-family:inherit] bg-transparent text-[inherit] whitespace-inherit p-0 border-none">${escHtml(code)}</code><span class="animate-[tm-blink_0.9s_step-end_infinite] text-[var(--color-accent-bright)] motion-reduce:animate-none motion-reduce:opacity-100"> ▊</span></pre>`
+        ? `<pre class="m-0 px-[12px] py-[10px] [font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] text-[1em] leading-[1.55] text-[var(--color-text-dim)] whitespace-pre-wrap break-words [overflow-wrap:anywhere] bg-transparent"><code class="[font-family:inherit] bg-transparent text-[inherit] whitespace-inherit p-0 border-none">${escHtml(code)}</code></pre>`
+        : `<pre class="m-0 px-[12px] py-[10px] [font-family:'JetBrains_Mono','Fira_Code','Cascadia_Code',ui-monospace,monospace] text-[1em] leading-[1.55] text-[var(--color-text-dim)] whitespace-pre-wrap break-words [overflow-wrap:anywhere] bg-transparent"><code class="[font-family:inherit] bg-transparent text-[inherit] whitespace-inherit p-0 border-none">${escHtml(code)}</code><span class="animate-[tm-blink_0.9s_step-end_infinite] text-[var(--color-accent-bright)] motion-reduce:animate-none motion-reduce:opacity-100"> ▊</span></pre>`
 
       const langLabel = lang
         ? `<span class="[font-family:'JetBrains_Mono','Fira_Code',ui-monospace,monospace] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-text-dim)]">${escHtml(lang)}</span>`

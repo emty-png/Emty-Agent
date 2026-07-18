@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import FatalErrorScreen from './components/app/FatalErrorScreen.vue'
+import ZoomIndicator from './components/app/ZoomIndicator.vue'
 import ProviderBrowser from './components/settings/providers/ProviderBrowser.vue'
 import SettingsModal from './components/settings/SettingsModal.vue'
 import SideBar from './components/sidebar/Sidebar.vue'
 import TitleBar from './components/titlebar/Titlebar.vue'
+import { useZoom } from './composables/useZoom'
 import { getDb } from './db/database'
 import { useProjectStore } from './stores/project'
 import { captureFatalError, fatalError } from './utils/errors'
@@ -30,6 +32,8 @@ watch(showProviderBrowser, open => {
 })
 
 const project = useProjectStore()
+
+useZoom()
 
 function selectView(view: ViewType) {
   activeView.value = view
@@ -60,7 +64,9 @@ function reloadApp() {
 </script>
 
 <template>
-  <div style="display: flex; flex-direction: column; height: 100vh">
+  <div style="display: flex; flex-direction: column; height: 100%">
+    <ZoomIndicator />
+
     <TitleBar
       title="Emty Agent"
       :active-view="activeView"

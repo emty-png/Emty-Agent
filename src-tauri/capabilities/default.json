@@ -11,6 +11,7 @@
     "core:webview:allow-create-webview-window",
     "opener:default",
     "dialog:allow-open",
+    "dialog:allow-save",
     "allow-browser-mount-surface",
     "allow-browser-resize-surface",
     "allow-browser-unmount-surface",

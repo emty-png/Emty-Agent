@@ -98,14 +98,14 @@ function closeMenu() {
 // ── rename ────────────────────────────────────────────────────────────────────
 const renamingId = ref<string | null>(null)
 const renameValue = ref('')
-const renameInputRef = ref<HTMLInputElement | null>(null)
+const renameInputRef = ref<HTMLInputElement[]>([])
 
 async function startRename(conv: ConversationRow) {
   closeMenu()
   renamingId.value = conv.id
   renameValue.value = conv.title
   await nextTick()
-  renameInputRef.value?.select()
+  renameInputRef.value[0]?.select()
 }
 
 async function commitRename(id: string) {

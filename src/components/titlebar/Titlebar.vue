@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { Copy, Menu, Minus, Square, X } from 'lucide-vue-next'
+import { Copy, Menu, Minus, Square, WifiOff, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useSidebarStore } from '@/stores/sidebar'
@@ -21,11 +21,16 @@ const emit = defineEmits<{
 const sidebar = useSidebarStore()
 const { collapsed: sidebarCollapsed } = storeToRefs(sidebar)
 
+const isOnline = ref(navigator.onLine)
+function onOnline() { isOnline.value = true }
+function onOffline() { isOnline.value = false }
+
 const sidebarFlyoutOpen = ref(false)
 const sidebarTriggerRef = ref<HTMLElement | null>(null)
 const sidebarFlyoutRef = ref<HTMLElement | null>(null)
 const sidebarFlyoutPos = ref({ top: 0, left: 0 })
 let flyoutCloseTimer: ReturnType<typeof setTimeout> | null = null
+const sidebarContextMenuOpen = ref(false)
 
 function updateSidebarFlyoutPos() {
   const trigger = sidebarTriggerRef.value
@@ -34,7 +39,7 @@ function updateSidebarFlyoutPos() {
   const rect = trigger.getBoundingClientRect()
   sidebarFlyoutPos.value = {
     top: rect.bottom + 6,
-    left: rect.left,
+    left: rect.left + 4,
   }
 }
 
@@ -51,6 +56,8 @@ function closeSidebarFlyoutNow() {
 }
 
 function scheduleCloseSidebarFlyout() {
+  if (sidebarContextMenuOpen.value)
+    return
   cancelCloseSidebarFlyout()
   flyoutCloseTimer = setTimeout(() => {
     sidebarFlyoutOpen.value = false
@@ -85,10 +92,14 @@ watch(sidebarCollapsed, collapsed => {
 function onSidebarFlyoutPointerDown(event: PointerEvent) {
   if (!sidebarFlyoutOpen.value)
     return
-  const target = event.target as Node
+  const target = event.target as Element
   if (sidebarTriggerRef.value?.contains(target))
     return
   if (sidebarFlyoutRef.value?.contains(target))
+    return
+  if (target.closest?.('.ctx-menu, .ctx-backdrop, .dialog, .dialog-backdrop'))
+    return
+  if (sidebarContextMenuOpen.value)
     return
   closeSidebarFlyoutNow()
 }
@@ -118,6 +129,8 @@ onMounted(async () => {
   document.addEventListener('pointerdown', onSidebarFlyoutPointerDown)
   document.addEventListener('keydown', onSidebarFlyoutKeydown)
   window.addEventListener('resize', onSidebarFlyoutResize)
+  window.addEventListener('online', onOnline)
+  window.addEventListener('offline', onOffline)
 })
 onUnmounted(() => {
   unlisten?.()
@@ -125,6 +138,8 @@ onUnmounted(() => {
   document.removeEventListener('pointerdown', onSidebarFlyoutPointerDown)
   document.removeEventListener('keydown', onSidebarFlyoutKeydown)
   window.removeEventListener('resize', onSidebarFlyoutResize)
+  window.removeEventListener('online', onOnline)
+  window.removeEventListener('offline', onOffline)
 })
 
 async function minimize() {
@@ -175,6 +190,19 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
       <slot name="center" />
     </div>
 
+    <div
+      v-if="!isOnline"
+      class="flex items-center gap-1 shrink-0 [-webkit-app-region:no-drag] px-2 py-0.5 mx-1 rounded-[var(--radius-sm)] bg-[var(--color-danger-muted)] animate-pulse-subtle"
+      title="No internet connection"
+    >
+      <WifiOff
+        :size="15"
+        :stroke-width="2"
+        class="text-[var(--color-danger-hover)]"
+      />
+      <span class="text-[11px] font-medium text-[var(--color-danger-hover)] leading-none">Offline</span>
+    </div>
+
     <div class="flex items-stretch flex-none h-[29px] ml-auto [-webkit-app-region:no-drag]">
       <div class="w-[1px] h-3 self-center bg-[var(--color-border-mid)] shrink-0" aria-hidden="true" />
 
@@ -203,7 +231,7 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
       <div
         v-if="sidebarFlyoutOpen"
         ref="sidebarFlyoutRef"
-        class="fixed w-[196px] bg-[var(--color-bg-surface)] border border-[var(--color-border-mid)] rounded-[var(--radius-md)] shadow-[0_8px_24px_rgba(0,0,0,0.4),0_2px_6px_rgba(0,0,0,0.28)] overflow-hidden z-[10000] origin-top-left"
+        class="fixed w-[196px] bg-[var(--color-bg-surface)] border border-[var(--color-border-mid)] rounded-[var(--radius-md)] shadow-[0_8px_24px_rgba(0,0,0,0.4),0_2px_6px_rgba(0,0,0,0.28)] overflow-hidden z-[9990] origin-top-left"
         :style="{ top: `${sidebarFlyoutPos.top}px`, left: `${sidebarFlyoutPos.left}px` }"
         @mouseenter="cancelCloseSidebarFlyout"
         @mouseleave="scheduleCloseSidebarFlyout"
@@ -213,6 +241,8 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
           :active-view="props.activeView"
           @select-view="onSidebarSelectView"
           @open-settings="onSidebarOpenSettings"
+          @context-menu-open="sidebarContextMenuOpen = true"
+          @context-menu-close="sidebarContextMenuOpen = false"
         />
       </div>
     </Transition>

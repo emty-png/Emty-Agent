@@ -46,7 +46,7 @@ export async function buildProfile(ctx: ToolRegistryContext): Promise<ToolSet> {
     ...(ctx.workspacePath
       ? {
           ...createFilesystemTools(ctx.workspacePath, ctx.snapshotCallback, ctx.readRegistry),
-          ...createShellTools(ctx.workspacePath, ctx.osInfo?.shell, ctx.coAuthor, undefined, ctx.tabId),
+          ...createShellTools(ctx.workspacePath, ctx.osInfo?.shell, ctx.coAuthor, ctx.runtimeEvents, ctx.tabId),
         }
       : {}),
   }

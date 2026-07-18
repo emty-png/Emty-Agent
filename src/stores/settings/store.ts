@@ -22,6 +22,7 @@ import type {
   ThinkingEffort,
   WebSearchProvider,
 } from './types'
+import type { SttProvider, SttProviderConfig, TtsProvider, TtsProviderConfig, VoiceDictionaryEntry, VoiceProcessingConfig, VoiceSnippet } from './voiceTypes'
 import type { SkillMetadata } from '@/utils/skills'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
@@ -77,6 +78,48 @@ export const useSettingsStore = defineStore(
       fireworks: { apiKey: '', model: 'accounts/fireworks/models/flux-1-dev', status: 'idle', statusMessage: '', discoveredModels: [] },
       custom: { apiKey: '', baseURL: '', model: '', status: 'idle', statusMessage: '', discoveredModels: [] },
     })
+
+    // ── voice providers ──────────────────────────────────────────────────────
+    const sttProvider = ref<SttProvider>('openai')
+    const ttsProvider = ref<TtsProvider>('openai')
+    const stt = ref<Record<SttProvider, SttProviderConfig>>({
+      openai: { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'whisper-1', language: 'en', status: 'idle', statusMessage: '' },
+      deepgram: { apiKey: '', baseUrl: 'https://api.deepgram.com', model: 'nova-3', language: 'en', status: 'idle', statusMessage: '' },
+      assemblyai: { apiKey: '', baseUrl: 'https://api.assemblyai.com/v2', model: 'universal', language: 'en', status: 'idle', statusMessage: '' },
+      google: { apiKey: '', baseUrl: 'https://speech.googleapis.com', model: 'latest_long', language: 'en-US', status: 'idle', statusMessage: '' },
+      azure: { apiKey: '', baseUrl: '', model: 'en-US-Neural-Broadcast', language: 'en-US', status: 'idle', statusMessage: '' },
+      custom: { apiKey: '', baseUrl: '', model: 'whisper-1', language: 'en', status: 'idle', statusMessage: '' },
+    })
+    const tts = ref<Record<TtsProvider, TtsProviderConfig>>({
+      openai: { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'tts-1', voice: 'alloy', speed: 1.0, status: 'idle', statusMessage: '' },
+      elevenlabs: { apiKey: '', baseUrl: 'https://api.elevenlabs.io/v1', model: 'eleven_turbo_v2', voice: '21m00Tcm4TlvDq8ikWAM', speed: 1.0, status: 'idle', statusMessage: '' },
+      deepgram: { apiKey: '', baseUrl: 'https://api.deepgram.com/v1', model: 'aura-asteria-en', voice: 'asteria', speed: 1.0, status: 'idle', statusMessage: '' },
+      google: { apiKey: '', baseUrl: 'https://texttospeech.googleapis.com', model: 'en-US-Wavenet-D', voice: 'en-US-Wavenet-D', speed: 1.0, status: 'idle', statusMessage: '' },
+      azure: { apiKey: '', baseUrl: '', model: 'en-US-JennyNeural', voice: 'en-US-JennyNeural', speed: 1.0, status: 'idle', statusMessage: '' },
+      custom: { apiKey: '', baseUrl: '', model: 'tts-1', voice: 'alloy', speed: 1.0, status: 'idle', statusMessage: '' },
+    })
+
+    const voiceProcessing = ref<VoiceProcessingConfig>({
+      removeFillers: true,
+      autoPunctuate: true,
+      correctBacktracks: true,
+    })
+    const voiceDictionary = ref<VoiceDictionaryEntry[]>([])
+    const voiceSnippets = ref<VoiceSnippet[]>([])
+
+    // Defensive: persisted state from older versions may have undefined fields
+    watch(voiceProcessing, v => {
+      if (!v)
+        voiceProcessing.value = { removeFillers: true, autoPunctuate: true, correctBacktracks: true }
+    }, { immediate: true })
+    watch(voiceDictionary, v => {
+      if (!v)
+        voiceDictionary.value = []
+    }, { immediate: true })
+    watch(voiceSnippets, v => {
+      if (!v)
+        voiceSnippets.value = []
+    }, { immediate: true })
 
     const compatibleProviders = ref<CompatibleProvider[]>([])
     const mcpServers = ref<McpServerConfig[]>([])
@@ -658,6 +701,241 @@ export const useSettingsStore = defineStore(
       imageGenProvider.value = provider
     }
 
+    // ── voice providers ──────────────────────────────────────────────────────
+    async function testSttProvider(provider: SttProvider): Promise<void> {
+      const config = stt.value[provider]
+      if (!config.apiKey.trim() && provider !== 'custom') {
+        config.status = 'error'
+        config.statusMessage = 'API key is required'
+        return
+      }
+      if (provider === 'custom' && !config.baseUrl.trim()) {
+        config.status = 'error'
+        config.statusMessage = 'Base URL is required'
+        return
+      }
+      config.status = 'testing'
+      config.statusMessage = ''
+      try {
+        if (provider === 'openai' || provider === 'custom') {
+          const url = `${config.baseUrl.replace(/\/$/, '')}/audio/transcriptions`
+          // Try a HEAD-like probe — create minimal valid multipart
+          const fd = new FormData()
+          fd.append('model', config.model)
+          fd.append('file', new Blob([''], { type: 'audio/webm' }), 'test.webm')
+          const res = await platformFetch(url, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${config.apiKey}` },
+            body: fd,
+            signal: AbortSignal.timeout(10000),
+          })
+          // 401 = bad key, 2xx or 4xx (non-auth) = endpoint reachable
+          if (res.status === 401) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        else if (provider === 'deepgram') {
+          const res = await platformFetch(
+            `${config.baseUrl.replace(/\/$/, '')}/v1/listen?model=${config.model}`,
+            {
+              method: 'POST',
+              headers: { Token: config.apiKey, 'Content-Type': 'audio/webm' },
+              body: new Blob([''], { type: 'audio/webm' }),
+              signal: AbortSignal.timeout(10000),
+            },
+          )
+          if (res.status === 401) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        else if (provider === 'assemblyai') {
+          const res = await platformFetch(`${config.baseUrl.replace(/\/$/, '')}/token`, {
+            method: 'POST',
+            headers: { Authorization: config.apiKey },
+            signal: AbortSignal.timeout(10000),
+          })
+          if (res.status === 401) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        else if (provider === 'google') {
+          const res = await platformFetch(
+            `https://speech.googleapis.com/v1/speech:recognize?key=${config.apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config: { encoding: 'WEBM_OPUS', languageCode: config.language }, audio: { content: '' } }),
+              signal: AbortSignal.timeout(10000),
+            },
+          )
+          if (res.status === 401 || res.status === 403) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        else if (provider === 'azure') {
+          const res = await platformFetch(
+            `https://${config.language.replace(/-.+$/, '')}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${config.language}`,
+            {
+              method: 'POST',
+              headers: { 'Ocp-Apim-Subscription-Key': config.apiKey },
+              body: new Blob([''], { type: 'audio/webm' }),
+              signal: AbortSignal.timeout(10000),
+            },
+          )
+          if (res.status === 401) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        config.status = 'ok'
+        config.statusMessage = 'Connected \u2014 STT ready'
+      }
+      catch (e: unknown) {
+        config.status = 'error'
+        config.statusMessage
+          = e instanceof Error && e.name === 'TimeoutError'
+            ? 'Request timed out (10s)'
+            : e instanceof Error ? e.message : String(e)
+      }
+    }
+
+    function resetSttStatus(provider: SttProvider): void {
+      stt.value[provider].status = 'idle'
+      stt.value[provider].statusMessage = ''
+    }
+
+    async function testTtsProvider(provider: TtsProvider): Promise<void> {
+      const config = tts.value[provider]
+      if (!config.apiKey.trim() && provider !== 'custom') {
+        config.status = 'error'
+        config.statusMessage = 'API key is required'
+        return
+      }
+      if (provider === 'custom' && !config.baseUrl.trim()) {
+        config.status = 'error'
+        config.statusMessage = 'Base URL is required'
+        return
+      }
+      config.status = 'testing'
+      config.statusMessage = ''
+      try {
+        if (provider === 'openai' || provider === 'custom') {
+          const url = `${config.baseUrl.replace(/\/$/, '')}/audio/speech`
+          const res = await platformFetch(url, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${config.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ model: config.model, voice: config.voice, input: 'test' }),
+            signal: AbortSignal.timeout(10000),
+          })
+          if (res.status === 401) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        else if (provider === 'elevenlabs') {
+          const res = await platformFetch(
+            `${config.baseUrl.replace(/\/$/, '')}/voices`,
+            {
+              method: 'GET',
+              headers: { 'xi-api-key': config.apiKey },
+              signal: AbortSignal.timeout(10000),
+            },
+          )
+          if (res.status === 401) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        else if (provider === 'deepgram') {
+          const res = await platformFetch(
+            `${config.baseUrl.replace(/\/$/, '')}/speak`,
+            {
+              method: 'POST',
+              headers: { Token: config.apiKey, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: 'test', model: config.model }),
+              signal: AbortSignal.timeout(10000),
+            },
+          )
+          if (res.status === 401) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        else if (provider === 'google') {
+          const res = await platformFetch(
+            `https://texttospeech.googleapis.com/v1/text:synthesize?key=${config.apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ input: { text: 'test' }, voice: { name: config.voice, languageCode: 'en-US' }, audioConfig: { audioEncoding: 'MP3' } }),
+              signal: AbortSignal.timeout(10000),
+            },
+          )
+          if (res.status === 401 || res.status === 403) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        else if (provider === 'azure') {
+          const res = await platformFetch(
+            'https://eastus.tts.speech.microsoft.com/cognitiveservices/v1',
+            {
+              method: 'POST',
+              headers: {
+                'Ocp-Apim-Subscription-Key': config.apiKey,
+                'Content-Type': 'application/ssml',
+              },
+              body: `<speak version='1.0' xml:lang='en-US'><voice name='${config.voice}'>test</voice></speak>`,
+              signal: AbortSignal.timeout(10000),
+            },
+          )
+          if (res.status === 401) {
+            config.status = 'error'
+            config.statusMessage = 'Invalid API key'
+            return
+          }
+        }
+        config.status = 'ok'
+        config.statusMessage = 'Connected \u2014 TTS ready'
+      }
+      catch (e: unknown) {
+        config.status = 'error'
+        config.statusMessage
+          = e instanceof Error && e.name === 'TimeoutError'
+            ? 'Request timed out (10s)'
+            : e instanceof Error ? e.message : String(e)
+      }
+    }
+
+    function resetTtsStatus(provider: TtsProvider): void {
+      tts.value[provider].status = 'idle'
+      tts.value[provider].statusMessage = ''
+    }
+
+    function setSttProvider(provider: SttProvider): void {
+      sttProvider.value = provider
+    }
+
+    function setTtsProvider(provider: TtsProvider): void {
+      ttsProvider.value = provider
+    }
+
     // ── compatible providers ──────────────────────────────────────────────────
     function addProvider(partial: Pick<CompatibleProvider, 'name' | 'baseURL' | 'apiKey' | 'mdevId'> & {
       headers?: Record<string, string>
@@ -901,6 +1179,19 @@ export const useSettingsStore = defineStore(
       fetchImageGenModels,
       resetImageGenStatus,
       setImageGenProvider,
+      sttProvider,
+      stt,
+      testSttProvider,
+      resetSttStatus,
+      setSttProvider,
+      ttsProvider,
+      tts,
+      testTtsProvider,
+      resetTtsStatus,
+      setTtsProvider,
+      voiceProcessing,
+      voiceDictionary,
+      voiceSnippets,
       contextCaching,
       autoContext,
       memory,
@@ -957,6 +1248,13 @@ export const useSettingsStore = defineStore(
         'webSearchProvider',
         'imageGenProvider',
         'imageGen',
+        'sttProvider',
+        'stt',
+        'ttsProvider',
+        'tts',
+        'voiceProcessing',
+        'voiceDictionary',
+        'voiceSnippets',
         'contextCaching',
         'autoContext',
         'memory',

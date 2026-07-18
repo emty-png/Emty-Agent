@@ -47,6 +47,8 @@ Rules:
     }),
 
     execute: async ({ file_path, content, append }) => {
+      console.warn(`[write_file] path=${file_path} append=${append} content=${content.length}b`)
+
       const normalizedContent = normalizeLineEndings(content)
 
       let fullPath: string
@@ -54,11 +56,16 @@ Rules:
         fullPath = await safePath(projectPath, file_path, { kind: 'write' })
       }
       catch (e) {
-        return `Error: ${e instanceof Error ? e.message : String(e)}`
+        const detail = e instanceof Error ? e.message : String(e)
+        console.warn(`[write_file] path resolution failed: ${detail}`)
+        return `Error: ${detail}`
       }
+      console.warn(`[write_file] resolved=${fullPath}`)
 
-      if (hasBinaryExtension(file_path))
+      if (hasBinaryExtension(file_path)) {
+        console.warn(`[write_file] rejected: binary extension for ${file_path}`)
         return 'Error: Cannot write binary file paths with this text tool.'
+      }
 
       return lockManager.withLock(fullPath, async () => {
         let existingLineEnding: LineEnding = 'lf'
@@ -71,8 +78,10 @@ Rules:
             return `Error: ${file_path} is not a regular file.`
 
           const registryEntry = registry.get(fullPath)
-          if (!registryEntry && !append)
+          if (!registryEntry && !append) {
+            console.warn(`[write_file] rejected: no read registry entry for ${file_path} (append=${append})`)
             return 'Error: File has not been read yet. Call read_files first before overwriting.'
+          }
 
           let existingSnapshot: Awaited<ReturnType<typeof readTextSnapshot>>
           try {
@@ -91,8 +100,10 @@ Rules:
               && registryEntry.mtimeMs !== null
               && existingSnapshot.mtimeMs !== null
               && registryEntry.mtimeMs === existingSnapshot.mtimeMs
-            if (!mtimesMatch && registryEntry !== undefined && registryEntry.hash !== existingSnapshot.hash)
+            if (!mtimesMatch && registryEntry !== undefined && registryEntry.hash !== existingSnapshot.hash) {
+              console.warn(`[write_file] rejected: file modified since last read. registry.mtime=${registryEntry.mtimeMs} disk.mtime=${existingSnapshot.mtimeMs} registry.hash=${registryEntry.hash.slice(0, 12)}… disk.hash=${existingSnapshot.hash.slice(0, 12)}…`)
               return 'Error: File has been modified since last read. Re-read with read_files before overwriting.'
+            }
           }
         }
 
@@ -102,7 +113,9 @@ Rules:
             await ensureDir(parentDir)
           }
           catch (e) {
-            return `Error: Failed to create directories for ${file_path}: ${e instanceof Error ? e.message : String(e)}`
+            const detail = e instanceof Error ? e.message : String(e)
+            console.warn(`[write_file] ensureDir failed for ${parentDir}: ${detail}`)
+            return `Error: Failed to create directories for ${file_path}: ${detail}`
           }
         }
 
@@ -111,7 +124,9 @@ Rules:
             await onBeforeFileWrite(file_path, fullPath, existingContent)
           }
           catch (e) {
-            return `Error: Failed to checkpoint ${file_path}: ${e instanceof Error ? e.message : String(e)}`
+            const detail = e instanceof Error ? e.message : String(e)
+            console.warn(`[write_file] checkpoint (onBeforeFileWrite) failed for ${file_path}: ${detail}`)
+            return `Error: Failed to checkpoint ${file_path}: ${detail}`
           }
         }
 
@@ -128,7 +143,9 @@ Rules:
           await writeEncodedTextFile(fullPath, diskContent, existingEncoding)
         }
         catch (e) {
-          return `Error writing ${file_path}: ${e instanceof Error ? e.message : String(e)}`
+          const detail = e instanceof Error ? e.message : String(e)
+          console.warn(`[write_file] disk write failed for ${fullPath} (${existingEncoding}): ${detail}`)
+          return `Error writing ${file_path}: ${detail}`
         }
 
         try {
@@ -141,7 +158,14 @@ Rules:
           }
           updateReadRegistry(registry, fullPath, updatedEntry)
         }
-        catch { /* non-fatal */ }
+        catch (e) {
+          console.warn(`[write_file] registry update failed for ${fullPath} (non-fatal): ${e instanceof Error ? e.message : String(e)}`)
+        }
+
+        const op = existingContent !== null
+          ? append ? 'append' : 'rewrite'
+          : 'create'
+        console.warn(`[write_file] success ${op} ${file_path} (+${added}/-${removed})`)
 
         const message = existingContent !== null
           ? append
