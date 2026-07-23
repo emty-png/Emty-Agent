@@ -4,11 +4,12 @@ use std::{
     collections::HashMap,
     env,
     io::{Read, Write},
-    os::windows::process::CommandExt,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     thread,
 };
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Emitter, State};
 
 const TERMINAL_EVENT: &str = "terminal://event";
