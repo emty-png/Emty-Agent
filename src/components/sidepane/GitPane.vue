@@ -20,6 +20,7 @@ import {
   GitCommit,
   Loader2,
   Minus,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -832,6 +833,17 @@ const iconBtnClass = 'inline-flex items-center justify-center w-[26px] h-[26px] 
 const popoverItemClass = 'flex items-center gap-2.5 py-2 px-2.5 border border-transparent rounded-[var(--radius-md)] bg-transparent text-[var(--color-text-secondary)] cursor-pointer text-left transition-all duration-100 ease-in-out hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]'
 const popoverItemActiveClass = 'bg-[color-mix(in_srgb,var(--color-accent)_15%,transparent)] border-[var(--color-accent-dim)] text-[var(--color-text-primary)] hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)]'
 
+const showActionsPopup = ref(false)
+
+function toggleActionsPopup() {
+  showActionsPopup.value = !showActionsPopup.value
+}
+
+function executeActionAndClose(fn: () => void) {
+  fn()
+  showActionsPopup.value = false
+}
+
 const bottomBtnClass = 'inline-flex items-center gap-[5px] py-[5px] px-[12px] rounded-[var(--radius-md)] text-[12px] font-medium cursor-pointer border transition-all duration-100 ease-in-out whitespace-nowrap active:scale-[0.97] disabled:opacity-45 disabled:cursor-not-allowed disabled:transform-none'
 
 watch(openedTabs, () => {
@@ -965,21 +977,77 @@ watch(openedTabs, () => {
         </button>
       </div>
       <div class="flex items-center gap-1">
-        <button :class="iconBtnClass" title="Fetch remote refs" :disabled="loading || !!busyAction" @click="fetchRemote">
-          <CloudDownload :size="13" />
-        </button>
-        <button :class="iconBtnClass" title="Pull latest changes (fast-forward only)" :disabled="loading || !!busyAction || hasConflicts" @click="pullRemote">
-          <ArrowDownToLine :size="13" />
-        </button>
-        <button :class="iconBtnClass" title="Push current branch" :disabled="loading || !!busyAction || hasConflicts" @click="pushRemote">
-          <ArrowUpToLine :size="13" />
-        </button>
-        <button :class="iconBtnClass" title="Stash all working changes" :disabled="loading || !!busyAction || unstagedCount === 0" @click="stashChanges">
-          <Archive :size="13" />
-        </button>
-        <button :class="iconBtnClass" title="Apply latest stash" :disabled="loading || !!busyAction || stashes.length === 0" @click="popStash">
-          <ArchiveRestore :size="13" />
-        </button>
+        <div class="relative">
+          <button
+            :class="iconBtnClass"
+            title="Git actions"
+            @click="toggleActionsPopup"
+          >
+            <MoreHorizontal :size="13" />
+          </button>
+
+          <div v-if="showActionsPopup" class="fixed inset-0 z-50" @click="showActionsPopup = false" />
+          <Transition
+            enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-bottom"
+            enter-from-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"
+            enter-to-class="opacity-100 [transform:translateY(0)_scale(1)]"
+            leave-active-class="transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.7,0,0.84,0)] origin-bottom"
+            leave-from-class="opacity-100 [transform:translateY(0)_scale(1)]"
+            leave-to-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"
+          >
+            <div
+              v-if="showActionsPopup"
+              class="absolute top-[calc(100%+8px)] right-0 w-[190px] p-1.5 rounded-[var(--radius-lg)] bg-[var(--color-bg-surface)] border border-[var(--color-border-mid)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),0_4px_12px_rgba(0,0,0,0.3),0_12px_28px_rgba(0,0,0,0.35)] z-[10020] overflow-hidden"
+            >
+              <div class="px-2 py-0.5 mb-1 border-b border-[var(--color-border-subtle)] flex items-center">
+                <span class="text-[10.5px] font-bold tracking-[0.08em] uppercase text-[var(--color-text-dim)] select-none">Actions</span>
+              </div>
+              <main class="flex flex-col gap-0.5 max-h-[250px] overflow-y-auto pb-0.5">
+                <button
+                  class="flex items-center gap-2 h-[30px] px-2 border border-transparent rounded-[var(--radius-md)] bg-transparent text-[var(--color-text-secondary)] cursor-pointer text-left transition-all duration-100 ease hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
+                  :disabled="loading || !!busyAction"
+                  @click="executeActionAndClose(fetchRemote)"
+                >
+                  <CloudDownload :size="13" class="shrink-0 text-[var(--color-text-tertiary)]" />
+                  <span class="flex-1 text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">Fetch</span>
+                </button>
+                <button
+                  class="flex items-center gap-2 h-[30px] px-2 border border-transparent rounded-[var(--radius-md)] bg-transparent text-[var(--color-text-secondary)] cursor-pointer text-left transition-all duration-100 ease hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
+                  :disabled="loading || !!busyAction || hasConflicts"
+                  @click="executeActionAndClose(pullRemote)"
+                >
+                  <ArrowDownToLine :size="13" class="shrink-0 text-[var(--color-text-tertiary)]" />
+                  <span class="flex-1 text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">Pull</span>
+                </button>
+                <button
+                  class="flex items-center gap-2 h-[30px] px-2 border border-transparent rounded-[var(--radius-md)] bg-transparent text-[var(--color-text-secondary)] cursor-pointer text-left transition-all duration-100 ease hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
+                  :disabled="loading || !!busyAction || hasConflicts"
+                  @click="executeActionAndClose(pushRemote)"
+                >
+                  <ArrowUpToLine :size="13" class="shrink-0 text-[var(--color-text-tertiary)]" />
+                  <span class="flex-1 text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">Push</span>
+                </button>
+                <div class="mx-1.5 my-0.5 h-px bg-[var(--color-border-subtle)]" />
+                <button
+                  class="flex items-center gap-2 h-[30px] px-2 border border-transparent rounded-[var(--radius-md)] bg-transparent text-[var(--color-text-secondary)] cursor-pointer text-left transition-all duration-100 ease hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
+                  :disabled="loading || !!busyAction || unstagedCount === 0"
+                  @click="executeActionAndClose(stashChanges)"
+                >
+                  <Archive :size="13" class="shrink-0 text-[var(--color-text-tertiary)]" />
+                  <span class="flex-1 text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">Stash</span>
+                </button>
+                <button
+                  class="flex items-center gap-2 h-[30px] px-2 border border-transparent rounded-[var(--radius-md)] bg-transparent text-[var(--color-text-secondary)] cursor-pointer text-left transition-all duration-100 ease hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
+                  :disabled="loading || !!busyAction || stashes.length === 0"
+                  @click="executeActionAndClose(popStash)"
+                >
+                  <ArchiveRestore :size="13" class="shrink-0 text-[var(--color-text-tertiary)]" />
+                  <span class="flex-1 text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">Pop stash</span>
+                </button>
+              </main>
+            </div>
+          </Transition>
+        </div>
         <button :class="iconBtnClass" title="Refresh" :disabled="loading" @click="refresh">
           <RefreshCw :size="13" :class="{ 'animate-[spin_0.9s_linear_infinite]': loading }" />
         </button>
