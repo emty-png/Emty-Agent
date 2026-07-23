@@ -41,6 +41,7 @@ export function newTab(): ChatTab {
     pendingPermissions: [],
     readRegistry: new Map(),
     mode: 'build',
+    messageQueue: [],
   }
 }
 
@@ -64,6 +65,7 @@ export function newDesignTab(): ChatTab {
     readRegistry: new Map(),
     mode: 'design',
     isDesignTab: true,
+    messageQueue: [],
     designs: [],
     activeDesignId: null,
   }

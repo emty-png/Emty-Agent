@@ -102,6 +102,7 @@ export function createSendMessage(
   abortControllers: Map<string, AbortController>,
   questionResolvers: Map<string, (answers: QuestionAnswer[]) => void>,
   requestToolPermission: (tabId: string, request: Parameters<RequestToolPermission>[0]) => Promise<ToolPermissionDecision>,
+  drainQueue: () => void,
 ) {
   async function sendMessage(content: string, _mode: ChatMode = 'build', attachments?: import('./types').Attachment[], modelOverride?: string | null): Promise<void> {
     const tab = activeTab.value
@@ -312,6 +313,8 @@ export function createSendMessage(
           toolCallsCount: 0,
         })
       }
+      // Clear queue on early failure (stream never started)
+      tab.messageQueue = []
       return
     }
 
@@ -409,6 +412,7 @@ export function createSendMessage(
         readRegistry: new Map(),
         permissionMode: tab.permissionMode ?? settings.agent.permissionMode,
         subAgent: { personality, mission, parentTabId: tab.id, status: 'running' },
+        messageQueue: [],
       }
 
       tabs.value.push(subTab)
@@ -662,6 +666,8 @@ export function createSendMessage(
       if (!tab.subAgent && settings.sound.completionEnabled) {
         import('@/utils/sounds').then(({ playCompletionSound }) => playCompletionSound(settings.sound.volume)).catch(() => {})
       }
+      // ── Auto-drain queue ──────────────────────────────────────────────────
+      drainQueue()
     }
 
     // ── Network retry state ──────────────────────────────────────────────
@@ -674,6 +680,8 @@ export function createSendMessage(
       liveMsg.error = error.message
       setStatus(tab, statusError(error.message))
       abortControllers.delete(tabId)
+      // Discard remaining queued messages on error
+      tab.messageQueue = []
       if (tab.conversationId) {
         const hasNote = /\[Assistant turn ended with error\/interruption:/.test(liveMsg.content)
         const persistedContent = hasNote

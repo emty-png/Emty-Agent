@@ -1,4 +1,4 @@
-import type { AgentStatus, ChatDraftState, ChatEstimatorState, ChatMode, ChatTab, Message } from './chat/types'
+import type { AgentStatus, Attachment, ChatDraftState, ChatEstimatorState, ChatMode, ChatTab, Message, QueuedMessage } from './chat/types'
 import type { ToolPermissionDecision, ToolPermissionRequest } from '@/utils/tools/permissions'
 import type { QuestionAnswer } from '@/utils/tools/questions'
 import { defineStore } from 'pinia'
@@ -267,6 +267,7 @@ export const useChatStore = defineStore('chat', () => {
       pendingPermissions: [],
       readRegistry: new Map(),
       ...(payload.isDesignTab ? { isDesignTab: true, mode: 'design' as ChatMode, designs: payload.designs ?? [], activeDesignId: payload.activeDesignId ?? null } : {}),
+      messageQueue: [],
     }
 
     tabs.value.push(tab)
@@ -303,6 +304,7 @@ export const useChatStore = defineStore('chat', () => {
         permissionResolvers.delete(perm.requestId)
       }
       stoppingTab.pendingPermissions = []
+      stoppingTab.messageQueue = []
     }
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
@@ -532,9 +534,36 @@ export const useChatStore = defineStore('chat', () => {
       permissionResolvers.get(targetId)?.(decision)
   }
 
+  // ── Message queue ─────────────────────────────────────────────────────────
+
+  function enqueueMessage(text: string, attachments: Attachment[]): QueuedMessage {
+    const item: QueuedMessage = { id: makeId(), text, attachments, queuedAt: Date.now() }
+    activeTab.value.messageQueue.push(item)
+    return item
+  }
+
+  function removeFromQueue(queueItemId: string): void {
+    const tab = activeTab.value
+    tab.messageQueue = tab.messageQueue.filter(m => m.id !== queueItemId)
+  }
+
+  function clearQueue(tabId?: string): void {
+    const tab = tabs.value.find(t => t.id === (tabId ?? activeId.value))
+    if (tab)
+      tab.messageQueue = []
+  }
+
   // ── Send message ──────────────────────────────────────────────────────────
 
-  const { sendMessage } = createSendMessage(tabs, activeId, activeTab, abortControllers, questionResolvers, requestToolPermission)
+  const { sendMessage } = createSendMessage(tabs, activeId, activeTab, abortControllers, questionResolvers, requestToolPermission, drainQueue)
+
+  function drainQueue(): void {
+    const tab = activeTab.value
+    if (tab.agentStatus.type !== 'idle' || tab.messageQueue.length === 0)
+      return
+    const next = tab.messageQueue.shift()!
+    void sendMessage(next.text, (tab.mode ?? 'build') as ChatMode, next.attachments.length > 0 ? next.attachments : undefined)
+  }
 
   // ── Rename ────────────────────────────────────────────────────────────────
 
@@ -594,6 +623,9 @@ export const useChatStore = defineStore('chat', () => {
     requestToolPermission,
     clearSessionToolApprovals,
     sessionToolApprovals,
+    enqueueMessage,
+    removeFromQueue,
+    clearQueue,
     sendMessage,
     stopGeneration,
     renameTab,

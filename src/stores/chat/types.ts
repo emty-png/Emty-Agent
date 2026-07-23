@@ -138,6 +138,15 @@ export interface PendingToolPermission {
   actionDetails: string[]
 }
 
+// ── Message queue ──────────────────────────────────────────────────────────────
+
+export interface QueuedMessage {
+  id: string
+  text: string
+  attachments: Attachment[]
+  queuedAt: number
+}
+
 // ── Chat tab ──────────────────────────────────────────────────────────────────
 
 export interface ChatTab {
@@ -184,6 +193,8 @@ export interface ChatTab {
   previewUrl?: string | undefined
   /** Tracked task ID for the running dev server. */
   devServerTaskId?: string | undefined
+  /** FIFO queue of messages waiting for idle. Drained automatically after each turn. */
+  messageQueue: QueuedMessage[]
 }
 
 export type { Attachment, SubAgentInfo, SubAgentPersonality, TaskItem, ToolPermissionDecision }

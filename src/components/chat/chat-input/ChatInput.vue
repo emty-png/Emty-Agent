@@ -4,7 +4,7 @@ import type { Attachment } from '@/stores/chat/attachment-types'
 import type { AgentStatus } from '@/stores/chat/types'
 import type { DictationContext } from '@/utils/voicePostProcess'
 import type { VoiceStreamSession } from '@/utils/voiceStreamApi'
-import { ArrowUp, Mic, Plus, Square } from 'lucide-vue-next'
+import { ArrowUp, ListPlus, Mic, Plus, Square } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { INIT_PROMPT } from '@/composables/ChatInput.initPrompt'
 import { findTokenAfter, findTokenBefore, findTokenContaining, snapToTokenBoundary, splitMentions } from '@/composables/chatInputTokens'
@@ -33,6 +33,7 @@ import AttachmentPreview from './AttachmentPreview.vue'
 import AttachmentStrip from './AttachmentStrip.vue'
 import ChatInputEstimator from './ChatInputEstimator.vue'
 import DragOverlay from './DragOverlay.vue'
+import MessageQueue from './MessageQueue.vue'
 import ModelPicker from './ModelPicker.vue'
 import PermissionModePicker from './PermissionModePicker.vue'
 import ProjectPicker from './ProjectPicker.vue'
@@ -329,9 +330,24 @@ function autoResize() {
 function submit() {
   const hasText = text.value.trim().length > 0
   const hasAttachments = attachments.value.length > 0
-  if ((!hasText && !hasAttachments) || isStreaming.value)
+  if (!hasText && !hasAttachments)
     return
+  if (isStreaming.value) {
+    queueMessage()
+    return
+  }
   emit('send', serializeForSend(text.value), [...attachments.value])
+  autoResize()
+}
+
+function queueMessage() {
+  const hasText = text.value.trim().length > 0
+  const hasAttachments = attachments.value.length > 0
+  if ((!hasText && !hasAttachments) || !isStreaming.value)
+    return
+  chat.enqueueMessage(text.value, [...attachments.value])
+  text.value = ''
+  attachments.value = []
   autoResize()
 }
 
@@ -422,7 +438,12 @@ function onKeydown(e: KeyboardEvent) {
 
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
-    submit()
+    if (isStreaming.value) {
+      queueMessage()
+    }
+    else {
+      submit()
+    }
   }
 }
 
@@ -446,7 +467,8 @@ function onMouseUp() {
     el.setSelectionRange(snappedStart, snappedEnd)
 }
 
-const canSend = computed(() => (text.value.trim().length > 0 || attachments.value.length > 0) && !isStreaming.value)
+const canSend = computed(() => (text.value.trim().length > 0 || attachments.value.length > 0))
+const hasQueuedMessages = computed(() => chat.activeTab.messageQueue.length > 0)
 
 const hasPermissionPrompt = computed(() => chat.activeTab.pendingPermissions.length > 0)
 const hasQuestions = computed(() => !!chat.activeTab.pendingQuestions)
@@ -658,7 +680,6 @@ const sendBtnClasses = computed(() => {
           :class="fieldClasses"
           rows="1"
           spellcheck="false"
-          :disabled="isStreaming"
           @focus="focused = true"
           @blur="focused = false"
           @keydown="onKeydown"
@@ -670,6 +691,8 @@ const sendBtnClasses = computed(() => {
       </div>
 
       <AttachmentStrip :attachments="attachments" @preview="previewAttachment = $event" @remove="removeAttachment" />
+
+      <MessageQueue v-if="hasQueuedMessages" />
 
       <div
         class="flex items-center gap-1.5 pt-1.5 px-2 pb-2 relative"
@@ -708,8 +731,22 @@ const sendBtnClasses = computed(() => {
             @compact-session="handleCompactSession"
           />
           <ModelPicker />
-          <button v-if="isStreaming" :class="stopBtnClasses" aria-label="Stop generation" @click="$emit('stop')">
+          <button
+            v-if="isStreaming && !canSend"
+            :class="stopBtnClasses"
+            aria-label="Stop generation"
+            @click="$emit('stop')"
+          >
             <Square :size="11" :stroke-width="0" style="fill: currentColor" />
+          </button>
+          <button
+            v-else-if="isStreaming"
+            :class="sendBtnClasses"
+            aria-label="Add to queue"
+            :disabled="!canSend"
+            @click="submit"
+          >
+            <ListPlus :size="15" :stroke-width="2" />
           </button>
           <button
             v-else
