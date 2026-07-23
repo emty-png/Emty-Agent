@@ -10,6 +10,14 @@
     "core:default",
     "core:webview:allow-create-webview-window",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
+    },
     "dialog:allow-open",
     "dialog:allow-save",
     "allow-browser-mount-surface",

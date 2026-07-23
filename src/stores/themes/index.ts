@@ -143,6 +143,7 @@ export const useThemeStore = defineStore(
   () => {
     const activeTheme = ref<ThemeId>('abyss')
     const showLandingArt = ref(true)
+    const activeIllustration = ref('illustration_1')
     const customThemes = ref<CustomTheme[]>([])
     const themeOverrides = ref<Record<string, ThemeOverrides>>({})
     const editingTheme = ref<ThemeId | null>(null)
@@ -313,6 +314,7 @@ export const useThemeStore = defineStore(
     return {
       activeTheme,
       showLandingArt,
+      activeIllustration,
       customThemes,
       themeOverrides,
       editingTheme,

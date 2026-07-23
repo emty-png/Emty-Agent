@@ -161,9 +161,11 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   const [
     { inspectWorkspace, buildWorkspacePromptContext, createAgentWorktree, cleanupAgentWorktree },
     { buildMemoryPromptContext },
+    { createMemoryTools },
   ] = await Promise.all([
     import('@/utils/worktrees'),
     import('@/utils/memory'),
+    import('@/utils/tools/memory'),
   ])
   let effectiveProjectPath = projectPath
   let isolationNote = ''
@@ -231,8 +233,10 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     tools = { ...tools, ...fsTools, ...shellTools }
   }
 
+  const effectivePermissionMode = subTab.permissionMode ?? settings.agent.permissionMode
+
   async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
-    if (settings.agent.permissionMode === 'auto')
+    if (effectivePermissionMode === 'auto')
       return 'allow-once' as const
 
     return await requestToolPermission(subTab.id, request)
@@ -303,6 +307,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   const streamHandlers = createStreamHandlers({
     liveMsg,
     getToolLabel: getCoreToolDisplayLabel,
+    getTabStatus: () => subTab.agentStatus,
     onStatusChange: (status, meta) => {
       if (status === 'tool-running' && meta?.toolName) {
         subTab.agentStatus = statusToolRunning(meta.toolName)
@@ -335,10 +340,13 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     settings.disabledToolIds,
   )
   const skillTools = filterDisabledTools(createSkillTools(effectiveProjectPath), settings.disabledToolIds)
-  const mergedTools = filterDisabledTools({ ...tools, ...skillTools, ...mcpTools }, settings.disabledToolIds)
+  const memoryTools = filterDisabledTools(createMemoryTools(settings.memory.enabled, workspace) as Record<string, unknown>, settings.disabledToolIds)
+  const mergedTools = filterDisabledTools({ ...tools, ...skillTools, ...mcpTools, ...memoryTools }, settings.disabledToolIds)
   const permissionWrappedTools = Object.keys(mergedTools).length > 0
     ? wrapToolSetWithPermissions(mergedTools as ToolSet, {
         tabId: subTab.id,
+        workspacePath: effectiveProjectPath,
+        projectName: effectiveProjectPath ? effectiveProjectPath.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? null : null,
         requestPermission: requestPermissionForTool,
         getToolLabel: getCoreToolDisplayLabel,
         onToolExecutionStart: streamHandlers.onToolExecutionStart,
@@ -440,6 +448,24 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
             is_complete: 1,
           }).catch(() => {})
 
+          const { classifyFailure } = await import('@/utils/failureRecovery')
+          const { fireHooks, projectNameFromPath } = await import('@/utils/hooks')
+          const failure = classifyFailure(error)
+          if (failure.category !== 'stream_aborted') {
+            fireHooks('StopFailure', {
+              event: 'StopFailure',
+              tabId: subTab.id,
+              workspacePath: effectiveProjectPath,
+              projectName: projectNameFromPath(effectiveProjectPath),
+              conversationId: subTab.conversationId ?? null,
+              errorMessage: error.message,
+              errorCategory: failure.category,
+              retryable: false,
+              attemptCount: 0,
+              toolCallsCount: liveMsg.toolEvents?.length ?? 0,
+            })
+          }
+
           onAbort(subTab.id)
           resolve({ text: '', status: 'error' })
         })()
@@ -456,6 +482,20 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
         await dbUpdateMessage(liveMsg.id, {
           is_complete: 1,
         }).catch(() => {})
+
+        const { fireHooks, projectNameFromPath } = await import('@/utils/hooks')
+        fireHooks('StopFailure', {
+          event: 'StopFailure',
+          tabId: subTab.id,
+          workspacePath: effectiveProjectPath,
+          projectName: projectNameFromPath(effectiveProjectPath),
+          conversationId: subTab.conversationId ?? null,
+          errorMessage: 'Stream failed',
+          errorCategory: 'stream_error',
+          retryable: false,
+          attemptCount: 0,
+          toolCallsCount: liveMsg.toolEvents?.length ?? 0,
+        })
 
         onAbort(subTab.id)
         resolve({ text: '', status: 'error' })

@@ -63,16 +63,17 @@ export const useFileTabsStore = defineStore('fileTabs', () => {
     tabs.value.push(tab)
     activeId.value = tab.id
 
+    const live = tabs.value.find(t => t.id === tab.id)!
     try {
       const result = await loadFileContent(node.path)
-      tab.content = result.content
-      tab.imageDataUrl = result.imageDataUrl
+      live.content = result.content
+      live.imageDataUrl = result.imageDataUrl
     }
     catch (e) {
-      tab.error = String(e)
+      live.error = String(e)
     }
     finally {
-      tab.loading = false
+      live.loading = false
     }
   }
 
@@ -102,16 +103,17 @@ export const useFileTabsStore = defineStore('fileTabs', () => {
     tabs.value.push(tab)
     activeId.value = tab.id
 
+    const live = tabs.value.find(t => t.id === tab.id)!
     try {
       const result = await loadFileContent(filePath)
-      tab.content = result.content
-      tab.imageDataUrl = result.imageDataUrl
+      live.content = result.content
+      live.imageDataUrl = result.imageDataUrl
     }
     catch (e) {
-      tab.error = String(e)
+      live.error = String(e)
     }
     finally {
-      tab.loading = false
+      live.loading = false
     }
   }
 

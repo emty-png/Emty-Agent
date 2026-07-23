@@ -76,7 +76,7 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
     { buildAgentSystemPrompt },
     { applyMentionContextToMessages, buildCachedSystemPrompt, buildContextCachingProviderOptions },
     { inspectWorkspace, buildWorkspacePromptContext },
-    { buildMemoryPromptContext },
+    { buildMemoryPromptContext, buildMemoryNudge },
     { buildRecoveryPromptContext },
     { resolveLanguageModel, resolveMaxTokens },
     { toModelMessages },
@@ -128,6 +128,9 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
     buildRecoveryPromptContext(tab.conversationId),
   ])
 
+  const turnCount = tab.messages.filter(m => m.role === 'user').length
+  const memoryNudge = buildMemoryNudge(turnCount)
+
   const promptBuildResult = await buildAgentSystemPrompt({
     basePrompt: buildSystemPrompt(effectiveProjectPath, tab.mode || 'build', osInfo as import('@/utils/os').OsInfo | undefined, settings.agent.gitCoAuthor),
     projectPath: effectiveProjectPath,
@@ -138,6 +141,7 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
     mode: tab.mode,
     workspaceContext: buildWorkspacePromptContext(workspaceSnapshot),
     memoryContext,
+    memoryNudge,
     recoveryContext,
   })
 

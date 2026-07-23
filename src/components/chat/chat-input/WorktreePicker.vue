@@ -143,62 +143,50 @@ watch(() => props.projectPath, loadWorktrees, { immediate: true })
 const backdropClasses = 'fixed inset-0 bg-transparent z-[9998]'
 
 const pickerClasses = computed(() => {
-  const base = 'worktree-picker fixed w-[min(280px,calc(100vw-40px))] max-h-[min(380px,60vh)] flex flex-col bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)] overflow-hidden z-[9999]'
-  const transform = placement.value === 'bottom'
-    ? '![transform:translate(-50%,0)]'
-    : '![transform:translate(-50%,-100%)]'
-  return `${base} ${transform}`
+  const base = 'worktree-picker fixed w-[260px] max-h-[250px] flex flex-col bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)] overflow-hidden z-[9999] -translate-x-1/2'
+  if (placement.value === 'bottom')
+    return base
+  return `${base} -translate-y-full`
 })
 
-const searchWrapClasses = 'p-[10px_10px_8px] border-b border-(--color-border-mid) shrink-0'
+const searchWrapClasses = 'p-2.5 border-b border-(--color-border-subtle) shrink-0'
 const searchInnerClasses = 'relative flex-1'
-const searchIconClasses = 'absolute left-2.5 top-1/2 -translate-y-1/2 text-(--color-text-tertiary) pointer-events-none'
-const searchInputClasses = 'w-full h-8 pl-[30px] pr-2.5 bg-(--color-bg-card) border border-(--color-border-bright) rounded-(--radius-md) text-(--color-text-primary) text-[12.5px] outline-none box-border transition-[border-color,box-shadow] duration-150 ease-[cubic-bezier(0.4,0,0.2,1)] placeholder:text-(--color-text-dim) focus:border-(--color-accent) focus:shadow-[0_0_0_3px_var(--color-accent-muted),0_0_0_1px_var(--color-accent-muted-plus)]'
+const searchIconClasses = 'absolute left-2 top-1/2 -translate-y-1/2 text-(--color-text-dim) pointer-events-none'
+const searchInputClasses = 'w-full h-7 pl-[28px] pr-2 bg-(--color-bg-card) border border-(--color-border-subtle) rounded-(--radius-sm) text-(--color-text-primary) text-[11.5px] outline-none box-border transition-[border-color,box-shadow] duration-150 ease-in-out placeholder:text-(--color-text-dim) focus:border-(--color-accent) focus:shadow-[0_0_0_2px_var(--color-accent-muted)]'
 
-const emptyWrapClasses = 'p-4 text-center flex flex-col items-center gap-1'
+const emptyWrapClasses = 'p-3 text-center flex flex-col items-center gap-1'
 const emptyIconClasses = 'text-(--color-text-dim) mb-0.5 opacity-60 flex'
-const emptyTitleClasses = 'm-0 text-xs font-medium text-(--color-text-secondary)'
-const emptyHintClasses = 'm-0 text-[11px] text-(--color-text-tertiary) leading-[1.5]'
+const emptyTitleClasses = 'm-0 text-[11px] font-medium text-(--color-text-secondary)'
+const emptyHintClasses = 'm-0 text-[10px] text-(--color-text-tertiary) leading-[1.5]'
 
-const listClasses = 'flex flex-col overflow-y-auto overflow-x-hidden pt-1.5 pb-2 [scrollbar-width:thin] [scrollbar-color:var(--color-border-bright)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-(--color-border-bright) [&::-webkit-scrollbar-thumb]:rounded-(--radius-md)'
+const listClasses = 'flex flex-col overflow-y-auto overflow-x-hidden py-1.5 [scrollbar-width:thin] [scrollbar-color:var(--color-border-bright)_transparent]'
 
 function itemClasses(isActive: boolean) {
-  const base = 'flex items-center gap-2.5 w-[calc(100%-12px)] mx-1.5 my-[1px] h-[34px] px-2 border border-transparent rounded-(--radius-md) bg-transparent text-(--color-text-secondary) cursor-pointer box-border text-left transition-[background,border-color,color] duration-100 ease-[cubic-bezier(0.4,0,0.2,1)]'
+  const base = 'flex items-center gap-2 w-[calc(100%-8px)] mx-1 my-[1px] h-7 px-2 border border-transparent rounded-(--radius-sm) bg-transparent text-(--color-text-secondary) cursor-pointer box-border text-left transition-[background,border-color,color] duration-100 ease-in-out'
   if (!isActive) {
     return `${base} hover:bg-(--color-state-hover) hover:border-(--color-border-subtle) hover:text-(--color-text-primary)`
   }
   return `${base} bg-[color-mix(in_srgb,var(--color-accent)_15%,transparent)] border-(--color-accent-dim) text-(--color-text-primary) hover:bg-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] hover:border-(--color-accent)`
 }
 
-const itemNameClasses = 'flex-1 min-w-0 text-[13px] font-medium text-inherit whitespace-nowrap overflow-hidden text-ellipsis'
+const itemNameClasses = 'flex-1 min-w-0 text-[12px] font-medium text-inherit whitespace-nowrap overflow-hidden text-ellipsis'
 
 // ── Transitions ─────────────────────────────────────────────────────────────
 const fadeTransitions = {
-  enterActiveClass: 'transition-opacity duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]',
-  leaveActiveClass: 'transition-opacity duration-100 ease-[cubic-bezier(0.7,0,0.84,0)]',
+  enterActiveClass: 'transition-opacity duration-[120ms] ease-in-out',
+  leaveActiveClass: 'transition-opacity duration-100 ease-in-out',
   enterFromClass: 'opacity-0',
   leaveToClass: 'opacity-0',
 }
 
-const pickerTransitions = computed(() => {
-  const isBottom = placement.value === 'bottom'
-  return {
-    enterActiveClass: 'transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]',
-    leaveActiveClass: 'transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.7,0,0.84,0)]',
-    enterFromClass: isBottom
-      ? 'opacity-0 ![transform:translate(-50%,8px)_scale(0.96)]'
-      : 'opacity-0 ![transform:translate(-50%,calc(-100%+8px))_scale(0.96)]',
-    enterToClass: isBottom
-      ? 'opacity-100 ![transform:translate(-50%,0)_scale(1)]'
-      : 'opacity-100 ![transform:translate(-50%,-100%)_scale(1)]',
-    leaveFromClass: isBottom
-      ? 'opacity-100 ![transform:translate(-50%,0)_scale(1)]'
-      : 'opacity-100 ![transform:translate(-50%,-100%)_scale(1)]',
-    leaveToClass: isBottom
-      ? 'opacity-0 ![transform:translate(-50%,8px)_scale(0.96)]'
-      : 'opacity-0 ![transform:translate(-50%,calc(-100%+8px))_scale(0.96)]',
-  }
-})
+const pickerTransitions = {
+  enterActiveClass: 'transition-[opacity,transform] duration-[120ms] ease-in-out',
+  leaveActiveClass: 'transition-[opacity,transform] duration-100 ease-in-out',
+  enterFromClass: 'opacity-0 scale-[0.97] -translate-y-1',
+  enterToClass: 'opacity-100 scale-100 translate-y-0',
+  leaveFromClass: 'opacity-100 scale-100 translate-y-0',
+  leaveToClass: 'opacity-0 scale-[0.97] -translate-y-1',
+}
 </script>
 
 <template>

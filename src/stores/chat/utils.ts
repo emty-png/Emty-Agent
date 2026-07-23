@@ -128,16 +128,18 @@ function compressToolArgs(toolName: string, args: Record<string, unknown>): Reco
     return changed ? next : args
   }
 
-  if (toolName === 'create_design') {
-    let changed = false
+  if (toolName === 'create_design_files' || toolName === 'edit_design_files') {
+    // Truncate large file contents to avoid context bloat
     const next = { ...args } as Record<string, unknown>
-    for (const key of ['html', 'css', 'js'] as const) {
-      if (typeof next[key] === 'string' && (next[key] as string).length > MAX_TOOL_ARG_CHARS) {
-        next[key] = truncateArgField(next[key] as string, MAX_TOOL_ARG_CHARS)
-        changed = true
-      }
+    if (Array.isArray(next.files)) {
+      next.files = next.files.map((file: { path: string; content: string }) => {
+        if (file.content && file.content.length > MAX_TOOL_ARG_CHARS) {
+          return { ...file, content: truncateArgField(file.content, MAX_TOOL_ARG_CHARS) }
+        }
+        return file
+      })
     }
-    return changed ? next : args
+    return next
   }
 
   // Global ceiling: if any tool produces unexpectedly large args

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { getIllustrationPreview, ILLUSTRATION_IDS, ILLUSTRATION_NAMES } from '@/components/chat/layout/useIllustration'
 import { ALL_COLOR_VARS, DEFAULT_RADIUS, KEY_COLOR_VARS, useThemeStore } from '@/stores/themes'
 
 const store = useThemeStore()
@@ -225,17 +226,38 @@ function selectTheme(id: string) {
       </div>
     </div>
 
-    <!-- Landing Art Toggle -->
-    <label class="art-toggle">
-      <span class="art-toggle-label">Landing illustration</span>
-      <button
-        class="model-toggle"
-        :class="{ 'model-toggle--on': store.showLandingArt }"
-        type="button"
-        :aria-pressed="store.showLandingArt"
-        @click="store.showLandingArt = !store.showLandingArt"
-      ><span class="model-toggle-thumb" /></button>
-    </label>
+    <!-- Landing Art Toggle + Illustration Picker -->
+    <div class="panel">
+      <p class="panel-title">
+        Landing illustration
+      </p>
+      <label class="art-toggle">
+        <span class="art-toggle-label">Show illustration</span>
+        <button
+          class="model-toggle"
+          :class="{ 'model-toggle--on': store.showLandingArt }"
+          type="button"
+          :aria-pressed="store.showLandingArt"
+          @click="store.showLandingArt = !store.showLandingArt"
+        ><span class="model-toggle-thumb" /></button>
+      </label>
+
+      <div v-if="store.showLandingArt" class="illustration-grid">
+        <button
+          v-for="id in ILLUSTRATION_IDS"
+          :key="id"
+          class="illustration-card"
+          :class="{ active: store.activeIllustration === id }"
+          @click="store.activeIllustration = id"
+        >
+          <div class="illustration-preview">
+            <component :is="getIllustrationPreview(id)" />
+          </div>
+          <span class="illustration-name">{{ ILLUSTRATION_NAMES[id] }}</span>
+          <span v-if="store.activeIllustration === id" class="active-dot" />
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -690,5 +712,68 @@ function selectTheme(id: string) {
 .model-toggle--on .model-toggle-thumb {
   transform: translateX(14px);
   background: var(--color-text-primary);
+}
+
+/* ── Illustration Grid ─────────────────────────────────────── */
+.illustration-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+}
+
+.illustration-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-card);
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.illustration-card:hover {
+  background: var(--color-state-hover);
+  border-color: var(--color-border-mid);
+}
+
+.illustration-card.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-muted);
+}
+
+.illustration-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-subtle);
+  overflow: hidden;
+  background: var(--color-bg-base);
+  transition: transform 0.2s ease;
+}
+
+.illustration-card:hover .illustration-preview {
+  transform: scale(1.03);
+}
+
+.illustration-name {
+  font-size: 10px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  font-weight: 500;
+}
+
+.illustration-card.active .illustration-name {
+  color: var(--color-accent-text);
 }
 </style>

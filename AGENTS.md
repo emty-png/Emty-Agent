@@ -23,7 +23,7 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 | Command              | Purpose                                                          |
 | -------------------- | ---------------------------------------------------------------- |
 | `pnpm install`       | Install dependencies                                             |
-| `pnpm dev`           | Vite dev server (port **1420**, `strictPort: true`)              |
+| `pnpm dev`           | Vite dev server (port **5180**, `strictPort: true`)              |
 | `pnpm build`         | `vue-tsc --noEmit && vite build`                                 |
 | `pnpm tauri dev`     | Tauri dev build (needs `pnpm dev` running first or concurrently) |
 | `pnpm tauri build`   | Production build for current platform                            |
@@ -51,8 +51,8 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 ## Tauri dev setup
 
 - Requires Rust toolchain + `tauri` CLI (`pnpm tauri`).
-- Vite `server.port` is forced to **1420**. If busy, the dev server will fail (not auto-skip).
-- `TAURI_DEV_HOST` enables HMR on port **1421** (via `host` and `hmr` config).
+- Vite `server.port` is forced to **5180**. If busy, the dev server will fail (not auto-skip).
+- `TAURI_DEV_HOST` enables HMR on port **5181** (via `host` and `hmr` config).
 - Vite **ignores `src-tauri/`** to prevent rebuild loops.
 - `clearScreen: false` so Rust error output is not cleared.
 - Tauri config: `decorations: false` (frameless), window starts `visible: false`.

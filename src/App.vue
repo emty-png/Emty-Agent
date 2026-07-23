@@ -13,9 +13,10 @@ import { captureFatalError, fatalError } from './utils/errors'
 import { ALL_PROVIDERS, warmIconCache } from './utils/modelsdev'
 import ChatView from './views/Chatview.vue'
 import HistoryView from './views/HistoryView.vue'
+import HooksView from './views/HooksView.vue'
 import ProjectView from './views/ProjectView.vue'
 
-type ViewType = 'chat' | 'history' | 'projects'
+type ViewType = 'chat' | 'history' | 'projects' | 'hooks'
 
 const activeView = ref<ViewType>('chat')
 const settingsOpen = ref(false)
@@ -91,6 +92,7 @@ function reloadApp() {
           @open-chat="selectView('chat')"
         />
         <ProjectView v-if="activeView === 'projects'" style="flex: 1" />
+        <HooksView v-if="activeView === 'hooks'" style="flex: 1" />
       </div>
 
       <SettingsModal

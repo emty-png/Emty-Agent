@@ -109,7 +109,7 @@ export async function buildChatRequestPreview(options: {
       buildContextCachingProviderOptions,
     },
     { inspectWorkspace, buildWorkspacePromptContext },
-    { buildMemoryPromptContext },
+    { buildMemoryPromptContext, buildMemoryNudge },
     { buildRecoveryPromptContext },
   ] = await Promise.all([
     import('@/utils/ai'),
@@ -147,6 +147,9 @@ export async function buildChatRequestPreview(options: {
     buildRecoveryPromptContext(tab.conversationId),
   ])
 
+  const turnCount = tab.messages.filter(m => m.role === 'user').length
+  const memoryNudge = buildMemoryNudge(turnCount)
+
   const promptBuild = await buildAgentSystemPrompt({
     basePrompt: buildSystemPrompt(workspacePath, 'build', osInfo, settings.agent.gitCoAuthor),
     projectPath: workspacePath,
@@ -156,6 +159,7 @@ export async function buildChatRequestPreview(options: {
     supportsToolCalls: activeModel.supportsToolCalls,
     workspaceContext: buildWorkspacePromptContext(workspace),
     memoryContext,
+    memoryNudge,
     recoveryContext,
   })
 

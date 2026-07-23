@@ -26,6 +26,7 @@ export interface StreamHandlersOptions {
   getToolLabel: (name: string, args: Record<string, unknown>) => string
   persistThrottleMs?: number
   onStatusChange?: (status: StreamStatusHint, meta?: { toolName?: string }) => void
+  getTabStatus?: () => { type: string }
 }
 
 // ── Stream handlers factory ───────────────────────────────────────────────────
@@ -35,6 +36,7 @@ export function createStreamHandlers({
   getToolLabel,
   persistThrottleMs = 1500,
   onStatusChange,
+  getTabStatus,
 }: StreamHandlersOptions) {
   let _lastPersistAt = 0
   let _firstDelta = true
@@ -94,7 +96,9 @@ export function createStreamHandlers({
   const onDelta = (delta: string) => {
     if (_firstDelta) {
       _firstDelta = false
-      onStatusChange?.('streaming')
+      const currentStatus = getTabStatus?.()
+      if (currentStatus?.type !== 'waiting-permission')
+        onStatusChange?.('streaming')
     }
     pendingDeltas.push({ type: 'text', text: delta })
     scheduleFlush()
@@ -119,7 +123,9 @@ export function createStreamHandlers({
     })
     liveMsg.parts ??= []
     liveMsg.parts.push({ type: 'tool', toolCallId: event.id })
-    onStatusChange?.('tool-running', { toolName: event.name })
+    const currentStatus = getTabStatus?.()
+    if (currentStatus?.type !== 'waiting-permission')
+      onStatusChange?.('tool-running', { toolName: event.name })
     persistLive(true)
   }
 
@@ -196,7 +202,10 @@ export function createStreamHandlers({
         }
       }
     }
-    onStatusChange?.('streaming')
+    // Don't overwrite status if we're still waiting on a queued permission request
+    const currentStatus = getTabStatus?.()
+    if (currentStatus?.type !== 'waiting-permission')
+      onStatusChange?.('streaming')
     persistLive(true)
   }
 

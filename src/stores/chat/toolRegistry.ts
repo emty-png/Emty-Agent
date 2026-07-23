@@ -1,4 +1,4 @@
-import type { ChatMode } from './types'
+import type { ChatMode, DesignProjectType } from './types'
 import type { McpServerConfig } from '@/stores/settings/types'
 import type { ToolSet } from '@/utils/ai'
 import type { OsInfo } from '@/utils/os'
@@ -30,6 +30,12 @@ export interface ToolRegistryContext {
   subAgentAbortCallback?: (tabId: string) => void
   onDesignCreate?: (artifact: import('@/stores/chat/types').DesignArtifact) => void
   onDesignEdit?: (id: string, patch: Partial<Omit<import('@/stores/chat/types').DesignArtifact, 'id' | 'createdAt'>>) => void
+  onProjectScaffold?: (project: { path: string; name: string; type: DesignProjectType }) => void
+  getActiveDesignProject?: () => { path: string; name: string; type: DesignProjectType } | null
+  onFilesChanged?: () => void
+  onPreviewUrl?: (url: string | null) => void
+  onDevServerTaskId?: (id: string | null) => void
+  stopPreview?: () => Promise<void>
   runtimeEvents?: import('@/utils/tools/shell').ShellToolRuntimeEvents
 }
 

@@ -302,7 +302,7 @@ async function openSubAgentTab() {
 
     <span
       v-if="hasAnnotations"
-      class="inline-block text-[12px] font-semibold leading-[1.6] tracking-[0.01em] text-[var(--color-text-tertiary)] [text-shadow:0_0_1px_color-mix(in_srgb,var(--color-bg-base)_6%,transparent),0_0_10px_color-mix(in_srgb,var(--color-accent)_8%,transparent)]"
+      class="gloss-text inline-block text-[12px] font-semibold leading-[1.6] tracking-[0.01em] text-[var(--color-text-tertiary)] [text-shadow:0_0_1px_color-mix(in_srgb,var(--color-bg-base)_6%,transparent),0_0_10px_color-mix(in_srgb,var(--color-accent)_8%,transparent)]"
       :class="(subAgentTabExists || subAgentConversationId || isSubAgent) ? 'group-hover/tool:opacity-80' : ''"
     >
       <template v-for="(seg, i) in labelSegments" :key="i">
@@ -314,10 +314,37 @@ async function openSubAgentTab() {
     </span>
     <span
       v-else
-      class="inline-block text-[12px] font-semibold leading-[1.6] tracking-[0.01em] text-[var(--color-text-tertiary)] [text-shadow:0_0_1px_color-mix(in_srgb,var(--color-bg-base)_6%,transparent),0_0_10px_color-mix(in_srgb,var(--color-accent)_8%,transparent)]"
+      class="gloss-text inline-block text-[12px] font-semibold leading-[1.6] tracking-[0.01em] text-[var(--color-text-tertiary)] [text-shadow:0_0_1px_color-mix(in_srgb,var(--color-bg-base)_6%,transparent),0_0_10px_color-mix(in_srgb,var(--color-accent)_8%,transparent)]"
       :class="(subAgentTabExists || subAgentConversationId || isSubAgent) ? 'group-hover/tool:opacity-80' : ''"
     >
       {{ isOpening ? 'Loading sub-agent...' : event.label }}
     </span>
   </component>
 </template>
+
+<style>
+@keyframes text-gloss-sweep {
+  from {
+    background-position: 0% center;
+  }
+  to {
+    background-position: 100% center;
+  }
+}
+
+.gloss-text {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-text-tertiary) 0%,
+    var(--color-text-tertiary) 35%,
+    color-mix(in srgb, var(--color-accent) 60%, white) 50%,
+    var(--color-text-tertiary) 65%,
+    var(--color-text-tertiary) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: text-gloss-sweep 3.5s ease-in-out infinite;
+}
+</style>

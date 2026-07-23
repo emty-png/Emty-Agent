@@ -8,6 +8,21 @@ This skill guides creation of distinctive, production-grade frontend interfaces 
 
 The user provides frontend requirements: a component, page, application, or interface to build. They may include context about the purpose, audience, or technical constraints.
 
+## Project Type Selection
+
+Before building, decide which project type fits the user's request:
+
+| Type               | When to Use                                                 | Example                                 |
+| ------------------ | ----------------------------------------------------------- | --------------------------------------- |
+| **single-file**    | Simple prototypes, quick landing pages, no framework needed | "Build a landing page"                  |
+| **multiple-files** | Cleaner separation, multi-page designs                      | "Build a portfolio with multiple pages" |
+| **vite-react**     | User asks for React, needs state management                 | "Build a React dashboard"               |
+| **vite-vue**       | User asks for Vue                                           | "Build a Vue app"                       |
+| **vite-svelte**    | User asks for Svelte                                        | "Build a Svelte component"              |
+| **vite-vanilla**   | Framework needed but no specific choice                     | "Build an interactive prototype"        |
+
+After deciding the type, use `scaffold_project` to create the project structure.
+
 ## Design Thinking
 
 Before coding, understand the context and commit to a BOLD aesthetic direction:
@@ -43,3 +58,13 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 **IMPORTANT**: Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code with extensive animations and effects. Minimalist or refined designs need restraint, precision, and careful attention to spacing, typography, and subtle details. Elegance comes from executing the vision well.
 
 Remember: Emty is capable of extraordinary creative work. Don't hold back, show what can truly be created when thinking outside the box and committing fully to a distinctive vision.
+
+## Related Skills
+
+For deeper guidance on specific aspects, load these skills:
+
+- `builtin:color-theory` — Color palettes, design directions, dark/light themes
+- `builtin:typography-systems` — Font pairing, type scales, readability
+- `builtin:layout-patterns` — CSS Grid, Flexbox, responsive layouts, spacing
+- `builtin:animation-motion` — Transitions, keyframes, micro-interactions
+- `builtin:component-composition` — UI components, state coverage, patterns

@@ -16,7 +16,7 @@ import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
 import { useTerminalStore } from '@/stores/terminal'
 import { emitStatusChange } from './chat/agentLifecycle'
-import { STATUS_IDLE } from './chat/agentStatus'
+import { STATUS_IDLE, statusWaitingPermission } from './chat/agentStatus'
 import { compactConversationSession, persistCompactionMessages } from './chat/compaction'
 import { SESSION_COMPACTING_DIVIDER } from './chat/constants'
 import { createSendMessage } from './chat/sendMessage'
@@ -142,12 +142,41 @@ export const useChatStore = defineStore('chat', () => {
     if (tab)
       snapshotConversationState(tab)
 
+    // ── SessionEnd hook ──────────────────────────────────────────────
+    if (tab?.conversationId) {
+      const lastMsg = tab.messages[tab.messages.length - 1]
+      import('@/utils/hooks').then(({ fireHooks, projectNameFromPath }) => {
+        fireHooks('SessionEnd', {
+          event: 'SessionEnd',
+          tabId: id,
+          workspacePath: tab.workspacePath,
+          projectName: projectNameFromPath(tab.workspacePath),
+          conversationId: tab.conversationId,
+          toolCallsCount: lastMsg?.role === 'assistant' ? (lastMsg.toolEvents?.length ?? 0) : 0,
+        })
+      }).catch(() => {})
+    }
+
     const browser = useBrowserStore()
     const gitPane = useGitPaneStore()
     const terminal = useTerminalStore()
 
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
+
+    // Kill design preview dev server (Vite process tree + tracked task)
+    if (tab?.devServerTaskId) {
+      const taskId = tab.devServerTaskId
+      import('../utils/tools/shell').then(({ stopManagedCommandTask }) => {
+        stopManagedCommandTask(taskId)
+      }).catch(() => {})
+    }
+    if (tab?.activeDesignProject?.path) {
+      const projectPath = tab.activeDesignProject.path
+      import('../utils/tools/designProject').then(({ stopDevServer }) => {
+        stopDevServer(projectPath)
+      }).catch(() => {})
+    }
 
     if (tab?.agentStatus.type !== 'idle' && tab?.agentStatus.type !== 'error')
       markInterruptedAssistantMessage(tab!, 'Interrupted during generation.')
@@ -467,6 +496,10 @@ export const useChatStore = defineStore('chat', () => {
       return Promise.resolve('deny')
 
     const requestId = `${tabId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const previousStatus = tab.agentStatus
+
+    // Show waiting-permission status on the tab
+    setTabStatus(tab, statusWaitingPermission(request.toolName))
 
     return new Promise(resolve => {
       tab.pendingPermissions.push({
@@ -483,6 +516,8 @@ export const useChatStore = defineStore('chat', () => {
 
         permissionResolvers.delete(requestId)
         tab.pendingPermissions = tab.pendingPermissions.filter(p => p.requestId !== requestId)
+        // Restore previous status
+        setTabStatus(tab, previousStatus)
         resolve(decision)
       })
     })

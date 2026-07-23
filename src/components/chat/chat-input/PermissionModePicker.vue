@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ChevronDown, Hand, HandFist } from 'lucide-vue-next'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 
 defineProps<{
@@ -9,14 +10,20 @@ defineProps<{
 }>()
 
 const settings = useSettingsStore()
+const chat = useChatStore()
 const permOpen = ref(false)
+
+/** Per-tab permission mode with global fallback. */
+const permissionMode = computed<'ask' | 'auto'>(
+  () => chat.activeTab.permissionMode ?? settings.agent.permissionMode,
+)
 
 function togglePerm() {
   permOpen.value = !permOpen.value
 }
 
 function selectPerm(mode: 'ask' | 'auto') {
-  settings.agent.permissionMode = mode
+  chat.activeTab.permissionMode = mode
   permOpen.value = false
 }
 
@@ -42,7 +49,7 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
       class="flex items-center justify-center gap-1.5 h-[30px] border rounded-(--radius-md) text-[13px] font-semibold tracking-[0.01em] cursor-pointer shrink-0 transition-[background,border-color,border-radius,color] duration-[120ms] active:scale-[0.97]"
       :class="[
         compact ? 'px-2' : 'px-2.5',
-        settings.agent.permissionMode === 'auto'
+        permissionMode === 'auto'
           ? (permOpen
             ? 'text-(--color-warning-text) bg-[color-mix(in_srgb,var(--color-warning-text)_8%,transparent)] border-[color-mix(in_srgb,var(--color-warning-text)_30%,transparent)] rounded-(--radius-lg)'
             : 'text-(--color-warning-text) bg-transparent border-transparent hover:bg-[color-mix(in_srgb,var(--color-warning-text)_8%,transparent)] hover:border-[color-mix(in_srgb,var(--color-warning-text)_30%,transparent)] hover:rounded-(--radius-lg)')
@@ -53,15 +60,15 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
       aria-label="Permission mode"
       @click="togglePerm"
     >
-      <component :is="settings.agent.permissionMode === 'auto' ? HandFist : Hand" :size="12" :stroke-width="2" />
-      <span v-if="!compact">{{ settings.agent.permissionMode === 'auto' ? 'Yolo' : 'Ask' }}</span>
+      <component :is="permissionMode === 'auto' ? HandFist : Hand" :size="12" :stroke-width="2" />
+      <span v-if="!compact">{{ permissionMode === 'auto' ? 'Yolo' : 'Ask' }}</span>
       <ChevronDown
         :size="13"
         :stroke-width="2.5"
         class="shrink-0 transition-transform duration-200"
         :class="[
           permOpen ? 'rotate-180' : '',
-          settings.agent.permissionMode === 'auto' ? 'text-[color-mix(in_srgb,var(--color-warning-text)_70%,transparent)]' : 'text-(--color-text-tertiary)',
+          permissionMode === 'auto' ? 'text-[color-mix(in_srgb,var(--color-warning-text)_70%,transparent)]' : 'text-(--color-text-tertiary)',
         ]"
       />
     </button>
@@ -88,7 +95,7 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
           <!-- Ask Option (Includes Active Styling) -->
           <button
             class="flex items-center gap-2 w-full h-[30px] px-2 border rounded-(--radius-md) text-[13px] font-medium cursor-pointer text-left transition-[background,border-color,color] duration-100"
-            :class="settings.agent.permissionMode === 'ask'
+            :class="permissionMode === 'ask'
               ? 'bg-(--color-accent-muted-plus) border-(--color-accent-dim) text-(--color-text-primary) hover:bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)] hover:border-(--color-accent)'
               : 'bg-transparent border-transparent text-(--color-text-secondary) hover:bg-(--color-state-hover) hover:border-(--color-border-subtle) hover:text-(--color-text-primary)'"
             @click="selectPerm('ask')"
@@ -100,7 +107,7 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
           <!-- Auto Option (Includes Danger Active Styling) -->
           <button
             class="flex items-center gap-2 w-full h-[30px] px-2 border rounded-(--radius-md) text-[13px] font-medium cursor-pointer text-left transition-[background,border-color,color] duration-100"
-            :class="settings.agent.permissionMode === 'auto'
+            :class="permissionMode === 'auto'
               ? 'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)] border-(--color-danger) text-(--color-text-primary) hover:bg-[color-mix(in_srgb,var(--color-danger)_18%,transparent)] hover:border-(--color-danger)'
               : 'bg-transparent border-transparent text-(--color-text-secondary) hover:bg-(--color-state-hover) hover:border-(--color-border-subtle) hover:text-(--color-text-primary)'"
             @click="selectPerm('auto')"

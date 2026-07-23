@@ -1,4 +1,5 @@
 import type { ToolSet } from '@/utils/ai'
+import type { HookInput } from '@/utils/hooks'
 import { tool } from 'ai'
 
 export type ToolPermissionMode = 'ask' | 'auto'
@@ -52,6 +53,66 @@ function formatList(values: string[], max = 4): string {
 
 function formatCommand(args: string[]): string {
   return args.map(part => part.includes(' ') ? quoted(part, 60) : part).join(' ')
+}
+
+// ── Hook data extraction helpers ────────────────────────────────────────────
+
+function extractFilePaths(toolName: string, args: Record<string, unknown>): string[] {
+  if (toolName === 'write_file')
+    return [typeof args.file_path === 'string' ? args.file_path : '']
+  if (toolName === 'edit_files') {
+    return [...new Set(
+      (Array.isArray(args.edits) ? args.edits : [])
+        .filter((e): e is Record<string, unknown> => typeof e === 'object' && e != null)
+        .map(e => typeof e.file_path === 'string' ? e.file_path : '')
+        .filter(Boolean),
+    )]
+  }
+  return []
+}
+
+function extractShellCommand(toolName: string, args: Record<string, unknown>): { command: string; isBackground: boolean } {
+  if (toolName === 'run_command') {
+    return {
+      command: typeof args.command === 'string' ? args.command : '',
+      isBackground: args.is_background === true,
+    }
+  }
+  if (toolName === 'git_command') {
+    const command = typeof args.command === 'string'
+      ? `git ${args.command}`
+      : Array.isArray(args.commands)
+        ? args.commands.map((c: unknown) =>
+            typeof c === 'string'
+              ? `git ${c}`
+              : typeof c === 'object' && c != null && 'args' in c
+                ? `git ${(c as { args: string[] }).args.join(' ')}`
+                : '').join('; ')
+        : ''
+    return { command, isBackground: false }
+  }
+  return { command: '', isBackground: false }
+}
+
+function extractAddedRemoved(result: unknown): { added: number | null; removed: number | null } {
+  if (!result || typeof result !== 'object')
+    return { added: null, removed: null }
+  const data = result as Record<string, unknown>
+  return {
+    added: typeof data.added === 'number' ? data.added : null,
+    removed: typeof data.removed === 'number' ? data.removed : null,
+  }
+}
+
+function extractExitCode(result: unknown): number | null {
+  if (!result || typeof result !== 'object')
+    return null
+  const data = result as Record<string, unknown>
+  if (typeof data.exitCode === 'number')
+    return data.exitCode
+  if (typeof data.exit_code === 'number')
+    return data.exit_code
+  return null
 }
 
 function fallbackDetailLines(args: Record<string, unknown>): string[] {
@@ -437,6 +498,8 @@ export function wrapToolSetWithPermissions(
   tools: ToolSet,
   options: {
     tabId: string
+    workspacePath: string | null
+    projectName: string | null
     requestPermission: RequestToolPermission
     getToolLabel: (toolName: string, args: Record<string, unknown>) => string
     onToolExecutionStart?: (event: {
@@ -470,6 +533,21 @@ export function wrapToolSetWithPermissions(
             return await toolDef.execute?.(args, execOptions)
           }
 
+          // ── PreToolUse hook ──────────────────────────────────────────
+          const { runHooks } = await import('@/utils/hooks')
+          const hookDecision = await runHooks('PreToolUse', {
+            event: 'PreToolUse',
+            tabId: options.tabId,
+            workspacePath: options.workspacePath,
+            projectName: options.projectName,
+            toolName,
+            toolInput: normalizedArgs,
+          } satisfies HookInput)
+          if (!hookDecision.allowed) {
+            const reason = hookDecision.reason ?? 'Blocked by hook'
+            throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
+          }
+
           const preview = buildPermissionPreview(toolName, normalizedArgs)
           const decision = await options.requestPermission({
             tabId: options.tabId,
@@ -482,8 +560,89 @@ export function wrapToolSetWithPermissions(
           if (decision === 'deny')
             throw new ToolPermissionDeniedError(toolName)
 
+          // ── PreFileWrite hook (write_file / edit_files) ────────────
+          if (toolName === 'write_file' || toolName === 'edit_files') {
+            for (const filePath of extractFilePaths(toolName, normalizedArgs)) {
+              const fileHookDecision = await runHooks('PreFileWrite', {
+                event: 'PreFileWrite',
+                tabId: options.tabId,
+                workspacePath: options.workspacePath,
+                projectName: options.projectName,
+                filePath,
+              } satisfies HookInput)
+              if (!fileHookDecision.allowed) {
+                const reason = fileHookDecision.reason ?? 'Blocked by hook'
+                throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
+              }
+            }
+          }
+
+          // ── PreShellExec hook (run_command / git_command) ──────────
+          if (toolName === 'run_command' || toolName === 'git_command') {
+            const { command: shellCommand, isBackground } = extractShellCommand(toolName, normalizedArgs)
+            if (shellCommand) {
+              const shellHookDecision = await runHooks('PreShellExec', {
+                event: 'PreShellExec',
+                tabId: options.tabId,
+                workspacePath: options.workspacePath,
+                projectName: options.projectName,
+                command: shellCommand,
+                isBackground,
+              } satisfies HookInput)
+              if (!shellHookDecision.allowed) {
+                const reason = shellHookDecision.reason ?? 'Blocked by hook'
+                throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
+              }
+            }
+          }
+
           notifyExecutionStart()
-          return await toolDef.execute?.(args, execOptions)
+          const result = await toolDef.execute?.(args, execOptions)
+
+          // ── PostToolUse hook (fire-and-forget) ───────────────────────
+          const { fireHooks } = await import('@/utils/hooks')
+          fireHooks('PostToolUse', {
+            event: 'PostToolUse',
+            tabId: options.tabId,
+            workspacePath: options.workspacePath,
+            projectName: options.projectName,
+            toolName,
+            toolInput: normalizedArgs,
+            toolResult: result,
+          })
+
+          // ── PostFileWrite hook (fire-and-forget) ────────────────────
+          if (toolName === 'write_file' || toolName === 'edit_files') {
+            const { added, removed } = extractAddedRemoved(result)
+            for (const filePath of extractFilePaths(toolName, normalizedArgs)) {
+              fireHooks('PostFileWrite', {
+                event: 'PostFileWrite',
+                tabId: options.tabId,
+                workspacePath: options.workspacePath,
+                projectName: options.projectName,
+                filePath,
+                added,
+                removed,
+              })
+            }
+          }
+
+          // ── PostShellExec hook (fire-and-forget) ────────────────────
+          if (toolName === 'run_command' || toolName === 'git_command') {
+            const { command: shellCommand } = extractShellCommand(toolName, normalizedArgs)
+            if (shellCommand) {
+              fireHooks('PostShellExec', {
+                event: 'PostShellExec',
+                tabId: options.tabId,
+                workspacePath: options.workspacePath,
+                projectName: options.projectName,
+                command: shellCommand,
+                exitCode: extractExitCode(result),
+              })
+            }
+          }
+
+          return result
         },
       }),
     ]),

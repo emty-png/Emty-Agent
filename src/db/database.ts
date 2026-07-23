@@ -896,6 +896,104 @@ export async function dbDeleteMemoryByKey(
   )
 }
 
+export async function dbCountMemories(options: {
+  scope: MemoryRow['scope']
+  projectKey?: string | null
+  kind?: MemoryRow['kind']
+}): Promise<{ count: number; totalChars: number }> {
+  const d = await getDb()
+  const conditions = ['scope = ?', 'disabled = 0']
+  const values: unknown[] = [options.scope]
+
+  if (options.projectKey === null) {
+    conditions.push('project_key IS NULL')
+  }
+  else if (options.projectKey !== undefined) {
+    conditions.push('project_key = ?')
+    values.push(options.projectKey)
+  }
+
+  if (options.kind) {
+    conditions.push('kind = ?')
+    values.push(options.kind)
+  }
+
+  const rows = await d.select<{ count: number; totalChars: number }[]>(
+    `SELECT COUNT(*) as count, COALESCE(SUM(LENGTH(title) + LENGTH(content)), 0) as totalChars
+     FROM memories
+     WHERE ${conditions.join(' AND ')}`,
+    values,
+  )
+
+  return rows[0] ?? { count: 0, totalChars: 0 }
+}
+
+export async function dbUpdateMemoryByKey(
+  scope: MemoryRow['scope'],
+  project_key: string | null,
+  memory_key: string,
+  updates: { title?: string; content?: string; pinned?: number; disabled?: number },
+): Promise<void> {
+  const d = await getDb()
+  const setClauses: string[] = ['updated_at = ?']
+  const values: unknown[] = [Date.now()]
+
+  if (updates.title !== undefined) {
+    setClauses.push('title = ?')
+    values.push(updates.title)
+  }
+  if (updates.content !== undefined) {
+    setClauses.push('content = ?')
+    values.push(updates.content)
+  }
+  if (updates.pinned !== undefined) {
+    setClauses.push('pinned = ?')
+    values.push(updates.pinned)
+  }
+  if (updates.disabled !== undefined) {
+    setClauses.push('disabled = ?')
+    values.push(updates.disabled)
+  }
+
+  const projCondition = project_key == null ? 'project_key IS NULL' : 'project_key = ?'
+  if (project_key != null)
+    values.push(project_key)
+  values.push(memory_key)
+
+  await d.execute(
+    `UPDATE memories
+     SET ${setClauses.join(', ')}
+     WHERE scope = ?
+       AND ${projCondition}
+       AND memory_key = ?`,
+    [scope, ...values],
+  )
+}
+
+export async function dbTouchMemory(id: string): Promise<void> {
+  const d = await getDb()
+  await d.execute(
+    'UPDATE memories SET last_used_at = ? WHERE id = ?',
+    [Date.now(), id],
+  )
+}
+
+export async function dbDeleteMemoriesByScope(
+  scope: MemoryRow['scope'],
+  project_key: string | null,
+  kind: MemoryRow['kind'],
+): Promise<void> {
+  const d = await getDb()
+  await d.execute(
+    `DELETE FROM memories
+     WHERE scope = ?
+       AND ${project_key == null ? 'project_key IS NULL' : 'project_key = ?'}
+       AND kind = ?
+       AND disabled = 0`,
+    project_key == null ? [scope, kind] : [scope, project_key, kind],
+  )
+}
+
 export async function dbInsertReplayRun(row: ReplayRunRow): Promise<void> {
   const d = await getDb()
   await d.execute(

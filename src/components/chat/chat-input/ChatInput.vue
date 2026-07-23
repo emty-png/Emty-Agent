@@ -10,6 +10,7 @@ import { INIT_PROMPT } from '@/composables/ChatInput.initPrompt'
 import { findTokenAfter, findTokenBefore, findTokenContaining, snapToTokenBoundary, splitMentions } from '@/composables/chatInputTokens'
 import { useAtMention } from '@/composables/useAtMention'
 import { useChatAttachments } from '@/composables/useChatAttachments'
+import { useDragDrop } from '@/composables/useDragDrop'
 import { useRestoreOverlay } from '@/composables/useRestoreOverlay'
 import { useSlashCommand } from '@/composables/useSlashCommand'
 import { useVoiceRecorder } from '@/composables/useVoiceRecorder'
@@ -31,6 +32,7 @@ import TodoOverlay from '../chat-input-overlay/TodoOverlay.vue'
 import AttachmentPreview from './AttachmentPreview.vue'
 import AttachmentStrip from './AttachmentStrip.vue'
 import ChatInputEstimator from './ChatInputEstimator.vue'
+import DragOverlay from './DragOverlay.vue'
 import ModelPicker from './ModelPicker.vue'
 import PermissionModePicker from './PermissionModePicker.vue'
 import ProjectPicker from './ProjectPicker.vue'
@@ -85,6 +87,11 @@ const restoreOverlay = useRestoreOverlay()
 
 const settings = useSettingsStore()
 const { attachments, previewAttachment, onPaste, removeAttachment, handleOpenFileDialog } = useChatAttachments()
+const { isDragging, dragPreviews, isReading } = useDragDrop({
+  onFilesDropped(dropped) {
+    attachments.value = [...attachments.value, ...dropped]
+  },
+})
 const voice = useVoiceRecorder()
 const voiceOverlayOpen = ref(false)
 const voiceTranscribing = ref(false)
@@ -487,7 +494,9 @@ const overlayTransitions = {
 
 const shellClasses = computed(() => [
   'input-shell relative w-full bg-(--color-bg-card) border rounded-(--radius-lg) flex flex-col overflow-visible transition-colors duration-[120ms] ease-out',
-  (focused.value || isStreaming.value) ? 'border-(--color-accent-dim)' : 'border-(--color-border-bright)',
+  isDragging.value
+    ? 'border-[var(--color-accent)] shadow-[0_0_12px_color-mix(in_srgb,var(--color-accent)_20%,transparent)]'
+    : (focused.value || isStreaming.value) ? 'border-(--color-accent-dim)' : 'border-(--color-border-bright)',
 ].join(' '))
 
 const textAreaBase = [
@@ -607,6 +616,10 @@ const sendBtnClasses = computed(() => {
         @pause="pauseVoiceRecording"
         @upload="handleVoiceUpload"
       />
+    </Transition>
+
+    <Transition v-bind="overlayTransitions">
+      <DragOverlay v-if="isDragging" :previews="dragPreviews" :reading="isReading" />
     </Transition>
 
     <ReconnectingBanner v-bind="props.agentStatus !== undefined ? { agentStatus: props.agentStatus } : {}" />

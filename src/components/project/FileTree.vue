@@ -20,7 +20,7 @@ import {
   Settings,
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { defineComponent, h, resolveComponent } from 'vue'
+import { defineComponent, h, ref, resolveComponent, watch } from 'vue'
 import CreateItemDialog from '@/components/project/CreateItemDialog.vue'
 import { useFileTabsStore } from '@/stores/fileTabs'
 import { useFileTreeStore } from '@/stores/fileTree'
@@ -38,12 +38,81 @@ const showCreateDialog = defineModel<boolean>('showCreateDialog', { default: fal
 const project = useProjectStore()
 const { projectPath } = storeToRefs(project)
 
+// ── context menu state ──────────────────────────────────────────────────────
+const contextMenu = ref<{ x: number; y: number; nodePath: string; isDir: boolean } | null>(null)
+const createTargetPath = ref<string>('')
+
+function onContextMenu(e: MouseEvent, node: FileNode) {
+  e.preventDefault()
+  e.stopPropagation()
+
+  const menuWidth = 140
+  const menuHeight = 80
+  let x = e.clientX
+  let y = e.clientY
+
+  if (x + menuWidth > window.innerWidth)
+    x = window.innerWidth - menuWidth - 8
+  if (y + menuHeight > window.innerHeight)
+    y = window.innerHeight - menuHeight - 8
+
+  contextMenu.value = { x, y, nodePath: node.path, isDir: node.isDir }
+}
+
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+function handleContextAction() {
+  if (!contextMenu.value)
+    return
+  const target = contextMenu.value
+
+  // folder → create inside it; file → create in same parent directory
+  let parent: string
+  if (target.isDir) {
+    parent = target.nodePath
+  }
+  else {
+    const lastSlash = Math.max(target.nodePath.lastIndexOf('/'), target.nodePath.lastIndexOf('\\'))
+    parent = lastSlash > 0 ? target.nodePath.substring(0, lastSlash) : projectPath.value ?? ''
+  }
+
+  createTargetPath.value = parent
+  contextMenu.value = null
+  showCreateDialog.value = true
+}
+
+function getRelativeBase(targetPath: string): string {
+  if (!targetPath || !projectPath.value)
+    return ''
+  const normalized = targetPath.replace(/\\/g, '/')
+  const root = projectPath.value.replace(/\\/g, '/')
+  if (normalized === root)
+    return ''
+  const rel = normalized.slice(root.length).replace(/^\/+/, '')
+  return rel ? `${rel}/` : ''
+}
+
+// close context menu on Escape
+watch(contextMenu, val => {
+  if (val) {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape')
+        closeContextMenu()
+    }
+    window.addEventListener('keydown', onKeyDown, { once: true })
+  }
+})
+
 async function handleCreate(type: 'file' | 'folder', name: string) {
+  const parent = createTargetPath.value || (projectPath.value ?? '')
   if (type === 'file')
-    await ft.createFile(projectPath.value ?? '', name)
+    await ft.createFileAtPath(parent, name)
   else
-    await ft.createFolder(projectPath.value ?? '', name)
+    await ft.createFolderAtPath(parent, name)
   showCreateDialog.value = false
+  createTargetPath.value = ''
 }
 
 // ── file icon / color by extension ───────────────────────────────────────────
@@ -150,6 +219,7 @@ const FileTreeNode = defineComponent({
     activeTabPath: { type: String as PropType<string | null>, default: null },
     toggleDir: { type: Function as PropType<(node: FileNode) => void>, required: true },
     selectFile: { type: Function as PropType<(node: FileNode) => void>, required: true },
+    onContextMenu: { type: Function as PropType<(e: MouseEvent, node: FileNode) => void>, default: null },
   },
   setup(props) {
     function onClick() {
@@ -183,6 +253,9 @@ const FileTreeNode = defineComponent({
         ],
         style: indent,
         onClick: this.onClick,
+        onContextmenu: this.onContextMenu
+          ? (e: MouseEvent) => this.onContextMenu(e, this.node)
+          : undefined,
       },
       [
         // chevron (dir only)
@@ -240,6 +313,7 @@ const FileTreeNode = defineComponent({
               activeTabPath,
               toggleDir: this.toggleDir,
               selectFile: this.selectFile,
+              onContextMenu: this.onContextMenu,
             }),
           )
         : []
@@ -272,15 +346,38 @@ const FileTreeNode = defineComponent({
           :active-tab-path="activeTab?.path ?? null"
           :toggle-dir="ft.toggleDir"
           :select-file="tabs.openFile"
+          :on-context-menu="onContextMenu"
         />
       </div>
     </template>
 
+    <!-- context menu -->
+    <Teleport to="body">
+      <div v-if="contextMenu" class="ctx-backdrop" @click="closeContextMenu" />
+      <div
+        v-if="contextMenu"
+        class="ctx-menu"
+        :style="{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }"
+        @click.stop
+      >
+        <button class="ctx-item" @click="handleContextAction">
+          <File :size="13" :stroke-width="1.8" />
+          New File
+        </button>
+        <button class="ctx-item" @click="handleContextAction">
+          <Folder :size="13" :stroke-width="1.8" />
+          New Folder
+        </button>
+      </div>
+    </Teleport>
+
     <!-- create item dialog -->
     <CreateItemDialog
       v-if="showCreateDialog"
+      :parent-path="createTargetPath || projectPath || ''"
+      :relative-base="getRelativeBase(createTargetPath)"
       @create="handleCreate"
-      @close="showCreateDialog = false"
+      @close="showCreateDialog = false; createTargetPath = ''"
     />
   </div>
 </template>

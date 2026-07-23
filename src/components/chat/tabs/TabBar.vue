@@ -75,9 +75,20 @@ function handleNewTab() {
   closeNewTabMenu()
 }
 
+const showDesignBetaConfirm = ref(false)
+
 function handleNewDesign() {
-  chat.addDesignTab()
   closeNewTabMenu()
+  showDesignBetaConfirm.value = true
+}
+
+function confirmDesignBeta() {
+  showDesignBetaConfirm.value = false
+  chat.addDesignTab()
+}
+
+function cancelDesignBeta() {
+  showDesignBetaConfirm.value = false
 }
 
 function onDocumentPointerDown(event: PointerEvent) {
@@ -186,7 +197,20 @@ onUnmounted(() => {
           :class="tab.id === activeId ? 'cursor-default border-b-[var(--color-bg-base)] border-l-[var(--color-border-subtle)] border-r-[var(--color-border-subtle)] border-t-[var(--color-border-subtle)] bg-[var(--color-bg-base)] text-[var(--color-text-primary)]' : 'cursor-pointer border-b-[var(--color-border-subtle)] border-l-transparent border-r-transparent border-t-transparent bg-transparent text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]'"
           @click="activeId = tab.id"
         >
-          <span v-if="isStreamingStatus(tab.agentStatus)" class="gs-wrap">
+          <span v-if="tab.pendingPermissions && tab.pendingPermissions.length > 0" class="gp-wrap">
+            <svg viewBox="0 0 28 28" width="14" height="14">
+              <defs>
+                <linearGradient :id="`gp-${tab.id}`" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color: var(--color-warning-text); stop-opacity: 0.1" />
+                  <stop offset="50%" style="stop-color: var(--color-warning-text); stop-opacity: 0.5" />
+                  <stop offset="100%" style="stop-color: var(--color-warning-text); stop-opacity: 1" />
+                </linearGradient>
+              </defs>
+              <rect x="7" y="7" width="14" height="14" rx="3" :stroke="`url(#gp-${tab.id})`" stroke-width="2.5" fill="none" class="gp-rotate" />
+              <rect x="7" y="7" width="14" height="14" rx="3" :fill="`url(#gp-${tab.id})`" class="gp-pulse" />
+            </svg>
+          </span>
+          <span v-else-if="isStreamingStatus(tab.agentStatus)" class="gs-wrap">
             <svg viewBox="0 0 28 28" width="14" height="14">
               <defs>
                 <linearGradient :id="`gs-${tab.id}`" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -266,7 +290,7 @@ onUnmounted(() => {
             </button>
             <button class="mt-[2px] flex h-[32px] w-full cursor-pointer items-center gap-[10px] whitespace-nowrap rounded-[var(--radius-sm)] border-none bg-transparent px-[10px] text-[12.5px] font-[450] text-[var(--color-text-secondary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-primary)] first:mt-0" role="menuitem" @click="handleNewDesign">
               <Palette :size="14" :stroke-width="1.8" />
-              <span>New Design</span>
+              <span>Design <span class="ml-1 inline-flex items-center rounded-[3px] bg-[var(--color-danger)] px-[4px] py-[0px] text-[9px] font-semibold uppercase leading-[16px] tracking-wide text-white">Beta</span></span>
             </button>
           </div>
         </Transition>
@@ -325,6 +349,32 @@ onUnmounted(() => {
       </button>
     </div>
   </div>
+
+  <!-- Design Beta confirmation dialog -->
+  <Teleport to="body">
+    <div v-if="showDesignBetaConfirm" class="dbeta-backdrop" @click.self="cancelDesignBeta">
+      <div class="dbeta-dialog">
+        <button class="dbeta-close" @click="cancelDesignBeta">
+          <X :size="14" :stroke-width="1.8" />
+        </button>
+        <h2 class="dbeta-title">
+          Design Mode (Beta)
+        </h2>
+        <p class="dbeta-body">
+          Design Mode is currently in active beta. Features may be unstable, incomplete, or change
+          without notice. Do you want to continue?
+        </p>
+        <div class="dbeta-actions">
+          <button class="dbeta-btn dbeta-btn--cancel" @click="cancelDesignBeta">
+            Cancel
+          </button>
+          <button class="dbeta-btn dbeta-btn--confirm" @click="confirmDesignBeta">
+            Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style>
@@ -354,5 +404,142 @@ onUnmounted(() => {
   animation: gsSpin 1.8s linear infinite;
   transform-origin: center;
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 30%, transparent));
+}
+
+/* Permission-waiting — gradient-stroked square with glow + fill pulse */
+
+@keyframes gpRotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes gpPulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.gp-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.gp-rotate {
+  animation: gpRotate 2.4s linear infinite;
+  transform-origin: center;
+}
+
+.gp-pulse {
+  animation: gpPulse 1.4s ease-in-out infinite;
+  transform-origin: center;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-warning-text) 30%, transparent));
+}
+
+/* Design Beta confirmation dialog */
+.dbeta-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: color-mix(in srgb, var(--color-bg-base) 65%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dbeta-dialog {
+  position: relative;
+  width: 360px;
+  padding: 24px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.dbeta-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.dbeta-close:hover {
+  background: var(--color-state-hover);
+}
+
+.dbeta-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 10px;
+}
+
+.dbeta-body {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+.dbeta-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dbeta-btn {
+  height: 32px;
+  padding-inline: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.dbeta-btn--cancel {
+  background: var(--color-bg-card);
+  border-color: var(--color-border-mid);
+  color: var(--color-text-secondary);
+}
+
+.dbeta-btn--cancel:hover {
+  background: var(--color-state-hover);
+  color: var(--color-text-primary);
+}
+
+.dbeta-btn--confirm {
+  background: var(--color-text-primary);
+  color: var(--color-bg-base);
+}
+
+.dbeta-btn--confirm:hover {
+  opacity: 0.9;
 }
 </style>

@@ -15,6 +15,7 @@ export interface AgentPromptBuilderOptions {
   mode?: string | undefined
   workspaceContext?: string
   memoryContext?: string
+  memoryNudge?: string
   recoveryContext?: string
 }
 
@@ -47,6 +48,7 @@ export async function buildAgentSystemPrompt(
     mode,
     workspaceContext,
     memoryContext,
+    memoryNudge,
     recoveryContext,
   } = options
 
@@ -69,6 +71,7 @@ export async function buildAgentSystemPrompt(
     supportsToolCalls,
     ...(workspaceContext ? { workspaceContext } : {}),
     ...(memoryContext ? { memoryContext } : {}),
+    ...(memoryNudge ? { memoryNudge } : {}),
     ...(recoveryContext ? { recoveryContext } : {}),
   })
 
@@ -85,6 +88,7 @@ export function composeAgentPrompt(options: {
   basePrompt: string
   workspaceContext?: string
   memoryContext?: string
+  memoryNudge?: string
   recoveryContext?: string
   contextFiles: LoadedContextFile[]
   availableSkills: SkillMetadata[]
@@ -95,6 +99,7 @@ export function composeAgentPrompt(options: {
     basePrompt,
     workspaceContext,
     memoryContext,
+    memoryNudge,
     recoveryContext,
     contextFiles,
     availableSkills,
@@ -108,6 +113,9 @@ export function composeAgentPrompt(options: {
 
   if (memoryContext?.trim())
     sections.push(memoryContext.trim())
+
+  if (memoryNudge?.trim())
+    sections.push(memoryNudge.trim())
 
   if (recoveryContext?.trim())
     sections.push(recoveryContext.trim())

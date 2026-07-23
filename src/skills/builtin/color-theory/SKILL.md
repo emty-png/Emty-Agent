@@ -1,14 +1,74 @@
 ---
-name: design-themes
-description: Design directions and curated theme palettes for design canvas artifacts. Provides 5 richly-specified design directions (Editorial, Modern Minimal, Human, Tech Utility, Brutalist) plus 10 color palettes.
-tags: themes, colors, palettes, dark-mode, light-mode, design, directions
-when_to_use: Use in design mode when selecting or applying a color theme or visual direction to a design
+name: color-theory
+description: Color theory, palette generation, contrast ratios, dark/light mode systems, and semantic color naming for design projects.
+tags: color, palette, theme, dark-mode, light-mode, contrast, design
+when_to_use: Use in design mode when selecting colors, building a palette, or implementing dark/light themes
 modes: design
 ---
 
-Design directions and color palettes for design canvas artifacts. Each design direction specifies a complete visual system: font stacks, palette, layout posture, and real-world references. The 10 quick palettes are for fast color swaps without full direction specs.
+Color theory and palette systems for design projects. Covers palette structure, design directions, contrast requirements, and dark/light mode implementation.
 
-## How to Apply
+---
+
+# Palette Structure
+
+A coherent palette has four layers. Plan all four before writing any CSS.
+
+| Layer            | Share of pixels | Tokens                                                                                          |
+| ---------------- | --------------- | ----------------------------------------------------------------------------------------------- |
+| **Neutrals**     | 70–90%          | `--color-bg`, `--color-bg-elevated`, `--color-text`, `--color-text-secondary`, `--color-border` |
+| **Accent** (one) | 5–10%           | `--color-accent` only — never invent a second accent                                            |
+| **Semantic**     | 0–5%            | success, warn, danger                                                                           |
+| **Effect**       | <1%             | gradients, glows; rarely justified                                                              |
+
+## Accent Discipline
+
+- **At most 2 visible uses of `--color-accent` per screen.** Typical pair: one eyebrow/chip + one primary CTA. Or one accent card + one tab pill.
+- Links count as accent; demote to `--color-text` underline if you also have a CTA on the same screen.
+- Hover/focus rings count as accent. Ration accordingly.
+
+## Semantic Color Naming
+
+Always name tokens by **purpose**, never by hue:
+
+```css
+/* good */
+--color-accent: #2f6feb;
+--color-success: #17a34a;
+
+/* bad — locks you out of theming */
+--blue-500: #2f6feb;
+--green-500: #17a34a;
+```
+
+---
+
+# Contrast Requirements
+
+| Pair                                    | Minimum   |
+| --------------------------------------- | --------- |
+| Body text (≤16 px) on background        | **4.5:1** |
+| Large text (>18 px or 14 px bold)       | **3:1**   |
+| UI components against adjacent surfaces | **3:1**   |
+
+Use https://webaim.org/resources/contrastchecker/ to verify contrast ratios.
+
+---
+
+# Dark & Light Themes
+
+## Dark Theme Rules
+
+Avoid pure black and pure white — both cause vibration and eye strain.
+
+| Token      | Dark theme             | Light theme            |
+| ---------- | ---------------------- | ---------------------- |
+| Background | `#0f0f0f` (not `#000`) | `#fafafa` (not `#fff`) |
+| Foreground | `#f0f0f0` (not `#fff`) | `#111111` (not `#000`) |
+
+On dark surfaces, prefer **semi-transparent white borders** over solid dark borders — `rgba(255,255,255,0.08)` reads as structure without adding visual noise.
+
+## Applying a Theme
 
 Add this to the `css` field at the top:
 
@@ -73,13 +133,7 @@ Choose one direction that matches the brief's tone. Each direction is a complete
 }
 ```
 
-**Posture:**
-
-- Serif display, sans body, mono for metadata only
-- No shadows, no rounded cards — borders + whitespace do the work
-- One decisive image, cropped only at the bottom
-- Kicker/eyebrow in mono uppercase, one accent color used at most twice
-- Never create peach/pink/orange-beige page washes unless the brand requires them
+**Posture:** Serif display, sans body, mono for metadata only. No shadows, no rounded cards — borders + whitespace do the work. One decisive image, cropped only at the bottom.
 
 ---
 
@@ -130,13 +184,7 @@ Choose one direction that matches the brief's tone. Each direction is a complete
 }
 ```
 
-**Posture:**
-
-- Tight letter-spacing on display sizes (-0.02em)
-- Hairline borders only, no shadows except dropdowns/modals
-- Mono numerics with `font-variant-numeric: tabular-nums`
-- Sticky frosted nav, content-led layouts
-- Controlled color system: primary action + one secondary signal + status colors
+**Posture:** Tight letter-spacing on display sizes (-0.02em). Hairline borders only, no shadows except dropdowns/modals. Mono numerics with `font-variant-numeric: tabular-nums`.
 
 ---
 
@@ -171,13 +219,7 @@ Choose one direction that matches the brief's tone. Each direction is a complete
 }
 ```
 
-**Posture:**
-
-- Sans display with strong weight contrast, system body for readability
-- Comfortable radii (12–18px) paired with crisp grid alignment
-- Primary action color plus secondary/domain accent and clear status colors
-- Subtle elevation only on interactive cards
-- Avoid generic pastel/beige gradients; use real product screenshots or labelled placeholders
+**Posture:** Sans display with strong weight contrast, system body for readability. Comfortable radii (12–18px) paired with crisp grid alignment.
 
 ---
 
@@ -213,13 +255,7 @@ Choose one direction that matches the brief's tone. Each direction is a complete
 }
 ```
 
-**Posture:**
-
-- Sans display + sans body (one family) is OK — utility trumps editorial
-- Tabular numerics everywhere, mono for code / IDs / hashes
-- Dense tables with hairline borders, no row striping
-- Inline status pills (success / warn / danger) with restrained tinted backgrounds
-- Avoid: hero images, oversized headlines, marketing copy — show the product instead
+**Posture:** Tabular numerics everywhere, mono for code / IDs / hashes. Dense tables with hairline borders, no row striping.
 
 ---
 
@@ -254,22 +290,15 @@ Choose one direction that matches the brief's tone. Each direction is a complete
 }
 ```
 
-**Posture:**
-
-- Display = serif at extreme sizes (clamp(48px, 8vw, 120px))
-- Body = monospace — yes, monospace as body, deliberately
-- Borders are full-strength fg (1.5–2px), not muted greys
-- Asymmetric layouts: one column 70%, the other 30%
-- Almost no border-radius (0–2px). No shadows. No gradients.
-- Underline links, no hover decoration — let the typography carry it
+**Posture:** Display = serif at extreme sizes (clamp(48px, 8vw, 120px)). Body = monospace. Borders are full-strength fg (1.5–2px). Asymmetric layouts: one column 70%, the other 30%.
 
 ---
 
-## Quick Color Palettes
+# Quick Color Palettes
 
 For fast color swaps without a full direction. Apply via the same `:root` block above.
 
-### Midnight
+## Midnight
 
 ```css
 :root {
@@ -285,7 +314,7 @@ For fast color swaps without a full direction. Apply via the same `:root` block 
 }
 ```
 
-### Ember
+## Ember
 
 ```css
 :root {
@@ -301,7 +330,7 @@ For fast color swaps without a full direction. Apply via the same `:root` block 
 }
 ```
 
-### Ocean
+## Ocean
 
 ```css
 :root {
@@ -317,7 +346,7 @@ For fast color swaps without a full direction. Apply via the same `:root` block 
 }
 ```
 
-### Forest
+## Forest
 
 ```css
 :root {
@@ -333,7 +362,7 @@ For fast color swaps without a full direction. Apply via the same `:root` block 
 }
 ```
 
-### Lavender
+## Lavender
 
 ```css
 :root {
@@ -349,7 +378,7 @@ For fast color swaps without a full direction. Apply via the same `:root` block 
 }
 ```
 
-### Rose Gold
+## Rose Gold
 
 ```css
 :root {
@@ -365,23 +394,7 @@ For fast color swaps without a full direction. Apply via the same `:root` block 
 }
 ```
 
-### Arctic
-
-```css
-:root {
-  --color-bg: #0c1220;
-  --color-bg-elevated: #141c2e;
-  --color-bg-card: #1e2a40;
-  --color-text: #e8edf5;
-  --color-text-secondary: #8898b8;
-  --color-accent: #60a5fa;
-  --color-accent-light: #93c5fd;
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-shadow: rgba(0, 0, 0, 0.5);
-}
-```
-
-### Neon
+## Neon
 
 ```css
 :root {
@@ -397,7 +410,7 @@ For fast color swaps without a full direction. Apply via the same `:root` block 
 }
 ```
 
-### Sunset
+## Sunset
 
 ```css
 :root {
@@ -413,50 +426,12 @@ For fast color swaps without a full direction. Apply via the same `:root` block 
 }
 ```
 
-### Monochrome
-
-```css
-:root {
-  --color-bg: #0a0a0a;
-  --color-bg-elevated: #141414;
-  --color-bg-card: #1e1e1e;
-  --color-text: #f0f0f0;
-  --color-text-secondary: #888888;
-  --color-accent: #d4d4d4;
-  --color-accent-light: #e8e8e8;
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-shadow: rgba(0, 0, 0, 0.5);
-}
-```
-
 ---
 
-## Light Theme Template
-
-For light designs, use this base and customize:
-
-```css
-:root {
-  --color-bg: #fafafa;
-  --color-bg-elevated: #ffffff;
-  --color-bg-card: #f5f5f5;
-  --color-text: #111111;
-  --color-text-secondary: #666666;
-  --color-accent: #3b82f6;
-  --color-accent-light: #2563eb;
-  --color-border: rgba(0, 0, 0, 0.08);
-  --color-shadow: rgba(0, 0, 0, 0.08);
-}
-```
-
----
-
-## Rules
+# Rules
 
 - Always define `--color-bg`, `--color-text`, and `--color-accent` at minimum
 - Ensure contrast ratio >= 4.5:1 between text and background
 - Use `--color-bg-elevated` for cards, modals, and overlays
 - Use `--color-border` for all borders — never hardcode `border-white/10`
-- The agent can create new palettes by combining elements or inventing fresh ones
-- Name custom palettes descriptively when creating new ones
 - When a direction is chosen, apply its full font + palette + posture; don't pick just the colors

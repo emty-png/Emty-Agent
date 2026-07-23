@@ -8,13 +8,13 @@ import Sidebar from '../sidebar/Sidebar.vue'
 
 interface Props {
   title?: string
-  activeView?: 'chat' | 'history' | 'projects'
+  activeView?: 'chat' | 'history' | 'projects' | 'hooks'
 }
 const props = withDefaults(defineProps<Props>(), {
   activeView: 'chat',
 })
 const emit = defineEmits<{
-  selectView: [view: 'chat' | 'history' | 'projects']
+  selectView: [view: 'chat' | 'history' | 'projects' | 'hooks']
   openSettings: []
 }>()
 
@@ -74,7 +74,7 @@ async function openSidebarFlyout() {
   updateSidebarFlyoutPos()
 }
 
-function onSidebarSelectView(view: 'chat' | 'history' | 'projects') {
+function onSidebarSelectView(view: 'chat' | 'history' | 'projects' | 'hooks') {
   emit('selectView', view)
   closeSidebarFlyoutNow()
 }

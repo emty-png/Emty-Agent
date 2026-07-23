@@ -17,9 +17,17 @@ export type ChatMode
   = | 'build' // Full agent — all tools
     | 'plan' // Read-only agent — write/shell tools return error stubs
     | 'chat' // Minimal streaming — questions, sleep, web, memory only
-    | 'design' // Isolated HTML/CSS/JS sandbox — create_design + edit_design only
+    | 'design' // Project-based design mode — scaffold, create/edit files, build
 
 // ── Design artifacts ─────────────────────────────────────────────────────────
+
+export type DesignProjectType
+  = | 'single-file'
+    | 'multiple-files'
+    | 'vite-react'
+    | 'vite-vue'
+    | 'vite-svelte'
+    | 'vite-vanilla'
 
 export interface DesignArtifact {
   id: string
@@ -156,12 +164,26 @@ export interface ChatTab {
   /** Present only on sub-agent tabs (ephemeral, not persisted). */
   subAgent?: SubAgentInfo
   mode?: ChatMode
+  /** Per-tab permission mode override. Falls back to global `settings.agent.permissionMode` when undefined. */
+  permissionMode?: 'ask' | 'auto'
   /** Design mode — true for tabs created via "New Design" */
   isDesignTab?: boolean
-  /** All design artifacts produced by the agent in this tab. */
+  /** All design artifacts produced by the agent in this tab (legacy sandbox mode). */
   designs?: DesignArtifact[]
   /** ID of the design currently shown in the canvas. */
   activeDesignId?: string | null
+  /** Active file-based design project (new project mode). */
+  activeDesignProject?: {
+    path: string
+    name: string
+    type: DesignProjectType
+  }
+  /** Monotonically increasing counter — bumped when project files change on disk. */
+  projectVersion?: number
+  /** Dev server URL for Vite projects (e.g. http://localhost:5173). */
+  previewUrl?: string | undefined
+  /** Tracked task ID for the running dev server. */
+  devServerTaskId?: string | undefined
 }
 
 export type { Attachment, SubAgentInfo, SubAgentPersonality, TaskItem, ToolPermissionDecision }

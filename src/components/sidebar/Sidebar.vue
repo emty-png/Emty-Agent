@@ -10,6 +10,7 @@ import {
   Settings,
   Trash2,
   X,
+  Zap,
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
@@ -24,7 +25,7 @@ import { useHistoryStore } from '@/stores/history'
 import { useProjectStore } from '@/stores/project'
 import { useSidebarStore } from '@/stores/sidebar'
 
-type ViewId = 'chat' | 'history' | 'projects'
+type ViewId = 'chat' | 'history' | 'projects' | 'hooks'
 
 interface NavItem {
   id: ViewId
@@ -64,6 +65,7 @@ const navItems: NavItem[] = [
   { id: 'chat', label: 'Conversation', icon: MessageSquareText },
   { id: 'history', label: 'Conversation History', icon: History },
   { id: 'projects', label: 'Project Viewer', icon: FolderOpen },
+  { id: 'hooks', label: 'Lifecycle Hooks', icon: Zap },
 ]
 
 // ── projects section ─────────────────────────────────────────────────────────

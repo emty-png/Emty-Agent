@@ -5,7 +5,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 
 import AttachmentPreview from '@/components/chat/chat-input/AttachmentPreview.vue'
 import ChatInput from '@/components/chat/chat-input/ChatInput.vue'
-import WeatherBackground from '@/components/chat/layout/IllustrationBackground.vue'
+import { useIllustrationComponent } from '@/components/chat/layout/useIllustration'
 import MessageThread from '@/components/chat/messages/MessageThread.vue'
 import DesignCanvas from '@/components/design/DesignCanvas.vue'
 
@@ -16,6 +16,7 @@ const props = defineProps<{
   tab: ChatTab
 }>()
 
+const { illustrationComponent } = useIllustrationComponent()
 const chat = useChatStore()
 const theme = useThemeStore()
 const previewAttachment = ref<Attachment | null>(null)
@@ -149,6 +150,10 @@ watch(
   },
 )
 
+watch(() => props.tab.previewUrl, url => {
+  console.warn(`[DesignView] previewUrl: ${url ?? 'null'}`)
+})
+
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 function send(text: string, attachments: Attachment[] = []) {
@@ -158,12 +163,6 @@ function send(text: string, attachments: Attachment[] = []) {
 function stop() {
   chat.stopGeneration(props.tab.id)
 }
-
-function updateActiveDesign(id: string) {
-  const tab = chat.tabs.find(t => t.id === props.tab.id)
-  if (tab)
-    tab.activeDesignId = id
-}
 </script>
 
 <template>
@@ -171,7 +170,7 @@ function updateActiveDesign(id: string) {
     <!-- Landing State -->
     <Transition name="fade" mode="out-in">
       <div v-if="tab.messages.length === 0" key="landing" class="landing">
-        <WeatherBackground v-if="theme.showLandingArt" />
+        <component :is="illustrationComponent" v-if="theme.showLandingArt" />
         <div class="center-col">
           <ChatInput
             :agent-status="tab.agentStatus"
@@ -236,9 +235,9 @@ function updateActiveDesign(id: string) {
         <!-- Right Pane: Canvas -->
         <div class="right-pane">
           <DesignCanvas
-            :designs="tab.designs ?? []"
-            :active-design-id="tab.activeDesignId ?? null"
-            @update:active-design-id="updateActiveDesign"
+            :project-version="tab.projectVersion ?? 0"
+            :active-project="tab.activeDesignProject ?? null"
+            :preview-url="tab.previewUrl"
           />
         </div>
       </div>

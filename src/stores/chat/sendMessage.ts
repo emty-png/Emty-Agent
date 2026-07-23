@@ -222,6 +222,28 @@ export function createSendMessage(
       }).catch(() => {})
     }
 
+    // ── TurnStart hook ────────────────────────────────────────────────
+    const { runHooks, fireHooks, projectNameFromPath } = await import('@/utils/hooks')
+    const promptHookDecision = await runHooks('TurnStart', {
+      event: 'TurnStart',
+      tabId,
+      workspacePath: effectiveProjectPath,
+      projectName: projectNameFromPath(effectiveProjectPath),
+      prompt: text,
+      mode,
+    })
+    if (!promptHookDecision.allowed) {
+      tab.messages.push({
+        id: makeId(),
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        error: `Blocked by hook: ${promptHookDecision.reason ?? 'TurnStart denied'}`,
+      })
+      setStatus(tab, STATUS_IDLE)
+      return
+    }
+
     // ── User message ──────────────────────────────────────────────────────
     let mentionContext = await buildMentionContext(text, effectiveProjectPath, tab.readRegistry, mode, tab.designs).catch(() => '')
     if (skillContentToInject)
@@ -276,6 +298,20 @@ export function createSendMessage(
       await dbUpdateMessage(assistantId, { content: assistantMsg.error, is_complete: 1 }).catch(() => {})
       const failure = classifyFailure(new Error(assistantMsg.error))
       void recordFailureEvent({ replayId: null, conversationId: tab.conversationId, category: failure.category, summary: failure.summary, recoveryHint: failure.recoveryHint, severity: failure.severity }).catch(() => {})
+      if (failure.category !== 'stream_aborted') {
+        fireHooks('StopFailure', {
+          event: 'StopFailure',
+          tabId,
+          workspacePath: effectiveProjectPath,
+          projectName: projectNameFromPath(effectiveProjectPath),
+          conversationId: tab.conversationId ?? null,
+          errorMessage: assistantMsg.error,
+          errorCategory: failure.category,
+          retryable: false,
+          attemptCount: 0,
+          toolCallsCount: 0,
+        })
+      }
       return
     }
 
@@ -288,6 +324,7 @@ export function createSendMessage(
     const streamHandlers = createStreamHandlers({
       liveMsg,
       getToolLabel: getCoreToolDisplayLabel,
+      getTabStatus: () => tab.agentStatus,
       onStatusChange: (status, meta) => {
         if (status === 'tool-running' && meta?.toolName) {
           setStatus(tab, statusToolRunning(meta.toolName))
@@ -311,7 +348,7 @@ export function createSendMessage(
     const effectiveMcpServers = getEffectiveMcpServers(tab, settings.mcpServers)
 
     function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
-      if (settings.agent.permissionMode === 'auto')
+      if ((tab.permissionMode ?? settings.agent.permissionMode) === 'auto')
         return Promise.resolve('allow-once' as const)
       return requestToolPermission(tab.id, request)
     }
@@ -370,6 +407,7 @@ export function createSendMessage(
         pendingQuestions: null,
         pendingPermissions: [],
         readRegistry: new Map(),
+        permissionMode: tab.permissionMode ?? settings.agent.permissionMode,
         subAgent: { personality, mission, parentTabId: tab.id, status: 'running' },
       }
 
@@ -469,6 +507,36 @@ export function createSendMessage(
             if (tab.conversationId && tab.designs)
               dbUpdateConversationDesigns(tab.conversationId, JSON.stringify(tab.designs)).catch(() => {})
           },
+          onProjectScaffold: async project => {
+            // Stop any running dev server from a previous project
+            if (tab.devServerTaskId) {
+              const { stopManagedCommandTask } = await import('@/utils/tools/shell')
+              await stopManagedCommandTask(tab.devServerTaskId).catch(() => {})
+              tab.devServerTaskId = undefined
+              tab.previewUrl = undefined
+            }
+            tab.activeDesignProject = project
+            if (tab.conversationId)
+              dbUpdateConversationDesigns(tab.conversationId, JSON.stringify({ project, designs: tab.designs })).catch(() => {})
+          },
+          getActiveDesignProject: () => tab.activeDesignProject ?? null,
+          onFilesChanged: () => {
+            tab.projectVersion = (tab.projectVersion ?? 0) + 1
+          },
+          onPreviewUrl: url => {
+            tab.previewUrl = url ?? undefined
+          },
+          onDevServerTaskId: id => {
+            tab.devServerTaskId = id ?? undefined
+          },
+          stopPreview: async () => {
+            if (tab.devServerTaskId) {
+              const { stopManagedCommandTask } = await import('@/utils/tools/shell')
+              await stopManagedCommandTask(tab.devServerTaskId).catch(() => {})
+              tab.devServerTaskId = undefined
+              tab.previewUrl = undefined
+            }
+          },
           runtimeEvents: {
             onOutput: streamHandlers.onToolOutput,
           },
@@ -478,6 +546,8 @@ export function createSendMessage(
     const permissionWrappedTools = rawTools && Object.keys(rawTools).length > 0
       ? wrapToolSetWithPermissions(rawTools, {
           tabId: tab.id,
+          workspacePath: effectiveProjectPath,
+          projectName: projectNameFromPath(effectiveProjectPath),
           requestPermission: requestPermissionForTool,
           getToolLabel: getCoreToolDisplayLabel,
           onToolExecutionStart: streamHandlers.onToolExecutionStart,
@@ -521,6 +591,30 @@ export function createSendMessage(
       return next
     }
 
+    // ── SessionStart hook (after conversation created, first message only) ─
+    if (tab.conversationId && tab.messages.filter(m => m.role === 'user').length <= 1) {
+      const sessionHookDecision = await runHooks('SessionStart', {
+        event: 'SessionStart',
+        tabId,
+        workspacePath: effectiveProjectPath,
+        projectName: projectNameFromPath(effectiveProjectPath),
+        conversationId: tab.conversationId,
+        mode,
+      })
+      if (!sessionHookDecision.allowed) {
+        const reason = sessionHookDecision.reason ?? 'Blocked by hook'
+        tab.messages.push({
+          id: makeId(),
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          error: `Blocked by hook: ${reason}`,
+        })
+        setStatus(tab, STATUS_IDLE)
+        return
+      }
+    }
+
     // ── onFinish ──────────────────────────────────────────────────────────
     const { extractUsageStats } = await import('@/utils/contextCaching')
     const { saveConversationTurnMemory } = await import('@/utils/memory')
@@ -555,11 +649,24 @@ export function createSendMessage(
       await resolveConversationFailures(tab.conversationId).catch(() => {})
       await saveConversationTurnMemory({ settings: settings.memory, workspace: finalWorkspace, userMessage: userMsg, assistantMessage: liveMsg }).catch(() => {})
       await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => {})
+      // ── TurnEnd hook ────────────────────────────────────────────────────
+      fireHooks('TurnEnd', {
+        event: 'TurnEnd',
+        tabId,
+        workspacePath: effectiveProjectPath,
+        projectName: projectNameFromPath(effectiveProjectPath),
+        conversationId: tab.conversationId!,
+        toolCallsCount: liveMsg.toolEvents?.length ?? 0,
+      })
       // ── Completion sound (parent agent only, not aborted) ──────────────────
       if (!tab.subAgent && settings.sound.completionEnabled) {
         import('@/utils/sounds').then(({ playCompletionSound }) => playCompletionSound(settings.sound.volume)).catch(() => {})
       }
     }
+
+    // ── Network retry state ──────────────────────────────────────────────
+    let attempt = 0
+    let finalError: Error | null = null
 
     // ── onError ───────────────────────────────────────────────────────────
     function onError(error: Error) {
@@ -590,7 +697,31 @@ export function createSendMessage(
         void finishReplayCapture({ id: replayId, startedAt: now, status: 'error', errorCode: failure.category, errorMessage: failure.summary, ...(liveMsg.toolEvents ? { toolEvents: liveMsg.toolEvents } : {}) }).catch(() => {})
       }
       void recordFailureEvent({ replayId, conversationId: tab.conversationId, category: failure.category, summary: failure.summary, recoveryHint: failure.recoveryHint, severity: failure.severity, details: error.stack ?? null }).catch(() => {})
+      if (failure.category !== 'stream_aborted') {
+        fireHooks('StopFailure', {
+          event: 'StopFailure',
+          tabId,
+          workspacePath: effectiveProjectPath,
+          projectName: projectNameFromPath(effectiveProjectPath),
+          conversationId: tab.conversationId ?? null,
+          errorMessage: error.message,
+          errorCategory: failure.category,
+          retryable: isNetworkError(error),
+          attemptCount: attempt,
+          toolCallsCount: liveMsg.toolEvents?.length ?? 0,
+        })
+      }
       checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => {})
+      // ── TurnEnd hook (error path) ──────────────────────────────────────────
+      fireHooks('TurnEnd', {
+        event: 'TurnEnd',
+        tabId,
+        workspacePath: effectiveProjectPath,
+        projectName: projectNameFromPath(effectiveProjectPath),
+        conversationId: tab.conversationId!,
+        toolCallsCount: liveMsg.toolEvents?.length ?? 0,
+        error: error.message,
+      })
       // ── Error sound ────────────────────────────────────────────────────────
       if (settings.sound.errorEnabled) {
         import('@/utils/sounds').then(({ playErrorSound }) => playErrorSound(settings.sound.volume)).catch(() => {})
@@ -598,8 +729,6 @@ export function createSendMessage(
     }
 
     // ── Stream (with network retry) ──────────────────────────────────────
-    let attempt = 0
-    let finalError: Error | null = null
 
     while (attempt <= MAX_NETWORK_RETRIES) {
       if (ac.signal.aborted)

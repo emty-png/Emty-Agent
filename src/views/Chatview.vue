@@ -6,8 +6,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import BrowserPane from '@/components/browser/BrowserPane.vue'
 import AttachmentPreview from '@/components/chat/chat-input/AttachmentPreview.vue'
 import ChatInput from '@/components/chat/chat-input/ChatInput.vue'
-import WeatherBackground from '@/components/chat/layout/IllustrationBackground.vue'
 import SubAgentBanner from '@/components/chat/layout/SubAgentBanner.vue'
+import { useIllustrationComponent } from '@/components/chat/layout/useIllustration'
 import MessageThread from '@/components/chat/messages/MessageThread.vue'
 import TabBar from '@/components/chat/tabs/TabBar.vue'
 import GitPane from '@/components/sidepane/GitPane.vue'
@@ -33,6 +33,7 @@ const browser = useBrowserStore()
 const gitPane = useGitPaneStore()
 const project = useProjectStore()
 const terminal = useTerminalStore()
+const { illustrationComponent } = useIllustrationComponent()
 const theme = useThemeStore()
 const { activeId, activeTab } = storeToRefs(chat)
 
@@ -360,7 +361,7 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
               :key="`landing-${activeTab.id}`"
               class="landing"
             >
-              <WeatherBackground v-if="theme.showLandingArt" />
+              <component :is="illustrationComponent" v-if="theme.showLandingArt" />
               <div class="center-col">
                 <ChatInput
                   :agent-status="activeTab.agentStatus"

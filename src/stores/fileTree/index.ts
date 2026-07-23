@@ -244,6 +244,74 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     }
   }
 
+  // ── refresh tree nodes along a path ────────────────────────────────────────
+  async function refreshTreeToPath(targetDirPath: string) {
+    const normalized = targetDirPath.replace(/\\/g, '/')
+    const root = projectPath.value?.replace(/\\/g, '/') ?? ''
+    if (!normalized.startsWith(root))
+      return
+
+    const relative = normalized.slice(root.length).replace(/^\/+/, '')
+    const segments = relative.split('/').filter(Boolean)
+
+    let currentNodes = tree.value
+    for (const segment of segments) {
+      const dirNode = currentNodes.find(n => n.isDir && n.name === segment)
+      if (!dirNode)
+        return
+
+      if (!dirNode.expanded || !dirNode.children) {
+        dirNode.loading = true
+        try {
+          dirNode.children = await readLevel(dirNode.path, dirNode.depth + 1)
+        }
+        finally {
+          dirNode.loading = false
+        }
+        dirNode.expanded = true
+      }
+      currentNodes = dirNode.children ?? []
+    }
+  }
+
+  // ── create file at nested path ────────────────────────────────────────────
+  async function createFileAtPath(parentPath: string, relativePath: string) {
+    const trimmed = relativePath.trim().replace(/^\/+/, '')
+    if (!trimmed)
+      return
+
+    // block path traversal
+    const segments = trimmed.split(/[/\\]/).filter(Boolean)
+    if (segments.includes('..'))
+      return
+
+    const filename = segments.pop()!
+    const parentDir = segments.length > 0 ? await join(parentPath, ...segments) : parentPath
+
+    await mkdir(parentDir, { recursive: true })
+    const fullPath = await join(parentDir, filename)
+    await writeTextFile(fullPath, '')
+
+    await refreshTreeToPath(parentDir)
+  }
+
+  // ── create folder at nested path ──────────────────────────────────────────
+  async function createFolderAtPath(parentPath: string, relativePath: string) {
+    const trimmed = relativePath.trim().replace(/^\/+/, '')
+    if (!trimmed)
+      return
+
+    // block path traversal
+    const segments = trimmed.split(/[/\\]/).filter(Boolean)
+    if (segments.includes('..'))
+      return
+
+    const fullPath = await join(parentPath, ...segments)
+    await mkdir(fullPath, { recursive: true })
+
+    await refreshTreeToPath(fullPath)
+  }
+
   // ── find node by path ─────────────────────────────────────────────────────
   function findNode(path: string): FileNode | null {
     return findNodeByPath(tree.value, path)
@@ -285,6 +353,8 @@ export const useFileTreeStore = defineStore('fileTree', () => {
     expandToPath,
     createFile,
     createFolder,
+    createFileAtPath,
+    createFolderAtPath,
     findNode,
     getAllFilePaths,
     reset,

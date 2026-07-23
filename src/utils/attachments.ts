@@ -1,6 +1,8 @@
 import type { Attachment } from '@/stores/chat/attachment-types'
 import { isImageMime } from '@/stores/chat/attachment-types'
 
+export type { Attachment }
+
 export function makeAttachmentId(): string {
   return Math.random().toString(36).slice(2, 9)
 }
@@ -143,4 +145,34 @@ export async function openFileDialog(): Promise<Attachment[]> {
     console.warn('[attachments] File dialog error:', err)
   }
   return newAttachments
+}
+
+/** Read a single file by its OS path into an Attachment (used by native drag-drop). */
+export async function readFileFromPath(filePath: string): Promise<Attachment> {
+  const { readFile } = await import('@tauri-apps/plugin-fs')
+  const bytes = await readFile(filePath)
+  const name = filePath.split(/[\\/]/).pop() ?? 'file'
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  const mimeType = guessMimeType(ext)
+  const isImage = isImageMime(mimeType)
+  const isText = mimeType.startsWith('text/')
+    || /^(?:ts|js|jsx|tsx|vue|py|rb|go|rs|java|kt|cs|cpp|c|h|hpp|json|yaml|yml|toml|xml|csv|sql|sh|bash|zsh|ps1|md|mdx|txt|log|cfg|ini|env)$/.test(ext)
+
+  let dataUrl: string
+  if (isText) {
+    dataUrl = new TextDecoder().decode(bytes)
+  }
+  else {
+    const base64 = btoa(String.fromCharCode(...bytes))
+    dataUrl = `data:${mimeType};base64,${base64}`
+  }
+
+  return {
+    id: makeAttachmentId(),
+    name,
+    type: isImage ? 'image' : 'file',
+    mimeType,
+    size: bytes.byteLength,
+    dataUrl,
+  }
 }

@@ -5,6 +5,7 @@ import { AlertTriangle, Check, Copy } from 'lucide-vue-next'
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { isStreamingStatus } from '@/stores/chat/agentStatus'
 import ActionGroupBlock from './ActionGroupBlock.vue'
+import FileEditChips from './FileEditChips.vue'
 import MarkdownMessage from './MarkdownMessage.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolCallBadge from './ToolCallBadge.vue'
@@ -226,6 +227,14 @@ const friendlyError = computed(() => {
   return friendlyErrorMessage(displayError.value)
 })
 
+const fileEditEvents = computed(() => {
+  if (!props.msg.toolEvents)
+    return []
+  return props.msg.toolEvents.filter(
+    e => (e.toolName === 'edit_files' || e.toolName === 'write_file') && e.status === 'done',
+  )
+})
+
 // ── View States & Timeouts ────────────────────────────────────────────────────
 
 const openBlocks = reactive<Record<string, boolean>>({})
@@ -390,6 +399,8 @@ const finishedTime = computed(() => {
         @copy="copyThinking(group.key, group.text)"
       />
     </template>
+
+    <FileEditChips v-if="!isStreaming && fileEditEvents.length > 0" :events="fileEditEvents" />
 
     <!-- Footer: copy + time + model (hover reveal) -->
     <div v-if="!isStreaming" class="mr-1 flex items-center gap-1.5 opacity-0 transition-opacity duration-[150ms] group-hover:opacity-100">

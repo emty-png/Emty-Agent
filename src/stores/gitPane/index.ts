@@ -13,6 +13,13 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useBrowserStore } from '@/stores/browser'
 
+export interface DiffViewerData {
+  filePath: string
+  diff: string
+  added: number
+  removed: number
+}
+
 export interface GitPaneOwnerState {
   isPanelOpen: boolean
   splitPercent: number
@@ -20,6 +27,7 @@ export interface GitPaneOwnerState {
   skipCommitHooks: boolean
   amendCommit: boolean
   closedPanes: string[]
+  diffViewerData: DiffViewerData | null
 }
 
 const DEFAULT_SPLIT_PERCENT = 50
@@ -32,6 +40,7 @@ function createOwnerState(): GitPaneOwnerState {
     skipCommitHooks: false,
     amendCommit: false,
     closedPanes: [],
+    diffViewerData: null,
   }
 }
 
@@ -84,6 +93,12 @@ export const useGitPaneStore = defineStore('gitPane', () => {
     ensureOwner(ownerId).closedPanes = panes
   }
 
+  function openDiffViewer(ownerId: string, data: DiffViewerData): void {
+    const owner = ensureOwner(ownerId)
+    owner.diffViewerData = data
+    openPanel(ownerId)
+  }
+
   function disposeOwner(ownerId: string): void {
     delete owners.value[ownerId]
   }
@@ -97,6 +112,7 @@ export const useGitPaneStore = defineStore('gitPane', () => {
     setSplitPercent,
     setCommitOptions,
     setClosedPanes,
+    openDiffViewer,
     disposeOwner,
   }
 })

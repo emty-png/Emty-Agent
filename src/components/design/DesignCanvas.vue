@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import type { DesignArtifact } from '@/stores/chat/types'
+import type { DesignProjectType } from '@/stores/chat/types'
+import { join } from '@tauri-apps/api/path'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { writeTextFile } from '@tauri-apps/plugin-fs'
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import {
   Download,
   Maximize2,
@@ -14,23 +15,10 @@ import {
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps<{
-  designs: DesignArtifact[]
-  activeDesignId: string | null
+  projectVersion: number
+  activeProject?: { path: string; name: string; type: DesignProjectType } | null
+  previewUrl?: string | undefined
 }>()
-
-const emit = defineEmits<{
-  'update:activeDesignId': [id: string]
-}>()
-
-// ── Active design ──────────────────────────────────────────────────────────────
-
-const activeDesign = computed(() =>
-  props.designs.find(d => d.id === props.activeDesignId) ?? props.designs[props.designs.length - 1] ?? null,
-)
-
-function selectDesign(id: string) {
-  emit('update:activeDesignId', id)
-}
 
 // ── Device toggle ─────────────────────────────────────────────────────────────
 
@@ -102,12 +90,12 @@ function fitToCanvas() {
   panY.value = rect.height / 2
 }
 
-// Fit on mount and when device/design changes
+// Fit on mount and when device/project changes
 onMounted(() => {
   fitToCanvas()
 })
 
-watch([device, () => props.activeDesignId], () => {
+watch([device, () => props.activeProject?.path], () => {
   fitToCanvas()
 })
 
@@ -187,55 +175,103 @@ onUnmounted(() => {
 // ── iframe srcdoc composition ─────────────────────────────────────────────────
 
 const iframeKey = ref(0)
+const srcdoc = ref('')
+const isLoading = ref(false)
 
 function refresh() {
+  console.warn(`[DesignCanvas] Refreshing iframe, key: ${iframeKey.value}`)
   iframeKey.value++
 }
 
-const srcdoc = computed(() => {
-  const d = activeDesign.value
-  if (!d)
-    return ''
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<script src="https://cdn.tailwindcss.com"><\/script>
-<style>
-*, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; }
-html, body { scrollbar-width: none; }
-${d.css}
-</style>
-</head>
-<body>
-${d.html}
-<script>
-(function() {
-  document.addEventListener('DOMContentLoaded', function() {
-    try {
-      ${d.js}
-    } catch(e) {
-      console.error('[Design Canvas] JS Error:', e)
+/** Read project files from disk and compose a srcdoc for the iframe. */
+async function readProjectFiles() {
+  const project = props.activeProject
+  if (!project) {
+    srcdoc.value = ''
+    return
+  }
+
+  isLoading.value = true
+  try {
+    const type = project.type
+    console.warn(`[DesignCanvas] Reading project files: ${project.path} (type: ${type})`)
+
+    if (type === 'single-file') {
+      const html = await readTextFile(await join(project.path, 'index.html'))
+      console.warn(`[DesignCanvas] Loaded single-file HTML: ${html.length} bytes`)
+      srcdoc.value = html
     }
-  })
-})()
-<\/script>
-</body>
-</html>`
+    else if (type === 'multiple-files') {
+      const htmlPath = await join(project.path, 'index.html')
+      const cssPath = await join(project.path, 'styles.css')
+      const jsPath = await join(project.path, 'script.js')
+
+      let html = await readTextFile(htmlPath)
+
+      // Read CSS and inline it
+      try {
+        const css = await readTextFile(cssPath)
+        html = html.replace(
+          /<link\s[^>]*href=["']styles\.css["'][^>]*>/i,
+          `<style>${css}</style>`,
+        )
+      }
+      catch { /* styles.css may not exist */ }
+
+      // Read JS and inline it
+      try {
+        const js = await readTextFile(jsPath)
+        html = html.replace(
+          /<script\s[^>]*src=["']script\.js["'][^>]*>\s*<\/script>/i,
+          `<script>${js}<\/script>`,
+        )
+      }
+      catch { /* script.js may not exist */ }
+
+      console.warn(`[DesignCanvas] Composed multiple-files srcdoc: ${html.length} bytes`)
+      srcdoc.value = html
+    }
+    else if (type.startsWith('vite-')) {
+      // Vite projects use a dev server — previewUrl is set externally
+      console.warn('[DesignCanvas] Vite project, using previewUrl instead of srcdoc')
+      srcdoc.value = ''
+    }
+  }
+  catch (e) {
+    console.error('[DesignCanvas] Failed to read project files:', e)
+    srcdoc.value = `<html><body style="font-family:system-ui;padding:40px;color:#666;">
+      <h2>Preview unavailable</h2>
+      <p>Could not read project files: ${e instanceof Error ? e.message : String(e)}</p>
+    </body></html>`
+  }
+  finally {
+    isLoading.value = false
+  }
+}
+
+// Re-read files whenever projectVersion changes or project changes
+watch(
+  [() => props.projectVersion, () => props.activeProject?.path, () => props.activeProject?.type],
+  () => {
+    if (props.activeProject)
+      readProjectFiles()
+    else srcdoc.value = ''
+  },
+  { immediate: true },
+)
+
+watch(() => props.previewUrl, (newUrl, oldUrl) => {
+  console.warn(`[DesignCanvas] previewUrl changed: ${oldUrl ?? 'null'} -> ${newUrl ?? 'null'}`)
 })
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
 async function exportDesign() {
-  const d = activeDesign.value
-  if (!d)
+  if (!srcdoc.value)
     return
   const filePath = await saveDialog({
     title: 'Export Design',
-    defaultPath: `${d.id}.html`,
+    defaultPath: `${props.activeProject?.name ?? 'design'}.html`,
     filters: [{ name: 'HTML', extensions: ['html'] }],
   })
   if (!filePath)
@@ -245,13 +281,21 @@ async function exportDesign() {
 
 // ── Frame transform ───────────────────────────────────────────────────────────
 
-const frameStyle = computed(() => ({
-  width: `${deviceSize.value.w}px`,
-  height: `${deviceSize.value.h}px`,
-  transform: `translate(calc(-50%), calc(-50%)) scale(${scale.value})`,
-  left: `${panX.value}px`,
-  top: `${panY.value}px`,
-}))
+const frameStyle = computed(() => {
+  const w = deviceSize.value.w
+  const h = deviceSize.value.h
+  const s = scale.value
+  return {
+    width: `${w}px`,
+    height: `${h}px`,
+    // Use zoom instead of transform: scale() — zoom re-rasterizes at the target
+    // resolution so text and edges stay sharp (transform downscales a bitmap).
+    zoom: s,
+    // Center the (now layout-scaled) element on the pan point
+    left: `${panX.value - (w * s) / 2}px`,
+    top: `${panY.value - (h * s) / 2}px`,
+  }
+})
 </script>
 
 <template>
@@ -305,7 +349,7 @@ const frameStyle = computed(() => ({
       <button
         class="dc-icon-btn"
         title="Export as HTML"
-        :disabled="!activeDesign"
+        :disabled="!srcdoc"
         @click="exportDesign"
       >
         <Download :size="13" :stroke-width="2" />
@@ -313,9 +357,9 @@ const frameStyle = computed(() => ({
 
       <div class="dc-toolbar-spacer" />
 
-      <!-- Active design name -->
-      <span v-if="activeDesign" class="dc-active-name">
-        {{ activeDesign.name }}
+      <!-- Project name -->
+      <span v-if="activeProject" class="dc-active-name">
+        {{ activeProject.name }}
       </span>
     </div>
 
@@ -333,7 +377,7 @@ const frameStyle = computed(() => ({
     >
       <!-- Empty state -->
       <Transition name="dc-fade">
-        <div v-if="!activeDesign" class="dc-empty">
+        <div v-if="!activeProject" class="dc-empty">
           <div class="dc-empty-icon">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
@@ -354,11 +398,21 @@ const frameStyle = computed(() => ({
 
       <!-- Device frame + iframe -->
       <Transition name="dc-fade">
-        <div v-if="activeDesign" class="dc-frame-wrap" :style="frameStyle">
+        <div v-if="activeProject" class="dc-frame-wrap" :style="frameStyle">
           <div class="dc-frame" :class="`dc-frame--${device}`">
-            <!-- The live preview -->
+            <!-- Vite projects: use dev server URL -->
             <iframe
-              :key="`${iframeKey}-${activeDesign.id}`"
+              v-if="previewUrl"
+              :key="`${iframeKey}-dev-${previewUrl}`"
+              class="dc-iframe"
+              :src="previewUrl"
+              sandbox="allow-scripts allow-forms allow-same-origin"
+              title="Design preview"
+            />
+            <!-- Static projects: use srcdoc -->
+            <iframe
+              v-else
+              :key="`${iframeKey}-${activeProject.path}`"
               class="dc-iframe"
               :srcdoc="srcdoc"
               sandbox="allow-scripts allow-forms allow-same-origin"
@@ -371,25 +425,6 @@ const frameStyle = computed(() => ({
         </div>
       </Transition>
     </div>
-
-    <!-- ── Design gallery strip ── -->
-    <Transition name="dc-gallery-slide">
-      <div v-if="designs.length > 0" class="dc-gallery">
-        <div class="dc-gallery-inner">
-          <button
-            v-for="d in designs"
-            :key="d.id"
-            class="dc-gallery-item"
-            :class="{ 'dc-gallery-item--active': d.id === activeDesign?.id }"
-            :title="d.description"
-            @click="selectDesign(d.id)"
-          >
-            <span class="dc-gallery-dot" />
-            <span class="dc-gallery-name">{{ d.name }}</span>
-          </button>
-        </div>
-      </div>
-    </Transition>
   </div>
 </template>
 
@@ -543,8 +578,8 @@ const frameStyle = computed(() => ({
 /* ── Device frame wrap (positioned for pan/zoom) ───────────────────────────── */
 .dc-frame-wrap {
   position: absolute;
-  transform-origin: center center;
-  /* left/top/transform set inline via :style */
+  will-change: left, top, zoom;
+  /* left/top/zoom set inline via :style */
 }
 
 /* ── Device frame ─────────────────────────────────────────────────────────── */
@@ -596,85 +631,11 @@ const frameStyle = computed(() => ({
   background: #fff;
   overflow: hidden;
   scrollbar-width: none;
+  image-rendering: -webkit-optimize-contrast;
 }
 
 .dc-iframe::-webkit-scrollbar {
   display: none;
-}
-
-/* ── Gallery strip ────────────────────────────────────────────────────────── */
-.dc-gallery {
-  flex-shrink: 0;
-  border-top: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-surface);
-  padding: 0 10px;
-}
-
-.dc-gallery-inner {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 36px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.dc-gallery-inner::-webkit-scrollbar {
-  display: none;
-}
-
-.dc-gallery-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  font-weight: 450;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background 120ms ease,
-    color 120ms ease;
-  flex-shrink: 0;
-}
-
-.dc-gallery-item:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text-secondary);
-}
-
-.dc-gallery-item--active {
-  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  color: var(--color-accent-text);
-}
-
-.dc-gallery-item--active:hover {
-  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
-}
-
-.dc-gallery-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.6;
-  flex-shrink: 0;
-}
-
-.dc-gallery-item--active .dc-gallery-dot {
-  opacity: 1;
-  background: var(--color-accent);
-}
-
-.dc-gallery-name {
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ── Transitions ───────────────────────────────────────────────────────────── */
@@ -686,25 +647,5 @@ const frameStyle = computed(() => ({
 .dc-fade-enter-from,
 .dc-fade-leave-to {
   opacity: 0;
-}
-
-.dc-gallery-slide-enter-active,
-.dc-gallery-slide-leave-active {
-  transition:
-    max-height 200ms ease,
-    opacity 200ms ease;
-  overflow: hidden;
-}
-
-.dc-gallery-slide-enter-from,
-.dc-gallery-slide-leave-to {
-  max-height: 0;
-  opacity: 0;
-}
-
-.dc-gallery-slide-enter-to,
-.dc-gallery-slide-leave-from {
-  max-height: 36px;
-  opacity: 1;
 }
 </style>

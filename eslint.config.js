@@ -51,6 +51,14 @@ export default antfu(
     },
   },
 
+  // ── markdown overrides ──────────────────────────────────────────────────────
+  {
+    files: ['**/*.md'],
+    rules: {
+      'markdown/no-multiple-h1': 'off',
+    },
+  },
+
   // ── ignores ──────────────────────────────────────────────────────────────────
   {
     ignores: [

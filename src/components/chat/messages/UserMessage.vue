@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Message } from '@/stores/chat'
 import type { Attachment } from '@/stores/chat/attachment-types'
-import { BookOpen, Copy, FileText } from 'lucide-vue-next'
+import { Copy, FileText } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { formatFileSize } from '@/stores/chat/attachment-types'
 
@@ -14,21 +14,6 @@ const emit = defineEmits<{
 }>()
 
 const attachments = computed(() => props.msg.attachments ?? [])
-
-const MENTION_RE = /@\[([\w./\-]+)\]/g
-const mentionedPaths = computed(() => {
-  const seen = new Set<string>()
-  const paths: string[] = []
-  let match: RegExpExecArray | null = MENTION_RE.exec(props.msg.content)
-  while (match !== null) {
-    if (!seen.has(match[1]!)) {
-      seen.add(match[1]!)
-      paths.push(match[1]!)
-    }
-    match = MENTION_RE.exec(props.msg.content)
-  }
-  return paths
-})
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -324,19 +309,6 @@ onUnmounted(() => {
         <button class="cursor-pointer border-none bg-transparent px-2.5 py-1 text-[12px] font-semibold text-inherit opacity-60 transition-all duration-[150ms] hover:underline hover:opacity-100" @click="isCollapsed = !isCollapsed">
           {{ isCollapsed ? 'Show more' : 'Show less' }}
         </button>
-      </div>
-
-      <!-- Mention Indicators -->
-      <div v-if="mentionedPaths.length > 0" class="mt-2 flex flex-col gap-1 border-t border-[var(--color-accent-dim)] pt-2">
-        <div
-          v-for="path in mentionedPaths"
-          :key="path"
-          class="flex items-center gap-1.5 text-[11.5px] leading-none text-[var(--color-text-tertiary)]"
-        >
-          <BookOpen :size="11" :stroke-width="1.8" class="shrink-0 opacity-60" />
-          <span class="opacity-70">Read</span>
-          <span class="truncate font-mono text-[11px] text-[var(--color-text-secondary)] opacity-80">{{ path }}</span>
-        </div>
       </div>
 
       <!-- Attachments -->
