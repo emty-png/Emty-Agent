@@ -217,13 +217,15 @@ function breadcrumb(path: string): string[] {
             v-if="project.projectPath === path && totalHookCount() > 0"
             class="text-[10px] font-semibold text-[var(--color-accent-text)] bg-[var(--color-accent-muted)] rounded-[99px] py-px px-1.5 shrink-0 group-hover:hidden"
           >{{ totalHookCount() }}</span>
-          <button
+          <span
+            role="button"
+            tabindex="0"
             class="hidden w-[18px] h-[18px] border-none rounded-[var(--radius-sm)] bg-transparent text-[var(--color-text-tertiary)] cursor-pointer place-items-center shrink-0 group-hover:grid hover:text-[var(--color-danger-text)] hover:bg-[rgba(248,81,73,0.12)]"
             title="Remove project"
             @click.stop="removeProject(path)"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-          </button>
+          </span>
         </button>
       </div>
     </div>
