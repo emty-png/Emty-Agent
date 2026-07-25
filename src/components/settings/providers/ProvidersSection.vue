@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Globe, Image, Mic, Plus, Zap } from 'lucide-vue-next'
+import { Globe, Image, MessageCircle, Mic, Plus } from 'lucide-vue-next'
 import { ref } from 'vue'
 import BuiltInProviders from './BuiltInProviders.vue'
 import CompatibleProviders from './CompatibleProviders.vue'
@@ -25,8 +25,8 @@ const providerView = ref<'models' | 'web' | 'image' | 'voice'>('models')
         :class="{ 'view-tab--active': providerView === 'models' }"
         @click="providerView = 'models'"
       >
-        <Zap :size="16" :stroke-width="1.8" />
-        <span class="view-tab-title">Model Providers</span>
+        <MessageCircle :size="16" :stroke-width="1.8" />
+        <span class="view-tab-title">Chat</span>
       </button>
       <button
         class="view-tab"
@@ -34,7 +34,7 @@ const providerView = ref<'models' | 'web' | 'image' | 'voice'>('models')
         @click="providerView = 'web'"
       >
         <Globe :size="16" :stroke-width="1.8" />
-        <span class="view-tab-title">Web Providers</span>
+        <span class="view-tab-title">Web</span>
       </button>
       <button
         class="view-tab"
@@ -42,7 +42,7 @@ const providerView = ref<'models' | 'web' | 'image' | 'voice'>('models')
         @click="providerView = 'image'"
       >
         <Image :size="16" :stroke-width="1.8" />
-        <span class="view-tab-title">Image Gen Providers</span>
+        <span class="view-tab-title">Image</span>
       </button>
       <button
         class="view-tab"

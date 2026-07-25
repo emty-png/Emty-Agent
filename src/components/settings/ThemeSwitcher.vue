@@ -47,17 +47,6 @@ function handleImport() {
   }
 }
 
-function handleExport(id: string) {
-  const json = store.exportTheme(id)
-  const blob = new Blob([json], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `theme-${id}.json`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 function selectTheme(id: string) {
   store.setTheme(id)
 }
@@ -90,13 +79,6 @@ function selectTheme(id: string) {
         <span v-if="store.activeTheme === theme.id" class="active-dot" />
         <div v-if="theme.isCustom" class="theme-card-actions">
           <button
-            class="icon-btn"
-            title="Export"
-            @click.stop="handleExport(theme.id)"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-          </button>
-          <button
             class="icon-btn icon-btn--danger"
             title="Delete"
             @click.stop="store.removeCustomTheme(theme.id)"
@@ -104,13 +86,6 @@ function selectTheme(id: string) {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12" /></svg>
           </button>
         </div>
-      </button>
-    </div>
-
-    <!-- Action Bar -->
-    <div class="action-bar">
-      <button class="action-btn" @click="handleExport(store.activeTheme)">
-        Export
       </button>
     </div>
 
@@ -132,7 +107,7 @@ function selectTheme(id: string) {
         {{ importError }}
       </p>
       <div class="panel-actions">
-        <button class="action-btn action-btn--primary" @click="handleImport">
+        <button class="ghost-btn" @click="handleImport">
           Import
         </button>
       </div>
@@ -775,5 +750,31 @@ function selectTheme(id: string) {
 
 .illustration-card.active .illustration-name {
   color: var(--color-accent-text);
+}
+
+/* =========================================
+   Ghost Button (matches AgentSection)
+ ========================================= */
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.ghost-btn:hover {
+  background: var(--color-state-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
 }
 </style>

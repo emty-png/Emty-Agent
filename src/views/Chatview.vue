@@ -597,7 +597,7 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
 
 .chat-split-handle {
   position: relative;
-  width: 1px;
+  width: 2px;
   background: var(--color-border-subtle);
   cursor: col-resize;
   flex-shrink: 0;

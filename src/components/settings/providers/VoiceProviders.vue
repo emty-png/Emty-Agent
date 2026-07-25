@@ -270,7 +270,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
                 :placeholder="prov.keyPlaceholder"
                 spellcheck="false"
                 autocomplete="off"
-                class="key-input"
+                class="field-input"
               >
             </div>
             <span class="field-hint" v-html="prov.hintHtml" />
@@ -286,7 +286,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
                 placeholder="https://api.example.com/v1"
                 spellcheck="false"
                 autocomplete="off"
-                class="key-input"
+                class="field-input"
               >
             </div>
           </div>
@@ -300,7 +300,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
               placeholder="whisper-1"
               spellcheck="false"
               autocomplete="off"
-              class="key-input"
+              class="field-input"
             >
           </div>
 
@@ -313,7 +313,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
               placeholder="en"
               spellcheck="false"
               autocomplete="off"
-              class="key-input"
+              class="field-input"
             >
           </div>
         </template>
@@ -369,7 +369,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
                 :placeholder="prov.keyPlaceholder"
                 spellcheck="false"
                 autocomplete="off"
-                class="key-input"
+                class="field-input"
               >
             </div>
             <span class="field-hint" v-html="prov.hintHtml" />
@@ -385,7 +385,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
                 placeholder="https://api.example.com/v1"
                 spellcheck="false"
                 autocomplete="off"
-                class="key-input"
+                class="field-input"
               >
             </div>
           </div>
@@ -399,7 +399,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
               placeholder="tts-1"
               spellcheck="false"
               autocomplete="off"
-              class="key-input"
+              class="field-input"
             >
           </div>
 
@@ -412,7 +412,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
               placeholder="alloy"
               spellcheck="false"
               autocomplete="off"
-              class="key-input"
+              class="field-input"
             >
           </div>
 
@@ -611,22 +611,28 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
   align-items: center;
 }
 
-.key-input {
+.field-input {
   flex: 1;
   height: 34px;
-  padding: 0 10px;
+  padding: 0 12px;
   border: 1px solid var(--color-border-mid);
   border-radius: var(--radius-md);
-  background: var(--color-bg-elevated);
+  background: var(--color-bg-card);
   color: var(--color-text-primary);
-  font-family: var(--font-mono);
+  font-family: inherit;
   font-size: 13px;
   outline: none;
-  transition: border-color 150ms ease;
+  transition: all 150ms ease;
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--color-bg-base) 2%, transparent);
 }
 
-.key-input:focus {
+.field-input:focus {
   border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.field-input::placeholder {
+  color: var(--color-text-tertiary);
 }
 
 .field-hint {

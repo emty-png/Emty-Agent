@@ -128,13 +128,14 @@ function applyOverrides(overrides: ThemeOverrides) {
 
 function clearOverrides() {
   const el = document.documentElement
-  for (const group of ALL_COLOR_VARS) {
-    for (const v of group.vars) {
-      el.style.removeProperty(v.key)
-    }
+  const toRemove: string[] = []
+  for (let i = 0; i < el.style.length; i++) {
+    const prop = el.style[i]
+    if (prop?.startsWith('--'))
+      toRemove.push(prop)
   }
-  for (const key of RADIUS_VARS) {
-    el.style.removeProperty(key)
+  for (const prop of toRemove) {
+    el.style.removeProperty(prop)
   }
 }
 
@@ -157,6 +158,12 @@ export const useThemeStore = defineStore(
         meta.content = custom?.bg || builtIn?.bg || '#000000'
       }
       clearOverrides()
+      const custom = customThemes.value.find(t => t.id === id)
+      if (custom?.variables) {
+        for (const [key, value] of Object.entries(custom.variables)) {
+          document.documentElement.style.setProperty(key, value)
+        }
+      }
       const overrides = themeOverrides.value[id]
       if (overrides) {
         applyOverrides(overrides)
@@ -266,6 +273,7 @@ export const useThemeStore = defineStore(
           }
           themeOverrides.value[theme.id]!.radius = data.radius
         }
+        setTheme(theme.id)
         return { success: true }
       }
       catch {
@@ -298,6 +306,7 @@ export const useThemeStore = defineStore(
         variables: vars,
       }
       addCustomTheme(theme)
+      setTheme(theme.id)
       return { success: true }
     }
 

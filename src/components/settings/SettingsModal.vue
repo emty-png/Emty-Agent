@@ -3,10 +3,11 @@ import type { Component } from 'vue'
 import {
   BookOpen,
   ChevronRight,
-  Palette,
   Puzzle,
   Settings,
   SlidersHorizontal,
+  SwatchBook,
+  Wrench,
   X,
   Zap,
 } from 'lucide-vue-next'
@@ -19,6 +20,7 @@ import ModelsSection from './sections/ModelsSection.vue'
 import OthersSection from './sections/OthersSection.vue'
 import SkillsSection from './sections/SkillsSection.vue'
 import ThemeSection from './sections/ThemeSection.vue'
+import ToolsSection from './sections/ToolsSection.vue'
 
 //  props / emits
 const emit = defineEmits<{ close: []; browseProviders: [] }>()
@@ -47,16 +49,17 @@ function McpIcon(props: { size?: number }) {
 }
 
 //  navigation
-type Section = 'agent' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models' | 'others'
+type Section = 'agent' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models' | 'tools' | 'others'
 const activeSection = ref<Section>('providers')
 
 const NAV: { id: Section; label: string; icon: Component }[] = [
   { id: 'agent', label: 'Agent', icon: Settings },
-  { id: 'theme', label: 'Theme', icon: Palette },
+  { id: 'tools', label: 'Tools', icon: Wrench },
   { id: 'skills', label: 'Skills', icon: BookOpen },
   { id: 'mcp', label: 'MCP', icon: McpIcon },
   { id: 'providers', label: 'Providers', icon: Puzzle },
   { id: 'models', label: 'Models', icon: Zap },
+  { id: 'theme', label: 'Themes', icon: SwatchBook },
   { id: 'others', label: 'Others', icon: SlidersHorizontal },
 ]
 
@@ -111,6 +114,7 @@ function onKeydown(e: KeyboardEvent) {
             <McpSection v-else-if="activeSection === 'mcp'" />
             <ProvidersSection v-else-if="activeSection === 'providers'" @browse-providers="emit('browseProviders')" />
             <ModelsSection v-else-if="activeSection === 'models'" />
+            <ToolsSection v-else-if="activeSection === 'tools'" />
             <OthersSection v-else-if="activeSection === 'others'" />
           </div>
         </div>
