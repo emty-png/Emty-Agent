@@ -164,13 +164,10 @@ export const useChatStore = defineStore('chat', () => {
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
 
-    // Kill design preview dev server (Vite process tree + tracked task)
-    if (tab?.devServerTaskId) {
-      const taskId = tab.devServerTaskId
-      import('../utils/tools/shell').then(({ stopManagedCommandTask }) => {
-        stopManagedCommandTask(taskId)
-      }).catch(() => {})
-    }
+    // Kill all running shell/git tasks for this tab
+    import('../utils/tools/shell').then(({ stopTasksForTab }) => {
+      stopTasksForTab(id)
+    }).catch(() => {})
     if (tab?.activeDesignProject?.path) {
       const projectPath = tab.activeDesignProject.path
       import('../utils/tools/designProject').then(({ stopDevServer }) => {
@@ -297,6 +294,9 @@ export const useChatStore = defineStore('chat', () => {
 
   function stopGeneration(tabId?: string): void {
     const id = tabId ?? activeId.value
+    // #region agent log
+    fetch('http://127.0.0.1:7411/ingest/f4b72c61-7d32-407b-a0c8-9bdf31e403c2', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '61c5e2' }, body: JSON.stringify({ sessionId: '61c5e2', location: 'chat.ts:stopGeneration', message: 'stopGeneration called', data: { tabId: id, hadAbortController: abortControllers.has(id) }, timestamp: Date.now(), hypothesisId: 'A,C' }) }).catch(() => {})
+    // #endregion
     const stoppingTab = tabs.value.find(t => t.id === id)
     if (stoppingTab) {
       for (const perm of stoppingTab.pendingPermissions) {
@@ -308,6 +308,10 @@ export const useChatStore = defineStore('chat', () => {
     }
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
+    // Kill all running shell/git tasks for this tab
+    import('../utils/tools/shell').then(({ stopTasksForTab }) => {
+      stopTasksForTab(id)
+    }).catch(() => {})
     const tab = tabs.value.find(t => t.id === id)
     if (tab) {
       if (tab.agentStatus.type !== 'idle' && tab.agentStatus.type !== 'error')

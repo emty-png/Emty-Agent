@@ -511,49 +511,41 @@ async function getOsPlatform(): Promise<string> {
 
 async function forceKillProcess(pid: number): Promise<boolean> {
   if (!Number.isFinite(pid) || pid <= 0) {
-    console.warn(`[shell] forceKillProcess: invalid PID ${pid}, skipping`)
     return false
   }
 
-  // Branch on the OS platform — NOT the resolved shell — so that Windows
-  // with Git Bash on PATH (which makes resolveShell() return 'sh') still
-  // uses taskkill instead of silently falling through to `kill -9` which
-  // doesn't exist on Windows.
   const osPlatform = await getOsPlatform()
-  console.warn(`[shell] forceKillProcess: PID=${pid}, platform=${osPlatform}`)
 
   if (osPlatform === 'windows') {
-    // taskkill /F /T kills the process AND its entire child tree, which is
-    // essential when the shell (bash.exe / cmd.exe) has spawned children.
+    if (resolvedShell === 'git-bash' || resolvedShell === 'git-bash-x86' || resolvedShell === 'sh') {
+      try {
+        const args = resolvedShell === 'sh' ? ['-c', `kill -9 ${pid}`] : ['-lc', `kill -9 ${pid}`]
+        const result = await Command.create(resolvedShell, args).execute()
+        if (result.code === 0)
+          return true
+      }
+      catch { /* ignore and fallback */ }
+    }
+    else if (resolvedShell === 'pwsh' || resolvedShell === 'powershell') {
+      try {
+        const result = await Command.create(resolvedShell, [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`,
+        ]).execute()
+        if (result.code === 0 || result.code === 1)
+          return true
+      }
+      catch { /* ignore and fallback */ }
+    }
+
     try {
-      console.warn(`[shell] forceKillProcess: attempting taskkill /F /T /PID ${pid}`)
       const result = await Command.create('cmd', ['/d', '/s', '/c', `taskkill /F /T /PID ${pid}`]).execute()
-      console.warn(`[shell] forceKillProcess: taskkill exited code=${result.code}, stderr=${result.stderr.trim()}`)
-      // Exit 0 = terminated, exit 128 = already gone — both mean success.
       if (result.code === 0 || result.code === 128)
         return true
     }
-    catch (e) {
-      console.warn('[shell] forceKillProcess: taskkill threw', e)
-    }
-
-    // Fallback: Stop-Process via whatever PowerShell variant is available.
-    const psShell = resolvedShell === 'pwsh' ? 'pwsh' : 'powershell'
-    try {
-      console.warn(`[shell] forceKillProcess: attempting Stop-Process via ${psShell} for PID ${pid}`)
-      const result = await Command.create(psShell, [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`,
-      ]).execute()
-      console.warn(`[shell] forceKillProcess: Stop-Process (${psShell}) exited code=${result.code}, stderr=${result.stderr.trim()}`)
-      if (result.code === 0 || result.code === 1)
-        return true
-    }
-    catch (e) {
-      console.warn(`[shell] forceKillProcess: Stop-Process (${psShell}) threw`, e)
-    }
+    catch { /* ignore */ }
 
     return false
   }
@@ -562,13 +554,10 @@ async function forceKillProcess(pid: number): Promise<boolean> {
   // all children are also signalled; fall back to the direct PID if the
   // process changed its PGID.
   try {
-    console.warn(`[shell] forceKillProcess: attempting kill -9 -${pid}`)
     const pgResult = await Command.create('sh', ['-c', `kill -9 -${pid} 2>/dev/null || kill -9 ${pid}`]).execute()
-    console.warn(`[shell] forceKillProcess: kill exited code=${pgResult.code}, stderr=${pgResult.stderr.trim()}`)
     return pgResult.code === 0
   }
-  catch (e) {
-    console.warn('[shell] forceKillProcess: kill threw', e)
+  catch {
     return false
   }
 }
@@ -616,22 +605,17 @@ async function stopTaskInternal(id: string): Promise<CommandTaskSummary | null> 
   const pid = handle.pid
   const child = handle.child
 
-  console.warn(`[shell] stopTaskInternal: task ${id}, PID=${pid}, current status=${task.status}`)
-
   if (pid != null) {
     // Fire both the graceful Tauri kill and the force-kill simultaneously.
     // child.kill() on Windows only terminates the shell wrapper; forceKillProcess
     // uses taskkill /F /T to kill the entire process tree. Running them in
     // parallel (no 200ms grace period) ensures the child processes are gone
     // as quickly as possible.
-    console.warn(`[shell] stopTaskInternal: killing task ${id} PID=${pid}`)
     void (async () => {
       const killed = await forceKillProcess(pid)
-      if (!killed)
-        console.warn(`[shell] force kill failed for task ${id} PID ${pid}`)
       if (child != null) {
         try { await child.kill() }
-        catch (e) { console.warn(`[shell] stopTaskInternal: child.kill() failed for task ${id}`, e) }
+        catch { /* ignore */ }
       }
 
       if (task.status === 'running') {
@@ -645,7 +629,6 @@ async function stopTaskInternal(id: string): Promise<CommandTaskSummary | null> 
     })()
   }
   else {
-    console.warn(`[shell] stopTaskInternal: no PID for task ${id}, finalizing immediately`)
     if (handle.child != null) {
       try { await handle.child.kill() }
       catch { /* ignore */ }
@@ -660,6 +643,13 @@ async function stopTaskInternal(id: string): Promise<CommandTaskSummary | null> 
 
 export async function stopManagedCommandTask(id: string): Promise<CommandTaskSummary | null> {
   return await stopTaskInternal(id)
+}
+
+export async function stopTasksForTab(tabId: string): Promise<void> {
+  const running = [...tasks.values()].filter(
+    t => t.tabId === tabId && t.status === 'running',
+  )
+  await Promise.all(running.map(t => stopTaskInternal(t.id)))
 }
 
 async function executeTrackedProcess(options: {
@@ -713,10 +703,22 @@ async function executeTrackedProcess(options: {
   command.on('close', event => settleDone({ code: event.code }))
   command.on('error', error => settleDone({ code: null, spawnError: String(error) }))
 
-  const onAbort = () => {
-    if (options.handle.child != null && !options.handle.stopRequested) {
-      options.handle.stopRequested = true
-      void options.handle.child.kill()
+  const onAbort = async () => {
+    if (options.handle.child != null && !options.handle.stopRequested && !options.handle.timeoutRequested) {
+      options.handle.timeoutRequested = true
+
+      // Snapshot pid/child before settleDone clears them on done resolution.
+      const pid = options.handle.pid
+      const child = options.handle.child
+
+      // Resolve first so this wins the race against the close event.
+      settleDone({ code: null, timedOut: true })
+
+      // Then kill the process tree — same strategy as the timeout handler.
+      if (pid != null)
+        await forceKillProcess(pid)
+      if (child != null)
+        await child.kill().catch(() => {})
     }
   }
   options.abortSignal?.addEventListener('abort', onAbort, { once: true })
@@ -729,6 +731,30 @@ async function executeTrackedProcess(options: {
     // Signal that the process has spawned — unblocks background-task callers
     options.handle.resolveSpawn?.()
     options.handle.resolveSpawn = null
+
+    // ── Post-spawn abort check ───────────────────────────────────────────────
+    // If the abort signal already fired BEFORE spawn completed, onAbort ran when
+    // handle.child was still null and silently skipped the kill. Now that we have
+    // a real PID we must honour that pending abort ourselves — same pattern as
+    // the timeout handler: snapshot first, settleDone, then kill.
+    if ((options.abortSignal?.aborted || options.handle.stopRequested || options.handle.timeoutRequested) && !doneResolved) {
+      if (options.abortSignal?.aborted)
+        options.handle.timeoutRequested = true
+      else if (options.handle.stopRequested)
+        options.handle.stopRequested = true
+
+      const pid = options.handle.pid
+      const spawnedChild = options.handle.child
+      settleDone({ code: null, timedOut: options.handle.timeoutRequested })
+
+      // Run cleanup asynchronously to ensure order
+      void (async () => {
+        if (pid != null)
+          await forceKillProcess(pid)
+        if (spawnedChild != null)
+          await spawnedChild.kill().catch(() => {})
+      })()
+    }
 
     // NOTE: this used to run a periodic `kill -0`-style liveness probe here for
     // background tasks, and would settle the task as "exited" the moment the probe
@@ -770,7 +796,6 @@ async function executeTrackedProcess(options: {
   let timer: ReturnType<typeof setTimeout> | null = null
   if (options.timeoutMs > 0) {
     timer = setTimeout(async () => {
-      console.warn(`[shell] timeout fired for task ${options.task.id} after ${options.timeoutMs}ms (PID=${options.handle.pid})`)
       options.handle.timeoutRequested = true
 
       // Snapshot pid/child before any async work so we hold a stable reference
@@ -785,17 +810,10 @@ async function executeTrackedProcess(options: {
       // shell wrapper (bash.exe/cmd.exe), leaving grandchild processes alive.
       // Use forceKillProcess FIRST (taskkill /F /T) for the full tree, then
       // child.kill() as backup.
-      if (pid != null) {
-        console.warn(`[shell] timeout: force-killing task ${options.task.id} PID=${pid}`)
+      if (pid != null)
         await forceKillProcess(pid)
-      }
-      else {
-        console.warn(`[shell] timeout: no PID available for task ${options.task.id}, cannot force kill`)
-      }
-      if (child != null) {
-        console.warn(`[shell] timeout: sending kill to child handle for task ${options.task.id}`)
-        await child.kill().catch(e => { console.warn(`[shell] timeout: child.kill() failed for task ${options.task.id}`, e) })
-      }
+      if (child != null)
+        await child.kill().catch(() => {})
     }, options.timeoutMs)
   }
 

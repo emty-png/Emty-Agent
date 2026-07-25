@@ -83,15 +83,12 @@ export async function runHooks(
   input: HookInput,
   options?: { eventTimeoutMs?: number },
 ): Promise<HookDecision> {
-  console.warn(`[hooks] runHooks() called — event=${event} workspace=${input.workspacePath ?? '(none)'}`)
   const config = await loadHooksConfig(input.workspacePath)
   if (!config) {
-    console.warn('[hooks] No config loaded — returning allow (no hooks)')
     return { allowed: true, systemMessages: [], additionalContexts: [] }
   }
 
   const entries = resolveHookEntries(config, event, input)
-  console.warn(`[hooks] Resolved ${entries.length} matching hook entry(ies) for ${event}`)
   if (entries.length === 0)
     return { allowed: true, systemMessages: [], additionalContexts: [] }
 
@@ -137,13 +134,11 @@ export async function runHooks(
       ...(outputParts.length > 0 ? { output: outputParts.join('\n') } : {}),
     })
 
-    console.warn(`[hooks] runHooks() done — status=${decision.allowed ? 'completed' : 'denied'} timing=${finishedAt - startedAt}ms`)
     return decision
   }
   catch (error) {
     const finishedAt = Date.now()
     const errMsg = error instanceof Error ? error.message : String(error)
-    console.warn(`[hooks] runHooks() error — timing=${finishedAt - startedAt}ms error=${errMsg}`)
     updateLogEntry(logId, {
       finishedAt,
       exitCode: null,
@@ -160,10 +155,7 @@ export async function runHooks(
  * Runs hooks in the background without blocking.
  */
 export function fireHooks(event: HookEvent, input: HookInput): void {
-  console.warn(`[hooks] fireHooks() (fire-and-forget) — event=${event}`)
-  void runHooks(event, input).catch(err => {
-    console.warn('[hooks] Unhandled error in fireHooks:', err)
-  })
+  void runHooks(event, input).catch(() => {})
 }
 
 /**

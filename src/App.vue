@@ -2,6 +2,7 @@
 import { onMounted, ref, watch } from 'vue'
 import FatalErrorScreen from './components/app/FatalErrorScreen.vue'
 import ZoomIndicator from './components/app/ZoomIndicator.vue'
+import OnboardingFlow from './components/onboarding/OnboardingFlow.vue'
 import ProviderBrowser from './components/settings/providers/ProviderBrowser.vue'
 import SettingsModal from './components/settings/SettingsModal.vue'
 import SideBar from './components/sidebar/Sidebar.vue'
@@ -9,6 +10,7 @@ import TitleBar from './components/titlebar/Titlebar.vue'
 import { useZoom } from './composables/useZoom'
 import { getDb } from './db/database'
 import { useProjectStore } from './stores/project'
+import { useSettingsStore } from './stores/settings'
 import { captureFatalError, fatalError } from './utils/errors'
 import { ALL_PROVIDERS, warmIconCache } from './utils/modelsdev'
 import ChatView from './views/Chatview.vue'
@@ -33,6 +35,7 @@ watch(showProviderBrowser, open => {
 })
 
 const project = useProjectStore()
+const settings = useSettingsStore()
 
 useZoom()
 
@@ -69,6 +72,7 @@ function reloadApp() {
     <ZoomIndicator />
 
     <TitleBar
+      v-if="settings.completedOnboarding && !fatalError"
       title="Emty Agent"
       :active-view="activeView"
       @select-view="selectView"
@@ -76,6 +80,11 @@ function reloadApp() {
     />
 
     <FatalErrorScreen v-if="fatalError" :error="fatalError" @reload="reloadApp" />
+
+    <OnboardingFlow
+      v-else-if="!settings.completedOnboarding"
+      @complete="settings.completeOnboarding()"
+    />
 
     <template v-else>
       <div style="display: flex; flex: 1; overflow: hidden">

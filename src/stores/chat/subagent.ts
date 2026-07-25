@@ -78,7 +78,7 @@ interface SettingsSnapshot {
     enabled: boolean
   }
   agent: {
-    permissionMode: 'ask' | 'auto'
+    permissionMode: 'ask' | 'auto' | 'yolo'
     subagents: {
       isolation: 'inherit' | 'worktree'
     }
@@ -235,10 +235,16 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
 
   const effectivePermissionMode = subTab.permissionMode ?? settings.agent.permissionMode
 
-  async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
-    if (effectivePermissionMode === 'auto')
-      return 'allow-once' as const
-
+  async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]): Promise<ToolPermissionDecision> {
+    if (effectivePermissionMode === 'yolo')
+      return 'allow-once'
+    if (effectivePermissionMode === 'auto') {
+      const { reviewToolCall } = await import('@/utils/tools/autoReview')
+      const verdict = await reviewToolCall(request, languageModel)
+      if (verdict === 'safe')
+        return 'allow-once'
+      return await requestToolPermission(subTab.id, request)
+    }
     return await requestToolPermission(subTab.id, request)
   }
 

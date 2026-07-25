@@ -30,9 +30,6 @@ function testError() {
         <h3 class="settings-card-title">
           Sound Effects
         </h3>
-        <p class="settings-card-desc">
-          Auditory feedback for agent events. Sounds are synthesised — no files required.
-        </p>
       </div>
 
       <div class="settings-list">
@@ -125,21 +122,23 @@ function testError() {
 .content-section {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .section-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  margin-bottom: 4px;
 }
 
 .section-title {
-  font-size: 15px;
+  margin: 0 0 4px 0;
+  font-size: 18px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin: 0;
+  letter-spacing: -0.01em;
 }
 
 /* =========================================
@@ -153,22 +152,16 @@ function testError() {
 }
 
 .settings-card-header {
-  padding: 16px 20px 14px;
+  padding: 16px 20px 12px;
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .settings-card-title {
+  margin: 0;
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0 0 4px;
-}
-
-.settings-card-desc {
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  margin: 0;
-  line-height: 1.4;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.01em;
 }
 
 /* =========================================
@@ -183,33 +176,24 @@ function testError() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--color-border-subtle);
-  cursor: pointer;
-  transition: background 100ms ease;
 }
 
 .settings-item:last-child {
   border-bottom: none;
 }
 
-.settings-item:hover {
-  background: var(--color-state-hover);
-}
-
 .settings-item--field {
   cursor: default;
-}
-
-.settings-item--field:hover {
-  background: transparent;
 }
 
 .settings-item-content {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  flex: 1;
   min-width: 0;
 }
 
@@ -243,8 +227,8 @@ function testError() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 10px;
+  height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--color-border-mid);
   border-radius: var(--radius-md);
   background: transparent;
@@ -263,7 +247,7 @@ function testError() {
 }
 
 .ghost-btn:disabled {
-  opacity: 0.38;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -315,7 +299,7 @@ function testError() {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-shrink: 0;
+  min-width: 180px;
 }
 
 .range-input {
@@ -324,7 +308,7 @@ function testError() {
 }
 
 .range-value {
-  min-width: 38px;
+  min-width: 40px;
   text-align: right;
   font-size: 12px;
   font-weight: 600;

@@ -27,7 +27,7 @@ export interface SettingsForContext {
   contextCaching: { enabled: boolean; anthropicTtl: '5m' | '1h'; openaiPromptCacheRetention: 'in_memory' | '24h'; googleCachedContent: string }
   autoContext: { enabled: boolean }
   memory: { enabled: boolean }
-  agent: { permissionMode: 'ask' | 'auto'; gitCoAuthor: boolean; subagents?: { isolation: 'inherit' | 'worktree' } }
+  agent: { permissionMode: 'ask' | 'auto' | 'yolo'; gitCoAuthor: boolean; subagents?: { isolation: 'inherit' | 'worktree' } }
   disabledSkillIds: string[]
 }
 

@@ -144,6 +144,7 @@ export const useSettingsStore = defineStore(
       },
       gitCoAuthor: true,
     })
+    const completedOnboarding = ref(false)
     const disabledToolIds = ref<string[]>([])
     const disabledSkillIds = ref<string[]>([])
     const globalSkills = ref<SkillMetadata[]>([])
@@ -1129,7 +1130,7 @@ export const useSettingsStore = defineStore(
 
     function normalizeAgentConfig() {
       agent.value = {
-        permissionMode: agent.value.permissionMode === 'auto' ? 'auto' : 'ask',
+        permissionMode: (['ask', 'auto', 'yolo'] as string[]).includes(agent.value.permissionMode) ? agent.value.permissionMode : 'ask',
         subagents: {
           isolation: agent.value.subagents?.isolation === 'inherit' ? 'inherit' : 'worktree',
         },
@@ -1146,6 +1147,11 @@ export const useSettingsStore = defineStore(
     }
 
     normalizeAgentConfig()
+
+    // ── onboarding ────────────────────────────────────────────────────────
+    function completeOnboarding() {
+      completedOnboarding.value = true
+    }
 
     return {
       openai,
@@ -1197,6 +1203,8 @@ export const useSettingsStore = defineStore(
       memory,
       sound,
       agent,
+      completedOnboarding,
+      completeOnboarding,
       disabledToolIds,
       disabledSkillIds,
       globalSkills,
@@ -1259,6 +1267,7 @@ export const useSettingsStore = defineStore(
         'autoContext',
         'memory',
         'agent',
+        'completedOnboarding',
         'disabledToolIds',
         'disabledSkillIds',
         'compatibleProviders',

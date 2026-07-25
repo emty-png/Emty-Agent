@@ -174,7 +174,7 @@ export interface ChatTab {
   subAgent?: SubAgentInfo
   mode?: ChatMode
   /** Per-tab permission mode override. Falls back to global `settings.agent.permissionMode` when undefined. */
-  permissionMode?: 'ask' | 'auto'
+  permissionMode?: 'ask' | 'auto' | 'yolo'
   /** Design mode — true for tabs created via "New Design" */
   isDesignTab?: boolean
   /** All design artifacts produced by the agent in this tab (legacy sandbox mode). */

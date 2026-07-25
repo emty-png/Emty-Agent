@@ -96,32 +96,17 @@ export async function loadHooksConfig(workspacePath: string | null): Promise<Hoo
     return null
 
   const cached = configCache.get(workspacePath)
-  if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS) {
-    console.warn('[hooks] Config cache hit — returning cached config')
+  if (cached && Date.now() - cached.loadedAt < CACHE_TTL_MS)
     return cached.config
-  }
 
-  console.warn(`[hooks] Loading config from ${workspacePath}/.emty/hooks.json`)
   const hooksPath = await join(workspacePath, '.emty', 'hooks.json')
   const raw = await readJsonFile(hooksPath)
   if (!raw) {
-    console.warn('[hooks] No hooks.json found or parse failed')
     configCache.set(workspacePath, { config: null, loadedAt: Date.now() })
     return null
   }
 
   const config = parseHookConfig(raw)
-  if (config) {
-    const eventSummary = Object.entries(config.hooks)
-      .filter(([, entries]) => entries && entries.length > 0)
-      .map(([event, entries]) => `${event}(${entries!.reduce((sum, e) => sum + e.hooks.length, 0)})`)
-      .join(', ')
-    console.warn(`[hooks] Config parsed — events: ${eventSummary || '(none)'}`)
-  }
-  else {
-    console.warn('[hooks] Config parsed but returned null (invalid structure)')
-  }
-
   configCache.set(workspacePath, { config, loadedAt: Date.now() })
   return config
 }

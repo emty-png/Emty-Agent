@@ -245,44 +245,55 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
               <div class="tt-trigger">
                 <Info :size="14" class="info-icon" />
                 <div class="tt-panel">
-                  <div class="tt-header">
-                    {{ model.name }}
-                  </div>
+                  <header class="pb-2 mb-1 border-b border-(--color-border-mid)">
+                    <div class="text-xs font-semibold text-(--color-text-primary)">
+                      {{ model.name }}
+                    </div>
+                    <div v-if="model.contextLimit" class="mt-1 text-[11px] text-(--color-text-tertiary) leading-[1.4]">
+                      Context limit {{ formatExact(model.contextLimit) }}
+                    </div>
+                  </header>
 
-                  <!-- Main Tooltip Content matching the image -->
-                  <div v-if="model.inputModalities?.length" class="tt-line">
-                    Allows: {{ model.inputModalities.join(', ') }}
-                  </div>
-                  <div v-if="getCapabilitiesText(model)" class="tt-line">
-                    Allows {{ getCapabilitiesText(model) }}
-                  </div>
-                  <div v-if="model.contextLimit" class="tt-line">
-                    Context limit {{ formatExact(model.contextLimit) }}
-                  </div>
-
-                  <!-- Extra Meta appended quietly below -->
-                  <div v-if="model.family || model.costInput !== null || model.releaseDate" class="tt-meta-divider" />
-                  <div class="tt-meta-grid">
-                    <span v-if="model.family" class="tt-meta-label">Family:</span>
-                    <span v-if="model.family" class="tt-meta-value">{{ model.family }}</span>
+                  <main class="grid gap-1.5 pt-2">
+                    <div v-if="model.inputModalities?.length" class="flex items-center justify-between gap-3">
+                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Input</span>
+                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.inputModalities.join(', ') }}</span>
+                    </div>
+                    <div v-if="getCapabilitiesText(model)" class="flex items-center justify-between gap-3">
+                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Capabilities</span>
+                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ getCapabilitiesText(model) }}</span>
+                    </div>
 
                     <template v-if="model.costTiers?.length || model.costContextOver200k">
-                      <span class="tt-meta-label">Cost / 1M:</span>
-                      <span class="tt-meta-value">
-                        <span v-for="(line, i) in formatTieredCost(model)" :key="i" class="tt-tier-line">{{ line }}</span>
-                      </span>
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Cost / 1M</span>
+                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums text-right">
+                          <span v-for="(line, i) in formatTieredCost(model)" :key="i" class="tt-tier-line">{{ line }}</span>
+                        </span>
+                      </div>
                     </template>
                     <template v-else-if="model.costInput !== null">
-                      <span class="tt-meta-label">Cost / 1M:</span>
-                      <span class="tt-meta-value">{{ formatPrice(model.costInput) }} in / {{ formatPrice(model.costOutput) }} out</span>
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Cost / 1M</span>
+                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ formatPrice(model.costInput) }} in / {{ formatPrice(model.costOutput) }} out</span>
+                      </div>
                     </template>
 
-                    <span v-if="model.releaseDate" class="tt-meta-label">Released:</span>
-                    <span v-if="model.releaseDate" class="tt-meta-value">{{ formatDate(model.releaseDate) }}</span>
+                    <div v-if="model.family" class="flex items-center justify-between gap-3">
+                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Family</span>
+                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.family }}</span>
+                    </div>
 
-                    <span v-if="model.mdevProviderId" class="tt-meta-label">Catalog:</span>
-                    <span v-if="model.mdevProviderId" class="tt-meta-value">{{ model.mdevProviderId }}</span>
-                  </div>
+                    <div v-if="model.releaseDate" class="flex items-center justify-between gap-3">
+                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Released</span>
+                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ formatDate(model.releaseDate) }}</span>
+                    </div>
+
+                    <div v-if="model.mdevProviderId" class="flex items-center justify-between gap-3">
+                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Catalog</span>
+                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.mdevProviderId }}</span>
+                    </div>
+                  </main>
                 </div>
               </div>
 
@@ -520,7 +531,11 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
 .model-card:hover {
   background: color-mix(in srgb, var(--color-text-primary) 1.5%, transparent);
 }
-.model-card--disabled {
+.model-card--disabled .model-name,
+.model-card--disabled .model-id,
+.model-card--disabled .picker-caps,
+.model-card--disabled .model-controls,
+.model-card--disabled .info-icon {
   opacity: 0.55;
   filter: grayscale(40%);
 }
@@ -556,11 +571,13 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   left: -4px;
   width: max-content;
   max-width: 300px;
-  background: var(--color-bg-elevated);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  padding: 10px 14px;
-  box-shadow: var(--color-shadow-lg);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.3);
   opacity: 0;
   pointer-events: none;
   transform: translateY(-4px);
@@ -576,45 +593,11 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
   transform: translateY(0);
 }
 
-.tt-header {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin-bottom: 2px;
-}
-
-.tt-line {
-  font-size: 12.5px;
-  color: var(--color-text-secondary);
-  line-height: 1.4;
-}
-
-.tt-meta-divider {
-  height: 1px;
-  background: var(--color-border-subtle);
-  margin: 4px 0;
-}
-
-.tt-meta-grid {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  column-gap: 8px;
-  row-gap: 4px;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.tt-meta-label {
-  color: var(--color-text-dim);
-}
-.tt-meta-value {
-  color: var(--color-text-tertiary);
-}
-
 .tt-tier-line {
   display: block;
-  font-size: 11px;
+  font-size: 11.5px;
   line-height: 1.5;
+  font-weight: 500;
 }
 
 /* Title & ID */

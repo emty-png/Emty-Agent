@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Check, Minus, RotateCcw, WandSparkles } from 'lucide-vue-next'
+import { Check, ChevronDown, GitBranch, Hand, HandFist, Layers, Minus, RotateCcw, ShieldCheck, Users, UserX } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -11,6 +12,86 @@ const { agent, availableToolGroups, contextCaching, autoContext, memory } = stor
 const { sessionToolApprovals } = storeToRefs(chatStore)
 
 type ToolGroup = typeof availableToolGroups.value[number]
+type PermissionMode = 'ask' | 'auto' | 'yolo'
+
+const permOptions = [
+  { mode: 'ask' as const, label: 'Ask Permission', icon: Hand },
+  { mode: 'auto' as const, label: 'Auto', icon: ShieldCheck },
+  { mode: 'yolo' as const, label: 'Yolo', icon: HandFist },
+]
+
+const subagentOptions = [
+  { value: 'worktree' as const, label: 'Worktree', icon: GitBranch },
+  { value: 'inherit' as const, label: 'Inherit', icon: Layers },
+]
+
+const gitCoAuthorOptions = [
+  { value: true, label: 'On', icon: Users },
+  { value: false, label: 'Off', icon: UserX },
+]
+
+const permOpen = ref(false)
+const subagentOpen = ref(false)
+const gitOpen = ref(false)
+
+function closeAllPops() {
+  permOpen.value = false
+  subagentOpen.value = false
+  gitOpen.value = false
+}
+
+function currentPermOption() {
+  return permOptions.find(o => o.mode === agent.value.permissionMode) ?? permOptions[0]!
+}
+
+function currentSubagentOption() {
+  return subagentOptions.find(o => o.value === agent.value.subagents.isolation) ?? subagentOptions[0]!
+}
+
+function currentGitOption() {
+  return gitCoAuthorOptions.find(o => o.value === agent.value.gitCoAuthor) ?? gitCoAuthorOptions[0]!
+}
+
+function togglePerm() {
+  const next = !permOpen.value
+  closeAllPops()
+  permOpen.value = next
+}
+
+function toggleSubagent() {
+  const next = !subagentOpen.value
+  closeAllPops()
+  subagentOpen.value = next
+}
+
+function toggleGit() {
+  const next = !gitOpen.value
+  closeAllPops()
+  gitOpen.value = next
+}
+
+function selectPermMode(mode: PermissionMode) {
+  agent.value.permissionMode = mode
+  permOpen.value = false
+}
+
+function selectSubagentIsolation(value: 'worktree' | 'inherit') {
+  agent.value.subagents.isolation = value
+  subagentOpen.value = false
+}
+
+function selectGitCoAuthor(value: boolean) {
+  agent.value.gitCoAuthor = value
+  gitOpen.value = false
+}
+
+function onPermKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape')
+    closeAllPops()
+}
+
+onMounted(() => window.addEventListener('keydown', onPermKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
 
 function getGroupState(group: ToolGroup): 'on' | 'off' | 'mixed' {
   const enabledCount = group.tools.filter(tool => settingsStore.isToolEnabled(tool.id)).length
@@ -151,7 +232,7 @@ function clearSessionApprovals() {
     </div>
 
     <!-- Permissions Card -->
-    <div class="settings-card">
+    <div class="settings-card settings-card--pop">
       <div class="settings-card-header">
         <h3 class="settings-card-title">
           Permissions
@@ -163,29 +244,51 @@ function clearSessionApprovals() {
         <div class="settings-item settings-item--field">
           <div class="settings-item-content">
             <span class="settings-item-label">Permission Mode</span>
-            <span class="settings-item-desc">Ask mode pauses execution for approvals. Auto runs tools immediately.</span>
+            <span class="settings-item-desc">Ask prompts for every tool call. Auto lets the AI review and approve safe actions. Yolo allows everything.</span>
           </div>
-          <div class="segmented-control" role="radiogroup" aria-label="Tool execution permission mode">
+          <div class="perm-picker">
             <button
-              class="mode-btn"
+              class="perm-trigger"
+              :class="`perm-trigger--${agent.permissionMode}`"
               type="button"
-              role="radio"
-              :aria-checked="agent.permissionMode === 'ask'"
-              @click="agent.permissionMode = 'ask'"
+              aria-haspopup="menu"
+              :aria-expanded="permOpen"
+              @click="togglePerm"
             >
-              <Shield :size="15" />
-              <span>Ask Permission</span>
+              <component :is="currentPermOption().icon" :size="14" :stroke-width="2" />
+              <span class="perm-trigger-label">{{ currentPermOption().label }}</span>
+              <ChevronDown
+                :size="14"
+                :stroke-width="2.5"
+                class="perm-chevron"
+                :class="{ 'perm-chevron--open': permOpen }"
+              />
             </button>
-            <button
-              class="mode-btn"
-              type="button"
-              role="radio"
-              :aria-checked="agent.permissionMode === 'auto'"
-              @click="agent.permissionMode = 'auto'"
-            >
-              <WandSparkles :size="15" />
-              <span>Auto</span>
-            </button>
+
+            <div class="perm-anchor">
+              <Transition name="perm">
+                <div v-if="permOpen" class="perm-menu" role="menu">
+                  <button
+                    v-for="opt in permOptions"
+                    :key="opt.mode"
+                    class="perm-option"
+                    :class="{
+                      'perm-option--active': agent.permissionMode === opt.mode,
+                      'perm-option--yolo': opt.mode === 'yolo',
+                    }"
+                    type="button"
+                    role="menuitemradio"
+                    :aria-checked="agent.permissionMode === opt.mode"
+                    @click="selectPermMode(opt.mode)"
+                  >
+                    <component :is="opt.icon" :size="13" :stroke-width="2" />
+                    <span>{{ opt.label }}</span>
+                  </button>
+                </div>
+              </Transition>
+            </div>
+
+            <div v-if="permOpen" class="perm-backdrop" @click="permOpen = false" />
           </div>
         </div>
 
@@ -211,7 +314,7 @@ function clearSessionApprovals() {
     </div>
 
     <!-- Tool Access Card -->
-    <div class="settings-card">
+    <div class="settings-card settings-card--pop">
       <div class="settings-card-header">
         <h3 class="settings-card-title">
           Sub-Agents
@@ -224,31 +327,51 @@ function clearSessionApprovals() {
             <span class="settings-item-label">Workspace isolation</span>
             <span class="settings-item-desc">Worktree mode gives debugger and general sub-agents their own git workspace when possible.</span>
           </div>
-          <div class="segmented-control" role="radiogroup" aria-label="Sub-agent workspace isolation">
+          <div class="perm-picker">
             <button
-              class="mode-btn"
+              class="perm-trigger"
               type="button"
-              role="radio"
-              :aria-checked="agent.subagents.isolation === 'worktree'"
-              @click="agent.subagents.isolation = 'worktree'"
+              aria-haspopup="menu"
+              :aria-expanded="subagentOpen"
+              @click="toggleSubagent"
             >
-              <span>Worktree</span>
+              <component :is="currentSubagentOption().icon" :size="14" :stroke-width="2" />
+              <span class="perm-trigger-label">{{ currentSubagentOption().label }}</span>
+              <ChevronDown
+                :size="14"
+                :stroke-width="2.5"
+                class="perm-chevron"
+                :class="{ 'perm-chevron--open': subagentOpen }"
+              />
             </button>
-            <button
-              class="mode-btn"
-              type="button"
-              role="radio"
-              :aria-checked="agent.subagents.isolation === 'inherit'"
-              @click="agent.subagents.isolation = 'inherit'"
-            >
-              <span>Inherit</span>
-            </button>
+
+            <div class="perm-anchor">
+              <Transition name="perm">
+                <div v-if="subagentOpen" class="perm-menu" role="menu">
+                  <button
+                    v-for="opt in subagentOptions"
+                    :key="opt.value"
+                    class="perm-option"
+                    :class="{ 'perm-option--active': agent.subagents.isolation === opt.value }"
+                    type="button"
+                    role="menuitemradio"
+                    :aria-checked="agent.subagents.isolation === opt.value"
+                    @click="selectSubagentIsolation(opt.value)"
+                  >
+                    <component :is="opt.icon" :size="13" :stroke-width="2" />
+                    <span>{{ opt.label }}</span>
+                  </button>
+                </div>
+              </Transition>
+            </div>
+
+            <div v-if="subagentOpen" class="perm-backdrop" @click="subagentOpen = false" />
           </div>
         </div>
       </div>
     </div>
 
-    <div class="settings-card">
+    <div class="settings-card settings-card--pop">
       <div class="settings-card-header">
         <h3 class="settings-card-title">
           Git Co-Authoring
@@ -261,25 +384,45 @@ function clearSessionApprovals() {
             <span class="settings-item-label">Attribution</span>
             <span class="settings-item-desc">Adds a Co-authored-by trailer to commits made by the agent, so contributions appear on GitHub.</span>
           </div>
-          <div class="segmented-control" role="radiogroup" aria-label="Git co-authoring">
+          <div class="perm-picker">
             <button
-              class="mode-btn"
+              class="perm-trigger"
               type="button"
-              role="radio"
-              :aria-checked="agent.gitCoAuthor === true"
-              @click="agent.gitCoAuthor = true"
+              aria-haspopup="menu"
+              :aria-expanded="gitOpen"
+              @click="toggleGit"
             >
-              <span>On</span>
+              <component :is="currentGitOption().icon" :size="14" :stroke-width="2" />
+              <span class="perm-trigger-label">{{ currentGitOption().label }}</span>
+              <ChevronDown
+                :size="14"
+                :stroke-width="2.5"
+                class="perm-chevron"
+                :class="{ 'perm-chevron--open': gitOpen }"
+              />
             </button>
-            <button
-              class="mode-btn"
-              type="button"
-              role="radio"
-              :aria-checked="agent.gitCoAuthor === false"
-              @click="agent.gitCoAuthor = false"
-            >
-              <span>Off</span>
-            </button>
+
+            <div class="perm-anchor">
+              <Transition name="perm">
+                <div v-if="gitOpen" class="perm-menu" role="menu">
+                  <button
+                    v-for="opt in gitCoAuthorOptions"
+                    :key="String(opt.value)"
+                    class="perm-option"
+                    :class="{ 'perm-option--active': agent.gitCoAuthor === opt.value }"
+                    type="button"
+                    role="menuitemradio"
+                    :aria-checked="agent.gitCoAuthor === opt.value"
+                    @click="selectGitCoAuthor(opt.value)"
+                  >
+                    <component :is="opt.icon" :size="13" :stroke-width="2" />
+                    <span>{{ opt.label }}</span>
+                  </button>
+                </div>
+              </Transition>
+            </div>
+
+            <div v-if="gitOpen" class="perm-backdrop" @click="gitOpen = false" />
           </div>
         </div>
       </div>
@@ -455,6 +598,10 @@ function clearSessionApprovals() {
   overflow: hidden;
 }
 
+.settings-card--pop {
+  overflow: visible;
+}
+
 .settings-card-header {
   padding: 16px 20px 12px;
   border-bottom: 1px solid var(--color-border-subtle);
@@ -563,6 +710,153 @@ function clearSessionApprovals() {
   color: var(--color-bg-surface);
   font-weight: 600;
   box-shadow: var(--color-shadow-sm);
+}
+
+/* =========================================
+   Permission Mode Picker (Popup)
+ ========================================= */
+.perm-picker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.perm-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px 0 12px;
+  min-width: 160px;
+  justify-content: space-between;
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 130ms ease,
+    border-color 130ms ease,
+    color 130ms ease;
+}
+
+.perm-trigger:hover {
+  border-color: var(--color-text-tertiary);
+}
+
+.perm-trigger-label {
+  flex: 1;
+  text-align: left;
+}
+
+.perm-trigger--auto {
+  color: var(--color-accent);
+}
+
+.perm-trigger--yolo {
+  color: var(--color-warning-text);
+}
+
+.perm-chevron {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.perm-chevron--open {
+  transform: rotate(180deg);
+}
+
+.perm-anchor {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+}
+
+.perm-menu {
+  width: 180px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--color-text-primary) 3%, transparent),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 12px 28px rgba(0, 0, 0, 0.35);
+}
+
+.perm-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 100ms ease,
+    border-color 100ms ease,
+    color 100ms ease;
+}
+
+.perm-option:hover {
+  background: var(--color-state-hover);
+  border-color: var(--color-border-subtle);
+  color: var(--color-text-primary);
+}
+
+.perm-option--active {
+  background: var(--color-accent-muted);
+  border-color: var(--color-accent-dim);
+  color: var(--color-text-primary);
+}
+
+.perm-option--active.perm-option--yolo {
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  border-color: var(--color-danger);
+}
+
+.perm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: transparent;
+}
+
+.perm-enter-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: bottom;
+}
+
+.perm-leave-active {
+  transition:
+    opacity 0.1s ease,
+    transform 0.1s cubic-bezier(0.7, 0, 0.84, 0);
+  transform-origin: bottom;
+}
+
+.perm-enter-from,
+.perm-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.96);
 }
 
 /* =========================================

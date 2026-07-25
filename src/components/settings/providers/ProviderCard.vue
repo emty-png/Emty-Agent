@@ -58,7 +58,6 @@ const isExpanded = ref(false)
 
 <style scoped>
 .provider-card {
-  max-width: 580px;
   width: 100%;
   box-sizing: border-box;
   background: var(--color-bg-surface);

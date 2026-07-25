@@ -90,8 +90,8 @@ export const useHooksStore = defineStore('hooks', () => {
       await writeFile(configPath.value, new TextEncoder().encode(JSON.stringify(config.value, null, 2)))
       invalidateCache(workspacePath)
     }
-    catch (err) {
-      console.warn('[hooks] Failed to persist toggle:', err)
+    catch {
+      // silently ignore persistence errors
     }
   }
 

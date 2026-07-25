@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { SttProvider, TtsProvider } from '@/stores/settings/voiceTypes'
-import { Loader, Mic, Plus, Volume2, Wand2, X, Zap } from 'lucide-vue-next'
+import { Loader, Mic, Plus, Volume2, X, Zap } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
@@ -445,12 +445,12 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
     </div>
 
     <!-- ── Post-Processing Section ──────────────────────────────────────────── -->
-    <div class="section-heading section-heading--gap">
-      <Wand2 :size="16" :stroke-width="1.8" />
-      <span>Post-Processing</span>
-    </div>
-
     <div class="processing-card">
+      <div class="settings-card-header">
+        <h3 class="settings-card-title">
+          Post-Processing
+        </h3>
+      </div>
       <div class="processing-row">
         <div class="processing-info">
           <span class="processing-label">Remove filler words</span>
@@ -498,12 +498,12 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
     </div>
 
     <!-- ── Personal Dictionary Section ──────────────────────────────────────── -->
-    <div class="section-heading section-heading--gap">
-      <Mic :size="16" :stroke-width="1.8" />
-      <span>Personal Dictionary</span>
-    </div>
-
     <div class="processing-card">
+      <div class="settings-card-header">
+        <h3 class="settings-card-title">
+          Personal Dictionary
+        </h3>
+      </div>
       <div v-if="voiceDictionary.length === 0" class="processing-row">
         <span class="processing-hint">Add words the STT mishears. Each entry replaces the wrong word with the correct one.</span>
       </div>
@@ -534,12 +534,12 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
     </div>
 
     <!-- ── Voice Snippets Section ──────────────────────────────────────────── -->
-    <div class="section-heading section-heading--gap">
-      <Wand2 :size="16" :stroke-width="1.8" />
-      <span>Voice Snippets</span>
-    </div>
-
     <div class="processing-card">
+      <div class="settings-card-header">
+        <h3 class="settings-card-title">
+          Voice Snippets
+        </h3>
+      </div>
       <div v-if="voiceSnippets.length === 0" class="processing-row">
         <span class="processing-hint">Say a trigger word and it will be expanded into the full text.</span>
       </div>
@@ -575,7 +575,7 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
 .voice-providers {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .section-heading {
@@ -728,6 +728,19 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   overflow: hidden;
+}
+
+.settings-card-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.settings-card-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.01em;
 }
 
 .processing-row {

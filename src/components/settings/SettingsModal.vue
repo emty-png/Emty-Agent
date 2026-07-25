@@ -5,13 +5,12 @@ import {
   ChevronRight,
   Palette,
   Puzzle,
-  Server,
   Settings,
   SlidersHorizontal,
   X,
   Zap,
 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { h, ref } from 'vue'
 
 import ProvidersSection from './providers/ProvidersSection.vue'
 import AgentSection from './sections/AgentSection.vue'
@@ -24,6 +23,29 @@ import ThemeSection from './sections/ThemeSection.vue'
 //  props / emits
 const emit = defineEmits<{ close: []; browseProviders: [] }>()
 
+// Custom MCP icon (Boxicons) — uses currentColor to inherit theme colors
+function McpIcon(props: { size?: number }) {
+  const s = (props.size ?? 24) + 2
+  return h(
+    'svg',
+    {
+      xmlns: 'http://www.w3.org/2000/svg',
+      width: s,
+      height: s,
+      viewBox: '0 0 24 24',
+      fill: 'currentColor',
+    },
+    [
+      h('path', {
+        d: 'm19.97,11.84c.66-.66,1.02-1.53,1.02-2.46s-.36-1.8-1.02-2.46l-.04-.04c-.66-.66-1.53-1.02-2.46-1.02-.17,0-.34.03-.51.05.02-.17.05-.33.05-.51,0-.93-.36-1.8-1.02-2.46-.66-.66-1.53-1.02-2.46-1.02s-1.8.36-2.46,1.02l-7.87,7.87c-.27.27-.27.71,0,.98s.71.27.98,0l7.87-7.87c.39-.39.92-.61,1.47-.61s1.08.22,1.47.61c.39.39.61.92.61,1.48s-.22,1.08-.61,1.48l-5.86,5.86-.08.08c-.27.27-.27.71,0,.98.14.14.31.2.49.2s.36-.07.49-.2l5.94-5.94c.39-.39.92-.61,1.48-.61s1.08.22,1.47.61l.04.04c.39.39.61.92.61,1.47s-.22,1.08-.61,1.48l-7.11,7.11c-.63.63-.63,1.66,0,2.29l1.46,1.46c.14.14.31.2.49.2s.36-.07.49-.2c.27-.27.27-.71,0-.98l-1.46-1.46c-.09-.09-.09-.24,0-.33l7.11-7.11Z',
+      }),
+      h('path', {
+        d: 'm17.96,9.83c.27-.27.27-.71,0-.98-.27-.27-.71-.27-.98,0l-5.82,5.82c-.81.81-2.14.81-2.95,0-.81-.81-.81-2.14,0-2.95l5.82-5.82c.27-.27.27-.71,0-.98-.27-.27-.71-.27-.98,0l-5.82,5.82c-1.36,1.36-1.36,3.56,0,4.92.68.68,1.57,1.02,2.46,1.02s1.78-.34,2.46-1.02l5.82-5.82Z',
+      }),
+    ],
+  )
+}
+
 //  navigation
 type Section = 'agent' | 'theme' | 'skills' | 'mcp' | 'providers' | 'models' | 'others'
 const activeSection = ref<Section>('providers')
@@ -32,7 +54,7 @@ const NAV: { id: Section; label: string; icon: Component }[] = [
   { id: 'agent', label: 'Agent', icon: Settings },
   { id: 'theme', label: 'Theme', icon: Palette },
   { id: 'skills', label: 'Skills', icon: BookOpen },
-  { id: 'mcp', label: 'MCP', icon: Server },
+  { id: 'mcp', label: 'MCP', icon: McpIcon },
   { id: 'providers', label: 'Providers', icon: Puzzle },
   { id: 'models', label: 'Models', icon: Zap },
   { id: 'others', label: 'Others', icon: SlidersHorizontal },

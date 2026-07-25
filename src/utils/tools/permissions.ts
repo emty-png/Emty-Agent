@@ -2,7 +2,7 @@ import type { ToolSet } from '@/utils/ai'
 import type { HookInput } from '@/utils/hooks'
 import { tool } from 'ai'
 
-export type ToolPermissionMode = 'ask' | 'auto'
+export type ToolPermissionMode = 'ask' | 'auto' | 'yolo'
 export type ToolPermissionDecision = 'allow-once' | 'allow-session' | 'deny'
 const NO_PERMISSION_TOOL_NAMES = new Set(['ask_questions', 'create_task', 'update_task', 'list_tasks', 'get_task', 'sleep', 'plan'])
 

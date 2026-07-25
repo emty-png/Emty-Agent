@@ -350,9 +350,20 @@ export function createSendMessage(
     // ── Tool setup ────────────────────────────────────────────────────────
     const effectiveMcpServers = getEffectiveMcpServers(tab, settings.mcpServers)
 
-    function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]) {
-      if ((tab.permissionMode ?? settings.agent.permissionMode) === 'auto')
-        return Promise.resolve('allow-once' as const)
+    async function requestPermissionForTool(request: Parameters<RequestToolPermission>[0]): Promise<ToolPermissionDecision> {
+      const mode = tab.permissionMode ?? settings.agent.permissionMode
+      if (mode === 'yolo')
+        return 'allow-once'
+      if (mode === 'auto') {
+        const { reviewToolCall } = await import('@/utils/tools/autoReview')
+        const { resolveLanguageModel: resolveLM } = await import('./models')
+        const { buildLanguageModel: buildLM } = await import('@/utils/ai')
+        const languageModel = resolveLM(activeModel!, settings as import('./models').ModelSettingsSnapshot, buildLM)
+        const verdict = await reviewToolCall(request, languageModel)
+        if (verdict === 'safe')
+          return 'allow-once'
+        return requestToolPermission(tab.id, request)
+      }
       return requestToolPermission(tab.id, request)
     }
 
