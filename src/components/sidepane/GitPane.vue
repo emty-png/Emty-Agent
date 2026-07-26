@@ -1308,39 +1308,37 @@ watch(openedTabs, () => {
 
     <Teleport to="body">
       <Transition
-        enter-active-class="transition-opacity duration-150 ease"
-        leave-active-class="transition-opacity duration-120 ease"
+        enter-active-class="transition-opacity duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]"
+        leave-active-class="transition-opacity duration-100 ease-[cubic-bezier(0.7,0,0.84,0)]"
         enter-from-class="opacity-0 [&_.commit-modal]:scale-[0.96] [&_.commit-modal]:translate-y-1"
-        leave-to-class="opacity-0"
+        leave-to-class="opacity-0 [&_.commit-modal]:scale-[0.96] [&_.commit-modal]:translate-y-1"
       >
         <div v-if="showCommitModal" class="fixed inset-0 z-[99999] bg-[color-mix(in_srgb,var(--color-bg-base)_65%,transparent)] flex items-center justify-center p-6" @click.self="showCommitModal = false">
-          <div class="commit-modal bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-xl) w-full max-w-[480px] flex flex-col shadow-[0_24px_64px_rgba(0,0,0,0.5),0_4px_16px_rgba(0,0,0,0.3)] overflow-hidden transition-all duration-200 ease-out">
+          <div class="commit-modal bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-xl) w-full max-w-[480px] flex flex-col shadow-[0_24px_64px_rgba(0,0,0,0.5),0_4px_16px_rgba(0,0,0,0.3)] overflow-hidden [transition:transform_150ms_cubic-bezier(0.16,1,0.3,1)]">
             <!-- Header -->
-            <div class="flex items-center gap-3 py-4 px-6">
-              <div class="flex items-center justify-center w-8 h-8 rounded-(--radius-md) bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)]">
-                <GitCommit :size="16" class="text-[var(--color-accent)]" />
+            <div class="flex flex-col gap-1.5 py-3.5 px-5 border-b border-(--color-border-subtle)">
+              <div class="flex items-center gap-2.5">
+                <div class="flex items-center justify-center w-6.5 h-6.5 rounded-(--radius-md) bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] shrink-0">
+                  <GitCommit :size="13" class="text-[var(--color-accent)]" />
+                </div>
+                <span class="flex-1 text-[14px] font-semibold text-[var(--color-text-primary)] truncate">Commit changes</span>
+                <button class="inline-flex items-center justify-center w-6 h-6 rounded-(--radius-sm) border-none bg-transparent text-[var(--color-text-tertiary)] cursor-pointer [transition:background_100ms_cubic-bezier(0.4,0,0.2,1),color_100ms_cubic-bezier(0.4,0,0.2,1)] active:scale-[0.94] active:duration-[80ms] hover:bg-(--color-state-hover) hover:text-(--color-text-primary) shrink-0" @click="showCommitModal = false">
+                  <X :size="13" />
+                </button>
               </div>
-              <span class="flex-1 text-[15px] font-semibold text-[var(--color-text-primary)]">Commit changes</span>
-              <button class="inline-flex items-center justify-center w-7 h-7 rounded-(--radius-sm) border-none bg-transparent text-[var(--color-text-tertiary)] cursor-pointer transition-all duration-100 hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-primary)]" @click="showCommitModal = false">
-                <X :size="14" />
-              </button>
-            </div>
-
-            <!-- Body -->
-            <div class="flex flex-col overflow-y-auto">
               <!-- Branch / Files / Remote strip -->
-              <div class="mx-6 flex items-center gap-2 flex-wrap">
-                <span class="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-(--radius-sm) bg-(--color-bg-card) border border-(--color-border-bright) font-mono text-[11.5px] text-[var(--color-text-primary)]">
-                  <GitBranch :size="11" class="text-[var(--color-text-tertiary)]" />
+              <div class="flex items-center gap-1.5 pl-[35px] flex-wrap">
+                <span class="inline-flex items-center gap-1 py-0.5 px-2 rounded-(--radius-sm) bg-(--color-bg-card) border border-(--color-border-bright) font-mono text-[11px] text-[var(--color-text-primary)]">
+                  <GitBranch :size="10" class="text-[var(--color-text-tertiary)]" />
                   {{ status?.branch || 'main' }}
                 </span>
-                <span class="text-[var(--color-text-dim)]">·</span>
-                <span class="text-[12px] text-[var(--color-text-secondary)]">{{ unstagedCount + stagedCount }} file{{ (unstagedCount + stagedCount) === 1 ? '' : 's' }}</span>
+                <span class="text-[var(--color-text-dim)] text-[11px]">·</span>
+                <span class="text-[11px] text-[var(--color-text-secondary)]">{{ unstagedCount + stagedCount }} file{{ (unstagedCount + stagedCount) === 1 ? '' : 's' }}</span>
                 <template v-if="status?.upstream">
-                  <span class="text-[var(--color-text-dim)]">·</span>
-                  <span class="text-[12px] text-[var(--color-text-secondary)]">{{ status.upstream }}</span>
+                  <span class="text-[var(--color-text-dim)] text-[11px]">·</span>
+                  <span class="text-[11px] text-[var(--color-text-secondary)]">{{ status.upstream }}</span>
                   <template v-if="status.aheadCount > 0 || status.behindCount > 0">
-                    <span class="text-[12px]">
+                    <span class="text-[11px]">
                       <span :class="status.aheadCount > 0 ? 'text-[var(--color-success)]' : 'text-[var(--color-text-dim)]'">+{{ status.aheadCount }}</span>
                       <span class="text-[var(--color-text-dim)]">/</span>
                       <span :class="status.behindCount > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-dim)]'">{{ status.behindCount }}</span>
@@ -1348,90 +1346,88 @@ watch(openedTabs, () => {
                   </template>
                 </template>
               </div>
+            </div>
 
-              <div class="mx-6 mt-4 h-px bg-(--color-border-subtle)" />
-
+            <!-- Body -->
+            <div class="flex flex-col overflow-y-auto [scrollbar-width:thin] [scrollbar-color:var(--color-border-bright)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-(--color-border-bright) [&::-webkit-scrollbar-thumb]:rounded-(--radius-md)">
               <!-- Options as a settings card -->
-              <div class="mx-6 mt-4 mb-1 rounded-(--radius-lg) bg-(--color-bg-card) border border-(--color-border-bright) overflow-hidden">
-                <div class="flex items-center gap-2 px-4 py-2.5 border-b border-(--color-border-subtle)">
-                  <span class="text-[11px] font-bold tracking-[0.06em] uppercase text-[var(--color-text-dim)] select-none">Options</span>
+              <div class="mx-5 mt-4 mb-1 rounded-(--radius-lg) bg-(--color-bg-card) border border-(--color-border-bright) overflow-hidden">
+                <div class="flex items-center gap-2 px-3.5 py-2 border-b border-(--color-border-subtle)">
+                  <span class="text-[10.5px] font-bold tracking-[0.06em] uppercase text-[var(--color-text-dim)] select-none">Options</span>
                 </div>
                 <div class="flex flex-col">
-                  <label class="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors duration-100 hover:bg-[var(--color-state-hover)] group/toggle">
-                    <span class="relative shrink-0 cursor-pointer">
-                      <input v-model="includeUnstaged" type="checkbox" class="absolute opacity-0 w-0 h-0 peer">
-                      <span class="block w-[34px] h-[20px] bg-(--color-bg-elevated) border border-(--color-border-mid) rounded-[20px] relative transition-colors duration-150 ease-in-out peer-checked:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)] peer-checked:border-[var(--color-accent)]">
-                        <span class="absolute top-[2px] left-[2px] w-[14px] h-[14px] bg-[var(--color-text-dim)] rounded-full transition-all duration-150 ease-in-out peer-checked:translate-x-[14px] peer-checked:bg-[var(--color-accent)]" />
-                      </span>
+                  <label class="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer [transition:background_100ms_cubic-bezier(0.4,0,0.2,1)] hover:bg-[var(--color-state-hover)] group/toggle">
+                    <span class="relative shrink-0 w-9 h-5 cursor-pointer">
+                      <input v-model="includeUnstaged" type="checkbox" class="peer absolute inset-0 w-full h-full m-0 opacity-0 cursor-pointer">
+                      <span class="absolute inset-0 bg-(--color-bg-base) border border-(--color-border-bright) rounded-full shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] [transition:background_150ms_cubic-bezier(0.4,0,0.2,1),border-color_150ms_cubic-bezier(0.4,0,0.2,1)] peer-checked:bg-(--color-accent) peer-checked:border-(--color-accent) peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--color-accent-muted)]" />
+                      <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-(--color-text-primary) rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.5)] [transition:transform_150ms_cubic-bezier(0.4,0,0.2,1)] peer-checked:translate-x-[14px]" />
                     </span>
                     <div class="flex flex-col min-w-0">
-                      <span class="text-[13px] font-medium text-[var(--color-text-primary)] leading-tight">Include unstaged changes</span>
-                      <span class="text-[11px] text-[var(--color-text-dim)] leading-tight mt-0.5">Stage all working tree changes before committing</span>
+                      <span class="text-[12.5px] font-medium text-[var(--color-text-primary)] leading-tight">Include unstaged changes</span>
+                      <span class="text-[10.5px] text-[var(--color-text-dim)] leading-tight mt-0.5">Stage all working tree changes before committing</span>
                     </div>
                   </label>
                   <div class="mx-4 h-px bg-(--color-border-subtle)" />
-                  <label class="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors duration-100 hover:bg-[var(--color-state-hover)] group/toggle">
-                    <span class="relative shrink-0 cursor-pointer">
-                      <input v-model="amendCommit" type="checkbox" class="absolute opacity-0 w-0 h-0 peer">
-                      <span class="block w-[34px] h-[20px] bg-(--color-bg-elevated) border border-(--color-border-mid) rounded-[20px] relative transition-colors duration-150 ease-in-out peer-checked:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)] peer-checked:border-[var(--color-accent)]">
-                        <span class="absolute top-[2px] left-[2px] w-[14px] h-[14px] bg-[var(--color-text-dim)] rounded-full transition-all duration-150 ease-in-out peer-checked:translate-x-[14px] peer-checked:bg-[var(--color-accent)]" />
-                      </span>
+                  <label class="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer [transition:background_100ms_cubic-bezier(0.4,0,0.2,1)] hover:bg-[var(--color-state-hover)] group/toggle">
+                    <span class="relative shrink-0 w-9 h-5 cursor-pointer">
+                      <input v-model="amendCommit" type="checkbox" class="peer absolute inset-0 w-full h-full m-0 opacity-0 cursor-pointer">
+                      <span class="absolute inset-0 bg-(--color-bg-base) border border-(--color-border-bright) rounded-full shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] [transition:background_150ms_cubic-bezier(0.4,0,0.2,1),border-color_150ms_cubic-bezier(0.4,0,0.2,1)] peer-checked:bg-(--color-accent) peer-checked:border-(--color-accent) peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--color-accent-muted)]" />
+                      <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-(--color-text-primary) rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.5)] [transition:transform_150ms_cubic-bezier(0.4,0,0.2,1)] peer-checked:translate-x-[14px]" />
                     </span>
                     <div class="flex flex-col min-w-0">
-                      <span class="text-[13px] font-medium text-[var(--color-text-primary)] leading-tight">Amend previous commit</span>
-                      <span class="text-[11px] text-[var(--color-text-dim)] leading-tight mt-0.5">Add staged changes to the last commit</span>
+                      <span class="text-[12.5px] font-medium text-[var(--color-text-primary)] leading-tight">Amend previous commit</span>
+                      <span class="text-[10.5px] text-[var(--color-text-dim)] leading-tight mt-0.5">Add staged changes to the last commit</span>
                     </div>
                   </label>
                   <div class="mx-4 h-px bg-(--color-border-subtle)" />
-                  <label class="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors duration-100 hover:bg-[var(--color-state-hover)] group/toggle">
-                    <span class="relative shrink-0 cursor-pointer">
-                      <input v-model="skipCommitHooks" type="checkbox" class="absolute opacity-0 w-0 h-0 peer">
-                      <span class="block w-[34px] h-[20px] bg-(--color-bg-elevated) border border-(--color-border-mid) rounded-[20px] relative transition-colors duration-150 ease-in-out peer-checked:bg-[color-mix(in_srgb,var(--color-accent)_25%,transparent)] peer-checked:border-[var(--color-accent)]">
-                        <span class="absolute top-[2px] left-[2px] w-[14px] h-[14px] bg-[var(--color-text-dim)] rounded-full transition-all duration-150 ease-in-out peer-checked:translate-x-[14px] peer-checked:bg-[var(--color-accent)]" />
-                      </span>
+                  <label class="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer [transition:background_100ms_cubic-bezier(0.4,0,0.2,1)] hover:bg-[var(--color-state-hover)] group/toggle">
+                    <span class="relative shrink-0 w-9 h-5 cursor-pointer">
+                      <input v-model="skipCommitHooks" type="checkbox" class="peer absolute inset-0 w-full h-full m-0 opacity-0 cursor-pointer">
+                      <span class="absolute inset-0 bg-(--color-bg-base) border border-(--color-border-bright) rounded-full shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] [transition:background_150ms_cubic-bezier(0.4,0,0.2,1),border-color_150ms_cubic-bezier(0.4,0,0.2,1)] peer-checked:bg-(--color-accent) peer-checked:border-(--color-accent) peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--color-accent-muted)]" />
+                      <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-(--color-text-primary) rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.5)] [transition:transform_150ms_cubic-bezier(0.4,0,0.2,1)] peer-checked:translate-x-[14px]" />
                     </span>
                     <div class="flex flex-col min-w-0">
-                      <span class="text-[13px] font-medium text-[var(--color-text-primary)] leading-tight">Skip hooks</span>
-                      <span class="text-[11px] text-[var(--color-text-dim)] leading-tight mt-0.5">Run commit with --no-verify flag</span>
+                      <span class="text-[12.5px] font-medium text-[var(--color-text-primary)] leading-tight">Skip hooks</span>
+                      <span class="text-[10.5px] text-[var(--color-text-dim)] leading-tight mt-0.5">Run commit with --no-verify flag</span>
                     </div>
                   </label>
                 </div>
-                <div v-if="skipCommitHooks" class="flex items-start gap-2.5 px-4 py-2.5 border-t border-(--color-border-subtle) bg-[color-mix(in_srgb,var(--color-warning)_6%,var(--color-bg-card))]">
-                  <ShieldCheck :size="13" class="shrink-0 mt-0.5 text-[var(--color-warning)]" />
-                  <span class="text-[11.5px] text-[var(--color-text-secondary)] leading-[1.5]">Hooks run until they finish. Skip only when checks have already passed.</span>
+                <div v-if="skipCommitHooks" class="flex items-start gap-2 px-3.5 py-2 border-t border-(--color-border-subtle) bg-[color-mix(in_srgb,var(--color-warning)_6%,var(--color-bg-card))]">
+                  <ShieldCheck :size="12" class="shrink-0 mt-0.5 text-[var(--color-warning)]" />
+                  <span class="text-[11px] text-[var(--color-text-secondary)] leading-[1.45]">Hooks run until they finish. Skip only when checks have already passed.</span>
                 </div>
               </div>
 
               <!-- Conflict warning -->
-              <div v-if="hasConflicts" class="mx-6 mt-3">
-                <div class="py-3 px-3.5 rounded-(--radius-md) bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-bg-card))] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] flex flex-col gap-1">
-                  <div class="font-bold text-[var(--color-danger)] text-[12.5px]">
+              <div v-if="hasConflicts" class="mx-5 mt-3">
+                <div class="py-2.5 px-3 rounded-(--radius-md) bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-bg-card))] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] flex flex-col gap-0.5">
+                  <div class="font-bold text-[var(--color-danger)] text-[12px]">
                     Conflicts must be resolved
                   </div>
-                  <div class="text-[12px] text-[var(--color-text-secondary)]">
+                  <div class="text-[11.5px] text-[var(--color-text-secondary)]">
                     {{ status?.conflicts.length }} conflicted file{{ status?.conflicts.length === 1 ? '' : 's' }} need attention.
                   </div>
                 </div>
               </div>
 
               <!-- Commit message -->
-              <div class="px-6 pt-4 pb-5 flex flex-col gap-2">
+              <div class="px-5 pt-3 pb-4 flex flex-col gap-1.5">
                 <div class="flex items-center justify-between">
-                  <span class="text-[12px] font-bold tracking-[0.06em] uppercase text-[var(--color-text-dim)] select-none">Message</span>
-                  <span class="text-[10.5px] text-[var(--color-text-dim)] font-medium">optional — auto-generated if blank</span>
+                  <span class="text-[11px] font-bold tracking-[0.06em] uppercase text-[var(--color-text-dim)] select-none">Message</span>
+                  <span class="text-[10px] text-[var(--color-text-dim)] font-medium">optional — auto-generated if blank</span>
                 </div>
                 <textarea
                   v-model="commitMsg"
-                  class="w-full bg-(--color-bg-card) border border-(--color-border-mid) rounded-(--radius-lg) py-3 px-4 text-[var(--color-text-primary)] font-[inherit] text-[13.5px] resize-y min-h-[100px] box-border leading-[1.6] transition-all duration-150 ease-in-out focus:outline-none focus:border-[var(--color-accent)] focus:shadow-[0_0_0_3px_var(--color-accent-muted)] placeholder-[var(--color-text-dim)]"
+                  class="w-full bg-(--color-bg-card) border border-(--color-border-mid) rounded-(--radius-lg) py-2.5 px-3.5 text-[var(--color-text-primary)] font-[inherit] text-[13px] resize-y min-h-[68px] box-border leading-[1.55] outline-none [transition:border-color_150ms_cubic-bezier(0.4,0,0.2,1),box-shadow_150ms_cubic-bezier(0.4,0,0.2,1)] focus:border-(--color-accent) focus:shadow-[0_0_0_3px_var(--color-accent-muted),0_0_0_1px_var(--color-accent-muted-plus)] placeholder-[var(--color-text-dim)]"
                   placeholder="Leave blank to autogenerate…"
-                  rows="3"
+                  rows="2"
                 />
 
-                <div v-if="commitResult && commitResult.type === 'err'" class="mt-1 py-2.5 px-3 rounded-(--radius-md) bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-bg-card))] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] flex flex-col gap-1">
-                  <div class="font-bold text-[var(--color-danger)] text-[12.5px]">
+                <div v-if="commitResult && commitResult.type === 'err'" class="py-2 px-3 rounded-(--radius-md) bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-bg-card))] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] flex flex-col gap-0.5">
+                  <div class="font-bold text-[var(--color-danger)] text-[12px]">
                     Commit Failed
                   </div>
-                  <div class="text-[12px] text-[var(--color-text-secondary)]">
+                  <div class="text-[11.5px] text-[var(--color-text-secondary)]">
                     {{ commitResult.text }}
                   </div>
                 </div>
@@ -1439,11 +1435,11 @@ watch(openedTabs, () => {
             </div>
 
             <!-- Footer -->
-            <div class="flex items-center justify-end gap-3 py-4 px-6 bg-(--color-bg-surface) border-t border-(--color-border-mid)">
-              <button class="inline-flex items-center justify-center gap-1.5 py-2 px-5 rounded-(--radius-md) text-[13px] font-semibold cursor-pointer border border-(--color-border-mid) bg-transparent text-[var(--color-text-secondary)] transition-all duration-[120ms] ease-in-out hover:bg-(--color-state-hover) hover:text-[var(--color-text-primary)] hover:border-(--color-border-bright) active:scale-[0.97]" @click="showCommitModal = false">
+            <div class="flex items-center justify-end gap-2.5 py-3 px-5 bg-(--color-bg-surface) border-t border-(--color-border-mid)">
+              <button class="inline-flex items-center justify-center gap-1.5 h-8 px-4 rounded-(--radius-md) text-[12.5px] font-semibold cursor-pointer border border-(--color-border-mid) bg-transparent text-[var(--color-text-secondary)] [transition:background_120ms_cubic-bezier(0.4,0,0.2,1),border-color_120ms_cubic-bezier(0.4,0,0.2,1),color_120ms_cubic-bezier(0.4,0,0.2,1)] active:scale-[0.97] active:duration-[80ms] hover:bg-(--color-state-hover) hover:text-(--color-text-primary) hover:border-(--color-border-bright)" @click="showCommitModal = false">
                 Cancel
               </button>
-              <button class="inline-flex items-center justify-center gap-2 py-2 px-6 rounded-(--radius-md) text-[13px] font-bold cursor-pointer border border-transparent bg-[var(--color-accent)] text-[var(--color-bg-base)] transition-all duration-[120ms] ease-in-out hover:not(:disabled):opacity-90 hover:not(:disabled):shadow-[0_4px_12px_var(--color-accent-muted)] disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]" :disabled="isCommitting || !!commitDisabledReason" :title="commitDisabledReason || 'Commit changes'" @click="commitFromModal">
+              <button class="inline-flex items-center justify-center gap-2 h-8 px-5 rounded-(--radius-md) text-[12.5px] font-bold cursor-pointer border border-transparent bg-[var(--color-accent)] text-[var(--color-bg-base)] [transition:opacity_120ms_cubic-bezier(0.4,0,0.2,1),box-shadow_120ms_cubic-bezier(0.4,0,0.2,1)] active:scale-[0.97] active:duration-[80ms] hover:not(:disabled):opacity-90 hover:not(:disabled):shadow-[0_4px_12px_var(--color-accent-muted)] disabled:opacity-50 disabled:cursor-not-allowed" :disabled="isCommitting || !!commitDisabledReason" :title="commitDisabledReason || 'Commit changes'" @click="commitFromModal">
                 <Loader2 v-if="isCommitting" :size="13" class="animate-[spin_0.9s_linear_infinite]" />
                 <GitCommit v-else :size="13" />
                 {{ isCommitting ? (commitMsg.trim() ? 'Committing…' : 'Generating…') : 'Commit' }}
@@ -1458,37 +1454,22 @@ watch(openedTabs, () => {
         enter-from-class="opacity-0 [&_.commit-modal]:scale-[0.96] [&_.commit-modal]:translate-y-1"
         leave-to-class="opacity-0"
       >
-        <div v-if="showDiscardAllModal" class="fixed inset-0 z-[99999] bg-[color-mix(in_srgb,var(--color-bg-base)_65%,transparent)] flex items-center justify-center p-6" @click.self="showDiscardAllModal = false">
-          <div class="commit-modal bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-xl) w-full max-w-[480px] flex flex-col shadow-[0_24px_64px_rgba(0,0,0,0.5),0_4px_16px_rgba(0,0,0,0.3)] overflow-hidden transition-all duration-200 ease-out">
-            <!-- Header -->
-            <div class="flex items-center gap-3 py-4 px-6">
-              <div class="flex items-center justify-center w-8 h-8 rounded-(--radius-md) bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]">
-                <Undo2 :size="16" class="text-[var(--color-danger)]" />
-              </div>
-              <span class="flex-1 text-[15px] font-semibold text-[var(--color-text-primary)]">Discard changes</span>
-              <button class="inline-flex items-center justify-center w-7 h-7 rounded-(--radius-sm) border-none bg-transparent text-[var(--color-text-tertiary)] cursor-pointer transition-all duration-100 hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-primary)]" @click="showDiscardAllModal = false">
-                <X :size="14" />
-              </button>
-            </div>
-
-            <!-- Body -->
-            <div class="px-6 pb-5">
-              <div class="py-3.5 px-4 rounded-(--radius-lg) bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-bg-card))] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] flex flex-col gap-1.5">
-                <div class="font-bold text-[var(--color-danger)] text-[13px]">
-                  This cannot be undone
-                </div>
-                <div class="text-[12.5px] text-[var(--color-text-secondary)]">
-                  {{ discardAllCount }} unstaged change{{ discardAllCount === 1 ? '' : 's' }} will be permanently discarded from the working tree.
-                </div>
-              </div>
-            </div>
-
-            <!-- Footer -->
-            <div class="flex items-center justify-end gap-3 py-4 px-6 bg-(--color-bg-surface) border-t border-(--color-border-mid)">
-              <button class="inline-flex items-center justify-center gap-1.5 py-2 px-5 rounded-(--radius-md) text-[13px] font-semibold cursor-pointer border border-(--color-border-mid) bg-transparent text-[var(--color-text-secondary)] transition-all duration-[120ms] ease-in-out hover:bg-(--color-state-hover) hover:text-[var(--color-text-primary)] hover:border-(--color-border-bright) active:scale-[0.97]" @click="showDiscardAllModal = false">
+        <div v-if="showDiscardAllModal" class="fixed inset-0 z-[9999] bg-[color-mix(in_srgb,var(--color-bg-base)_65%,transparent)] flex items-center justify-center" @click.self="showDiscardAllModal = false">
+          <div class="relative w-[360px] p-6 bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)]">
+            <button class="absolute top-3 right-3 grid place-items-center w-[26px] h-[26px] border-none rounded-(--radius-sm) bg-transparent text-(--color-text-tertiary) cursor-pointer transition-[background] duration-[120ms] ease-[ease] hover:bg-(--color-state-hover)" @click="showDiscardAllModal = false">
+              <X :size="14" :stroke-width="1.8" />
+            </button>
+            <h2 class="text-[15px] font-semibold text-(--color-text-primary) mb-[10px]">
+              Discard changes
+            </h2>
+            <p class="text-[13px] text-(--color-text-secondary) leading-[1.6] mb-5">
+              {{ discardAllCount }} unstaged change{{ discardAllCount === 1 ? '' : 's' }} will be permanently discarded from the working tree. This cannot be undone.
+            </p>
+            <div class="flex justify-end gap-2">
+              <button class="h-8 px-4 rounded-(--radius-sm) border border-(--color-border-mid) bg-(--color-bg-card) text-[13px] font-medium text-(--color-text-secondary) cursor-pointer transition-[background,color] duration-[120ms] ease-[ease] hover:bg-(--color-state-hover) hover:text-(--color-text-primary)" @click="showDiscardAllModal = false">
                 Cancel
               </button>
-              <button class="inline-flex items-center justify-center gap-2 py-2 px-6 rounded-(--radius-md) text-[13px] font-bold cursor-pointer border border-transparent bg-[var(--color-danger)] text-[var(--color-text-primary)] transition-all duration-[120ms] ease-in-out hover:not(:disabled):opacity-90 disabled:opacity-[0.5] disabled:cursor-not-allowed active:scale-[0.97]" :disabled="!!busyAction" @click="discardAllConfirmed">
+              <button class="h-8 px-4 rounded-(--radius-sm) border border-transparent bg-(--color-danger) text-[13px] font-medium text-(--color-text-primary) cursor-pointer transition-[background,color] duration-[120ms] ease-[ease] hover:not(:disabled):opacity-90 disabled:opacity-50 disabled:cursor-not-allowed" :disabled="!!busyAction" @click="discardAllConfirmed">
                 Discard
               </button>
             </div>
