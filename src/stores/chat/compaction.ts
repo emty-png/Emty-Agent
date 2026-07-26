@@ -4,7 +4,7 @@ import type { LanguageModel } from '@/utils/ai'
 import { generateText } from 'ai'
 import { dbInsertMessage } from '@/db/database'
 import { buildLanguageModel, buildProviderOptions } from '@/utils/ai'
-import { SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from './constants'
+import { BG_TASK_COMPLETED_DIVIDER, SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from './constants'
 import { makeId } from './utils'
 
 const DEFAULT_RECENT_MESSAGES_TO_KEEP = 8
@@ -102,7 +102,7 @@ function renderMessageForCompaction(message: Message): string {
   const prefix = message.role === 'user' ? 'User' : 'Assistant'
 
   const content = message.content.trim()
-  if (content && content !== SESSION_COMPACTED_DIVIDER && content !== SESSION_COMPACTING_DIVIDER) {
+  if (content && content !== SESSION_COMPACTED_DIVIDER && content !== SESSION_COMPACTING_DIVIDER && content !== BG_TASK_COMPLETED_DIVIDER) {
     blocks.push(`${prefix}:\n${truncateText(message.content, MAX_MESSAGE_TEXT_CHARS)}`)
   }
 
@@ -158,7 +158,7 @@ function resolveActiveModel(
   tab: ChatTab,
   settings: SettingsSnapshot,
 ): ActiveModelSnapshot | null {
-  const resolvedUid = tab.modelUid ?? settings.activeModelUid
+  const resolvedUid = tab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid
   return settings.enabledModels.find(model => model.uid === resolvedUid) ?? settings.activeModel
 }
 
@@ -306,7 +306,7 @@ export function shouldCompactSession(tab: ChatTab, thresholdPercent: number): bo
 function isCompactionDivider(message: Message): boolean {
   const content = message.content.trim()
   return message.role === 'assistant'
-    && (content === SESSION_COMPACTED_DIVIDER || content === SESSION_COMPACTING_DIVIDER)
+    && (content === SESSION_COMPACTED_DIVIDER || content === SESSION_COMPACTING_DIVIDER || content === BG_TASK_COMPLETED_DIVIDER)
 }
 
 function findLiveAssistantIndex(tab: ChatTab): number {

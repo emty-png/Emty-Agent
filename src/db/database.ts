@@ -185,6 +185,9 @@ const MIGRATIONS: string[] = [
   // v12 — design tab persistence
   'ALTER TABLE conversations ADD COLUMN is_design_tab INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE conversations ADD COLUMN designs TEXT DEFAULT NULL',
+
+  // v13 — bg task notification flag on messages
+  'ALTER TABLE messages ADD COLUMN is_bg_notification INTEGER NOT NULL DEFAULT 0',
 ]
 
 // ── column existence helper ───────────────────────────────────────────────────
@@ -243,6 +246,7 @@ async function migrate(instance: Database): Promise<void> {
     { name: 'elapsed_sec', definition: 'INTEGER' },
     { name: 'model_uid', definition: 'TEXT' },
     { name: 'model_name', definition: 'TEXT' },
+    { name: 'is_bg_notification', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ])
 
   await ensureColumns(instance, 'conversations', [
@@ -312,6 +316,8 @@ export interface MessageRow {
   elapsed_sec?: number | null
   model_uid?: string | null
   model_name?: string | null
+  /** 1 = injected by the bg-task notification system; hidden in the UI. */
+  is_bg_notification?: number
 }
 
 export interface CheckpointRow {
@@ -567,8 +573,8 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
   await d.execute(
     `INSERT INTO messages
         (id, conversation_id, role, content, created_at,
-         mention_context, tool_events, parts, attachments, cache_stats, is_complete, elapsed_sec, model_uid, model_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         mention_context, tool_events, parts, attachments, cache_stats, is_complete, elapsed_sec, model_uid, model_name, is_bg_notification)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       msg.id,
       msg.conversation_id,
@@ -584,6 +590,7 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
       msg.elapsed_sec ?? null,
       msg.model_uid ?? null,
       msg.model_name ?? null,
+      msg.is_bg_notification ?? 0,
     ],
   )
 }

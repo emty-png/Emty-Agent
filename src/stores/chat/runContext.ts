@@ -27,7 +27,7 @@ export interface SettingsForContext {
   contextCaching: { enabled: boolean; anthropicTtl: '5m' | '1h'; openaiPromptCacheRetention: 'in_memory' | '24h'; googleCachedContent: string }
   autoContext: { enabled: boolean }
   memory: { enabled: boolean }
-  agent: { permissionMode: 'ask' | 'auto' | 'yolo'; gitCoAuthor: boolean; subagents?: { isolation: 'inherit' | 'worktree' } }
+  agent: { permissionMode: 'ask' | 'auto' | 'yolo'; gitCoAuthor: boolean; subagents?: { isolation: 'inherit' | 'worktree' }; defaultModelUid?: string | null }
   disabledSkillIds: string[]
 }
 
@@ -104,7 +104,7 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
   const workspaceSnapshot = await inspectWorkspace(requestedWorkspacePath)
   const effectiveProjectPath = workspaceSnapshot?.path ?? requestedWorkspacePath ?? null
 
-  const resolvedModelUid = modelOverride ?? tab.modelUid ?? settings.activeModelUid
+  const resolvedModelUid = modelOverride ?? tab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid
   const activeModel = (settings.enabledModels.find(m => m.uid === resolvedModelUid) ?? settings.activeModel) as ModelConfig | null
   if (!activeModel)
     throw new Error('NO_MODEL')

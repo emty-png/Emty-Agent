@@ -231,7 +231,7 @@ function resolveActiveModel(
   tab: ChatTab,
   settings: ReturnType<typeof useSettingsStore>,
 ): DiscoveredModel | null {
-  const resolvedModelUid = tab.modelUid ?? settings.activeModelUid
+  const resolvedModelUid = tab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid
   return settings.enabledModels.find(m => m.uid === resolvedModelUid) ?? settings.activeModel
 }
 

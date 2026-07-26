@@ -1,7 +1,7 @@
 import type { JSONValue, ModelMessage, ToolResultPart } from 'ai'
 import type { ChatTab, Message, ToolEvent } from './types'
 import { isImageMime } from './attachment-types'
-import { SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from './constants'
+import { BG_TASK_COMPLETED_DIVIDER, SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from './constants'
 
 export function makeId(): string {
   return Math.random().toString(36).slice(2, 9)
@@ -241,11 +241,21 @@ export function toModelMessages(
   const lastMessageIndex = messages.length - 1
   const result: ModelMessage[] = []
 
+  // Find the last user message so we only send image attachments for that turn.
+  // Historical user messages keep text/file attachments but drop images to save context.
+  let lastUserMessageIndex = -1
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]!.role === 'user') {
+      lastUserMessageIndex = i
+      break
+    }
+  }
+
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i]!
 
     const compactDivider = m.content.trim()
-    if (m.role === 'assistant' && (compactDivider === SESSION_COMPACTED_DIVIDER || compactDivider === SESSION_COMPACTING_DIVIDER))
+    if (m.role === 'assistant' && (compactDivider === SESSION_COMPACTED_DIVIDER || compactDivider === SESSION_COMPACTING_DIVIDER || compactDivider === BG_TASK_COMPLETED_DIVIDER))
       continue
 
     // Skip completely empty messages unless they have tool data or an error note.
@@ -272,7 +282,12 @@ export function toModelMessages(
     // ── User messages ─────────────────────────────────────────────────
     if (m.role === 'user') {
       if (m.attachments?.length) {
-        const imageAttachments = m.attachments.filter(a => isImageMime(a.mimeType))
+        // Only send image attachments for the most recent user message.
+        // Older messages keep file/text attachments but drop images to save context.
+        const isLatestUserMessage = i === lastUserMessageIndex
+        const imageAttachments = isLatestUserMessage
+          ? m.attachments.filter(a => isImageMime(a.mimeType))
+          : []
         const fileAttachments = m.attachments.filter(a => !isImageMime(a.mimeType))
 
         // Build multimodal content parts

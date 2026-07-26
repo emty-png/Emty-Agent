@@ -62,6 +62,13 @@ interface SettingsSnapshot {
     thinkingEffort: 'low' | 'medium' | 'high'
     sdkType?: 'openai' | 'anthropic' | 'google' | null
   } | null
+  subagentActiveModel: {
+    id: string
+    providerId: string
+    supportsThinking: boolean
+    thinkingEffort: 'low' | 'medium' | 'high'
+    sdkType?: 'openai' | 'anthropic' | 'google' | null
+  } | null
   openai: { apiKey: string; baseURL?: string; organizationId?: string }
   anthropic: { apiKey: string; baseURL?: string }
   google: { apiKey: string }
@@ -125,7 +132,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   // Each sub-agent gets its own file read registry — no cross-tab dedup interference
   const readRegistry: FileReadRegistry = new Map()
 
-  const activeModel = settings.activeModel
+  const activeModel = settings.subagentActiveModel ?? settings.activeModel
   if (!activeModel) {
     subTab.messages.push({
       id: makeId(),

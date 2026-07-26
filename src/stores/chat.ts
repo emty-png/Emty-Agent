@@ -17,6 +17,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useTerminalStore } from '@/stores/terminal'
 import { emitStatusChange } from './chat/agentLifecycle'
 import { STATUS_IDLE, statusWaitingPermission } from './chat/agentStatus'
+import { cleanupBgTaskNotifications, handleBgTaskCompletion, initBgTaskNotifications } from './chat/bgTaskNotifications'
 import { compactConversationSession, persistCompactionMessages } from './chat/compaction'
 import { SESSION_COMPACTING_DIVIDER } from './chat/constants'
 import { createSendMessage } from './chat/sendMessage'
@@ -168,6 +169,7 @@ export const useChatStore = defineStore('chat', () => {
     import('../utils/tools/shell').then(({ stopTasksForTab }) => {
       stopTasksForTab(id)
     }).catch(() => {})
+    cleanupBgTaskNotifications(id)
     if (tab?.activeDesignProject?.path) {
       const projectPath = tab.activeDesignProject.path
       import('../utils/tools/designProject').then(({ stopDevServer }) => {
@@ -312,6 +314,7 @@ export const useChatStore = defineStore('chat', () => {
     import('../utils/tools/shell').then(({ stopTasksForTab }) => {
       stopTasksForTab(id)
     }).catch(() => {})
+    cleanupBgTaskNotifications(id)
     const tab = tabs.value.find(t => t.id === id)
     if (tab) {
       if (tab.agentStatus.type !== 'idle' && tab.agentStatus.type !== 'error')
@@ -568,6 +571,16 @@ export const useChatStore = defineStore('chat', () => {
     const next = tab.messageQueue.shift()!
     void sendMessage(next.text, (tab.mode ?? 'build') as ChatMode, next.attachments.length > 0 ? next.attachments : undefined)
   }
+
+  // ── Background task completion notifications ─────────────────────────────
+  initBgTaskNotifications({
+    getTabs: () => tabs.value,
+    getActiveId: () => activeId.value,
+    sendDirectMessage: (text: string, isBgNotification?: boolean) => sendMessage(text, undefined, undefined, undefined, isBgNotification),
+  })
+  import('@/utils/tools/shell').then(({ onBackgroundTaskComplete }) => {
+    onBackgroundTaskComplete(handleBgTaskCompletion)
+  }).catch(() => {})
 
   // ── Rename ────────────────────────────────────────────────────────────────
 

@@ -190,6 +190,8 @@ export interface AgentConfig {
   subagents: AgentSubagentConfig
   sessionCompaction: AgentSessionCompactionConfig
   gitCoAuthor: boolean
+  defaultModelUid?: string | null
+  subagentModelUid?: string | null
 }
 
 export interface ConfiguredSkill extends SkillMetadata {

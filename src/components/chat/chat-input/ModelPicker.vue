@@ -46,7 +46,7 @@ const groupedModels = computed(() => {
 })
 
 // ── active model ──────────────────────────────────────────────────────────────
-const activeModelUid = computed(() => chat.activeTab.modelUid ?? s.activeModelUid)
+const activeModelUid = computed(() => chat.activeTab.modelUid ?? s.agent.defaultModelUid ?? s.activeModelUid)
 const activeModel = computed(
   () => enabledModels.value.find(m => m.uid === activeModelUid.value)
     ?? enabledModels.value[0]

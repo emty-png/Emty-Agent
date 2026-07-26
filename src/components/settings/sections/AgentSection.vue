@@ -8,7 +8,7 @@ import { useSettingsStore } from '@/stores/settings'
 const settingsStore = useSettingsStore()
 const chatStore = useChatStore()
 
-const { agent, contextCaching, autoContext, memory } = storeToRefs(settingsStore)
+const { agent, contextCaching, autoContext, memory, enabledModels } = storeToRefs(settingsStore)
 const { sessionToolApprovals } = storeToRefs(chatStore)
 
 type PermissionMode = 'ask' | 'auto' | 'yolo'
@@ -153,6 +153,45 @@ function clearSessionApprovals() {
             @click="memory.enabled = !memory.enabled"
           ><span class="model-toggle-thumb" /></button>
         </label>
+      </div>
+    </div>
+
+    <!-- Model Assignment Card -->
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <h3 class="settings-card-title">
+          Model Assignment
+        </h3>
+      </div>
+      <div class="settings-list">
+        <div class="settings-item settings-item--field">
+          <div class="settings-item-content">
+            <span class="settings-item-label">Default model</span>
+            <span class="settings-item-desc">Model used for new conversations. Per-tab overrides still apply.</span>
+          </div>
+          <select v-model="agent.defaultModelUid" class="settings-select">
+            <option :value="null">
+              Global default
+            </option>
+            <option v-for="m in enabledModels" :key="m.uid" :value="m.uid">
+              {{ m.name }} — {{ m.providerName }}
+            </option>
+          </select>
+        </div>
+        <div class="settings-item settings-item--field">
+          <div class="settings-item-content">
+            <span class="settings-item-label">Sub-agent model</span>
+            <span class="settings-item-desc">Model used by sub-agents. Defaults to the parent's model.</span>
+          </div>
+          <select v-model="agent.subagentModelUid" class="settings-select">
+            <option :value="null">
+              Same as parent
+            </option>
+            <option v-for="m in enabledModels" :key="m.uid" :value="m.uid">
+              {{ m.name }} — {{ m.providerName }}
+            </option>
+          </select>
+        </div>
       </div>
     </div>
 

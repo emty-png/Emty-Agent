@@ -104,7 +104,7 @@ export function createSendMessage(
   requestToolPermission: (tabId: string, request: Parameters<RequestToolPermission>[0]) => Promise<ToolPermissionDecision>,
   drainQueue: () => void,
 ) {
-  async function sendMessage(content: string, _mode: ChatMode = 'build', attachments?: import('./types').Attachment[], modelOverride?: string | null): Promise<void> {
+  async function sendMessage(content: string, _mode: ChatMode = 'build', attachments?: import('./types').Attachment[], modelOverride?: string | null, isBgNotification?: boolean): Promise<void> {
     const tab = activeTab.value
     if ((!content.trim() && (!attachments || attachments.length === 0)) || tab.agentStatus.type !== 'idle')
       return
@@ -155,7 +155,7 @@ export function createSendMessage(
     const effectiveProjectPath = workspaceSnapshot?.path ?? requestedWorkspacePath ?? null
 
     // ── Resolve model ─────────────────────────────────────────────────────
-    const resolvedModelUid = modelOverride ?? tab.modelUid ?? settings.activeModelUid
+    const resolvedModelUid = modelOverride ?? tab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid
     const activeModel = settings.enabledModels.find((m: { uid: string }) => m.uid === resolvedModelUid) ?? settings.activeModel
 
     if (!activeModel) {
@@ -196,7 +196,9 @@ export function createSendMessage(
     // ── Checkpoint ────────────────────────────────────────────────────────
     const { useCheckpointStore } = await import('@/stores/checkpoints')
     const checkpointStore = useCheckpointStore()
-    await checkpointStore.createCheckpoint(tab.id, tab.conversationId, tab.messages.length, text)
+    if (!isBgNotification) {
+      await checkpointStore.createCheckpoint(tab.id, tab.conversationId, tab.messages.length, text)
+    }
 
     // ── Create/update conversation ────────────────────────────────────────
     if (!tab.conversationId) {
@@ -255,6 +257,7 @@ export function createSendMessage(
       role: 'user',
       content: text,
       timestamp: new Date(now),
+      ...(isBgNotification ? { isBgNotification: true } : {}),
       ...(skillId ? { skillId } : {}),
       ...(attachments?.length ? { attachments } : {}),
       ...(mentionContext.trim() ? { mentionContext } : {}),
@@ -270,6 +273,7 @@ export function createSendMessage(
       ...(skillId ? { skill_id: skillId } : {}),
       ...(mentionContext.trim() ? { mention_context: mentionContext } : {}),
       ...(attachments?.length ? { attachments: JSON.stringify(attachments) } : {}),
+      ...(isBgNotification ? { is_bg_notification: 1 } : {}),
     })
     await dbTouchConversation(tab.conversationId!)
 

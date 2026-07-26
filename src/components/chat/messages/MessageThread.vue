@@ -5,7 +5,7 @@ import type { AgentStatus } from '@/stores/chat/types'
 import { computed } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { isStreamingStatus } from '@/stores/chat/agentStatus'
-import { SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from '@/stores/chat/constants'
+import { BG_TASK_COMPLETED_DIVIDER, SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from '@/stores/chat/constants'
 import { useCheckpointStore } from '@/stores/checkpoints'
 import AssistantMessage from './AssistantMessage.vue'
 import RestorePoint from './RestorePoint.vue'
@@ -35,13 +35,16 @@ function checkpointAtIndex(msgIndex: number) {
 
 function isSessionDivider(message: Message) {
   const content = message.content.trim()
-  return message.role === 'assistant' && (content === SESSION_COMPACTED_DIVIDER || content === SESSION_COMPACTING_DIVIDER)
+  return message.role === 'assistant' && (content === SESSION_COMPACTED_DIVIDER || content === SESSION_COMPACTING_DIVIDER || content === BG_TASK_COMPLETED_DIVIDER)
 }
 
 function sessionDividerLabel(message: Message) {
-  return message.content.trim() === SESSION_COMPACTING_DIVIDER
-    ? 'Session Compacting...'
-    : 'Session Compacted'
+  const content = message.content.trim()
+  if (content === SESSION_COMPACTING_DIVIDER)
+    return 'Session Compacting...'
+  if (content === BG_TASK_COMPLETED_DIVIDER)
+    return 'BG Task Completed'
+  return 'Session Compacted'
 }
 
 async function handleRestore(checkpointId: string) {
@@ -68,7 +71,7 @@ const sessionDividerTextClasses = 'text-[11px] font-semibold tracking-[0.04em] u
   <TransitionGroup name="msg" :css="!isStreaming">
     <template v-for="(msg, msgIdx) in displayMessages" :key="msg.id">
       <RestorePoint
-        v-if="!isSubAgent && msg.role === 'user' && checkpointAtIndex(msgIdx)"
+        v-if="!isSubAgent && msg.role === 'user' && !msg.isBgNotification && checkpointAtIndex(msgIdx)"
         :key="`rp-${msg.id}`"
         :checkpoint="checkpointAtIndex(msgIdx)!"
         :disabled="isStreaming"
@@ -84,13 +87,13 @@ const sessionDividerTextClasses = 'text-[11px] font-semibold tracking-[0.04em] u
       </div>
 
       <UserMessage
-        v-else-if="msg.role === 'user'"
+        v-else-if="msg.role === 'user' && !msg.isBgNotification"
         :msg="msg"
         @preview-attachment="emit('previewAttachment', $event)"
       />
 
       <AssistantMessage
-        v-else
+        v-else-if="!msg.isBgNotification"
         :msg="msg"
         :agent-status="msg.id === messages.at(-1)?.id && msg.elapsedSec == null ? props.agentStatus : { type: 'idle' }"
       />

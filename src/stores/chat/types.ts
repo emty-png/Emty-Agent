@@ -113,6 +113,11 @@ export interface Message {
   elapsedSec?: number | null
   modelUid?: string | null
   modelName?: string | null
+  /**
+   * Internal flag: message was injected by the bg-task notification system.
+   *  Sent to the AI for context but never rendered as a user bubble in the UI.
+   */
+  isBgNotification?: boolean
 }
 
 // ── Draft / estimator ─────────────────────────────────────────────────────────

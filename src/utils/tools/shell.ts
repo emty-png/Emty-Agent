@@ -121,6 +121,30 @@ let resolvedPlatform: string | null = null
 
 let cwdRef: string = ''
 
+// ── Background task completion notification ────────────────────────────────
+
+export interface BackgroundTaskCompletionEvent {
+  taskId: string
+  tabId: string | null
+  kind: CommandTaskKind
+  command: string
+  status: CommandTaskStatus
+  exitCode: number | null
+  stdout: string
+  stderr: string
+  durationMs: number
+  startedAt: number
+  finishedAt: number
+}
+
+let bgTaskCompletionListener: ((event: BackgroundTaskCompletionEvent) => void) | null = null
+
+/** Register a single listener for background task completions. Returns an unsubscribe function. */
+export function onBackgroundTaskComplete(listener: (event: BackgroundTaskCompletionEvent) => void): () => void {
+  bgTaskCompletionListener = listener
+  return () => { bgTaskCompletionListener = null }
+}
+
 function getExecutionToolCallId(execOptions: unknown): string | undefined {
   return typeof (execOptions as { toolCallId?: unknown })?.toolCallId === 'string'
     ? (execOptions as { toolCallId: string }).toolCallId
@@ -1167,6 +1191,29 @@ function startTrackedSequence(options: {
   })
 
   taskPromises.set(task.id, done)
+
+  // ── Fire completion event for background tasks ──────────────────────────
+  if (options.mode === 'background' && options.tabId) {
+    const tabIdForListener = options.tabId
+    done.then(finishedTask => {
+      if (!bgTaskCompletionListener)
+        return
+      bgTaskCompletionListener({
+        taskId: finishedTask.id,
+        tabId: tabIdForListener,
+        kind: finishedTask.kind,
+        command: finishedTask.summary,
+        status: finishedTask.status,
+        exitCode: finishedTask.exitCode,
+        stdout: finishedTask.stdout,
+        stderr: finishedTask.stderr,
+        durationMs: finishedTask.finishedAt ? finishedTask.finishedAt - finishedTask.startedAt : 0,
+        startedAt: finishedTask.startedAt,
+        finishedAt: finishedTask.finishedAt ?? Date.now(),
+      })
+    }).catch(() => {})
+  }
+
   return { task, done, spawnDone }
 }
 

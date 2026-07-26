@@ -69,7 +69,7 @@ const estimateError = computed(() => estimatorState.value.error)
 const estimating = computed(() => estimatorState.value.estimating)
 
 const hasModel = computed(
-  () => !!(chat.activeTab.modelUid ?? settings.activeModelUid ?? settings.activeModel?.uid),
+  () => !!(chat.activeTab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid ?? settings.activeModel?.uid),
 )
 
 // --- Computed: UI Presentation ---
@@ -157,7 +157,7 @@ const estimationDependencies = computed(() => ({
   mode: 'build',
   attachmentsSig: props.attachments.map(a => `${a.id}:${a.size}`).join('|'),
   tabId: chat.activeTab.id,
-  modelUid: chat.activeTab.modelUid ?? settings.activeModelUid,
+  modelUid: chat.activeTab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid,
   enabledModels: settings.enabledModels,
   settings: [
     settings.contextCaching,

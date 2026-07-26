@@ -143,6 +143,8 @@ export const useSettingsStore = defineStore(
         showManualButton: true,
       },
       gitCoAuthor: true,
+      defaultModelUid: null,
+      subagentModelUid: null,
     })
     const completedOnboarding = ref(false)
     const disabledToolIds = ref<string[]>([])
@@ -169,6 +171,14 @@ export const useSettingsStore = defineStore(
     const activeModel = computed(
       () =>
         discoveredModels.value.find(m => m.uid === activeModelUid.value)
+        ?? enabledModels.value[0]
+        ?? null,
+    )
+
+    const subagentActiveModel = computed(
+      () =>
+        discoveredModels.value.find(m => m.uid === agent.value.subagentModelUid)
+        ?? discoveredModels.value.find(m => m.uid === activeModelUid.value)
         ?? enabledModels.value[0]
         ?? null,
     )
@@ -1143,6 +1153,8 @@ export const useSettingsStore = defineStore(
           showManualButton: agent.value.sessionCompaction?.showManualButton !== false,
         },
         gitCoAuthor: agent.value.gitCoAuthor !== false,
+        defaultModelUid: agent.value.defaultModelUid ?? null,
+        subagentModelUid: agent.value.subagentModelUid ?? null,
       }
     }
 
@@ -1233,6 +1245,7 @@ export const useSettingsStore = defineStore(
       discoveredModels,
       activeModelUid,
       activeModel,
+      subagentActiveModel,
       enabledModels,
       toggleModel,
       setModelThinking,

@@ -163,6 +163,7 @@ export const useHistoryStore = defineStore('history', () => {
           ...(r.model_uid ? { modelUid: r.model_uid } : {}),
           ...(r.model_name ? { modelName: r.model_name } : {}),
           ...(r.is_complete === 0 ? { error: 'Interrupted during generation.' } : {}),
+          ...(r.is_bg_notification === 1 ? { isBgNotification: true } : {}),
         }
       }),
     })
