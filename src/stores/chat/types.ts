@@ -171,6 +171,7 @@ export interface ChatTab {
   draft: ChatDraftState
   estimator: ChatEstimatorState
   isCompacting?: boolean
+  compactionStats?: { lastSavingsPct: number; lastCompactedAt: number }
   pendingQuestions?: PendingBatch | null
   pendingPermissions: PendingToolPermission[]
   /** Per-tab file read registry — no cross-tab dedup interference. */

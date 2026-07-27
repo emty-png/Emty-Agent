@@ -136,6 +136,13 @@ onMounted(() => {
     scrollback: 5000,
   })
 
+  xterm.onSelectionChange(() => {
+    const selection = xterm?.getSelection()
+    if (selection) {
+      navigator.clipboard.writeText(selection).catch(() => {})
+    }
+  })
+
   fitAddon = new FitAddon()
   xterm.loadAddon(fitAddon)
   xterm.open(hostEl!)
@@ -263,10 +270,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative w-full h-full bg-[var(--color-bg-base,#1a1a1a)] overflow-hidden">
+  <div class="relative w-full h-full bg-[var(--color-bg-base,#1a1a1a)] overflow-hidden pt-3 px-4 pb-4">
     <div
       :ref="(el) => setHostEl(el as HTMLElement | null)"
-      class="absolute inset-0 pt-3 px-4 pb-4 overflow-hidden outline-none bg-[var(--color-bg-base,#1a1a1a)] text-[var(--color-text-primary,#e5e5e5)]"
+      class="w-full h-full overflow-hidden outline-none bg-transparent text-[var(--color-text-primary,#e5e5e5)]"
       tabindex="0"
       @mousedown="focusTerminal"
     />

@@ -72,7 +72,7 @@ onUnmounted(() => {
 const modelBtnClasses = computed(() => {
   const shared = [
     'flex items-center gap-1.5 h-[30px] pl-2.5 pr-2 border rounded-(--radius-md)',
-    'bg-transparent cursor-pointer max-w-[260px]',
+    'cursor-pointer max-w-[260px]',
     '[transition:background_120ms_cubic-bezier(0.4,0,0.2,1),border-color_120ms_cubic-bezier(0.4,0,0.2,1),border-radius_150ms_cubic-bezier(0.16,1,0.3,1)]',
     'active:scale-[0.97] active:duration-[80ms]',
     'hover:bg-(--color-state-hover) hover:border-(--color-border-mid) hover:rounded-(--radius-lg)',
@@ -80,7 +80,7 @@ const modelBtnClasses = computed(() => {
 
   return pickerOpen.value
     ? `${shared} bg-(--color-state-hover) border-(--color-border-mid) rounded-(--radius-lg)`
-    : `${shared} border-transparent`
+    : `${shared} bg-transparent border-transparent`
 })
 
 const chevronClasses = computed(() => {

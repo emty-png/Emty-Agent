@@ -30,6 +30,7 @@ import { runSubAgentStream } from './subagent'
 import { toolRegistry } from './toolRegistry'
 import { makeId } from './utils'
 import { resolveTabWorkspacePath } from './workspace'
+import { shouldCompactSession, compactConversationSession, persistCompactionMessages } from './compaction'
 
 // ── Register tool profiles once on first import ───────────────────────────────
 
@@ -245,6 +246,27 @@ export function createSendMessage(
       })
       setStatus(tab, STATUS_IDLE)
       return
+    }
+
+    // ── Preflight compaction ──────────────────────────────────────────────
+    if (shouldCompactSession(tab, settings.agent.sessionCompaction?.thresholdPercent ?? 90)) {
+      try {
+        setStatus(tab, { type: 'compacting' })
+        await compactConversationSession({
+          tab,
+          settings: settings as any,
+          source: 'auto',
+          onPersist: async payload => {
+            if (tab.conversationId) {
+              await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+            }
+          }
+        })
+        setStatus(tab, STATUS_INITIALIZING)
+      } catch (err) {
+        console.error('[sendMessage] Preflight compaction failed:', err)
+        setStatus(tab, STATUS_INITIALIZING)
+      }
     }
 
     // ── User message ──────────────────────────────────────────────────────
@@ -681,6 +703,24 @@ export function createSendMessage(
       if (!tab.subAgent && settings.sound.completionEnabled) {
         import('@/utils/sounds').then(({ playCompletionSound }) => playCompletionSound(settings.sound.volume)).catch(() => {})
       }
+      // ── In-loop compaction ────────────────────────────────────────────────
+      if (shouldCompactSession(tab, settings.agent.sessionCompaction?.thresholdPercent ?? 90)) {
+        try {
+          await compactConversationSession({
+            tab,
+            settings: settings as any,
+            source: 'auto',
+            onPersist: async payload => {
+              if (tab.conversationId) {
+                await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+              }
+            }
+          })
+        } catch (err) {
+          console.error('[sendMessage] In-loop compaction failed:', err)
+        }
+      }
+
       // ── Auto-drain queue ──────────────────────────────────────────────────
       drainQueue()
     }
@@ -814,6 +854,27 @@ export function createSendMessage(
       }
       catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
+        
+        // ── Overflow compaction ───────────────────────────────────────────────
+        if (APICallError.isInstance(err) && err.statusCode === 413) {
+          try {
+            setStatus(tab, { type: 'compacting' })
+            await compactConversationSession({
+              tab,
+              settings: settings as any,
+              source: 'auto',
+              onPersist: async payload => {
+                if (tab.conversationId) {
+                  await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+                }
+              }
+            })
+            err.message = 'Context was too large. Auto-compacted history. Please retry your request.'
+          } catch (cErr) {
+            console.error('[sendMessage] Overflow compaction failed:', cErr)
+          }
+          setStatus(tab, STATUS_INITIALIZING)
+        }
 
         if (!isNetworkError(err) || ac.signal.aborted) {
           // Non-retryable or user stopped: call onError if not already called
