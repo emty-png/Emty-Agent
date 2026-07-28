@@ -243,7 +243,7 @@ const bottomBtnClass = 'inline-flex items-center gap-[5px] py-[5px] px-[12px] ro
 </script>
 
 <template>
-  <div>
+  <div class="flex flex-col h-full overflow-hidden">
     <div class="flex items-center justify-between py-2 px-2.5 gap-2 shrink-0 border-b border-[var(--color-border-subtle)] bg-[color-mix(in_srgb,var(--color-bg-base)_80%,transparent)]">
       <div class="flex items-center bg-[var(--color-bg-surface)] border border-[var(--color-border-subtle)] rounded-md p-0.5 gap-0.5">
         <button
