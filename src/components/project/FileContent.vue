@@ -4,7 +4,7 @@ import { openPath } from '@tauri-apps/plugin-opener'
 import { Code, ExternalLink, File, FileText, FileWarning, Loader, Pencil, Save, WrapText, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, ref, watch } from 'vue'
-import MarkdownMessage from '@/components/chat/messages/MarkdownMessage.vue'
+import MarkdownMessage from '@/components/chat/messages/markdown/AssistantMarkdown.vue'
 import { useFileTabsStore } from '@/stores/fileTabs'
 import { getHighlighter, langFromPath } from '@/utils/highlighter'
 

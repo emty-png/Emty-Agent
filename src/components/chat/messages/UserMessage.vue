@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { Message } from '@/stores/chat'
-import type { Attachment } from '@/stores/chat/attachment-types'
+import type { Attachment } from '@/stores/chat/core/attachmentTypes'
 import { Copy, FileText } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { formatFileSize } from '@/stores/chat/attachment-types'
+import { formatFileSize } from '@/stores/chat/core/attachmentTypes'
 
 const props = defineProps<{
   msg: Message

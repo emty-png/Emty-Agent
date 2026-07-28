@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Minus, Plus } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
-import { useZoom } from '@/composables/useZoom'
+import { useZoom } from '@/composables/ui/useZoom'
 
 const { zoomLevel, setZoom } = useZoom()
 

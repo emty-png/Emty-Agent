@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { Attachment } from '@/stores/chat/attachment-types'
+import type { Attachment } from '@/stores/chat/core/attachmentTypes'
 import { X } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted } from 'vue'
-import { formatFileSize, isImageMime } from '@/stores/chat/attachment-types'
+import { formatFileSize, isImageMime } from '@/stores/chat/core/attachmentTypes'
 
 const props = defineProps<{
   attachment: Attachment

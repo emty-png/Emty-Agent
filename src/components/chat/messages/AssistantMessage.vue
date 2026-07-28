@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import type { Message, ToolEvent } from '@/stores/chat'
-import type { AgentStatus } from '@/stores/chat/types'
+import type { AgentStatus } from '@/stores/chat/core/types'
 import { AlertTriangle, Check, Copy } from 'lucide-vue-next'
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
-import { isStreamingStatus } from '@/stores/chat/agentStatus'
-import ActionGroupBlock from './ActionGroupBlock.vue'
-import FileEditChips from './FileEditChips.vue'
-import MarkdownMessage from './MarkdownMessage.vue'
-import ThinkingBlock from './ThinkingBlock.vue'
-import ToolCallBadge from './ToolCallBadge.vue'
+import { isStreamingStatus } from '@/stores/chat/agent/status'
+import ActionGroupBlock from './block/ActionBlock.vue'
+import FileEditChips from './block/FileDiffBlock.vue'
+import ThinkingBlock from './block/ThinkingBlock.vue'
+import ToolCallBlock from './block/ToolCallBlock.vue'
+import MarkdownMessage from './markdown/AssistantMarkdown.vue'
 import TypingIndicator from './TypingIndicator.vue'
 
 const props = defineProps<{
@@ -379,7 +379,7 @@ const finishedTime = computed(() => {
     <!-- ── 2. Rest Block ── -->
     <template v-for="group in layout.rest" :key="group.key">
       <div v-if="group.type === 'tools'" class="flex w-full flex-col gap-2.5">
-        <ToolCallBadge v-for="event in group.events" :key="event.id" :event="event" />
+        <ToolCallBlock v-for="event in group.events" :key="event.id" :event="event" />
       </div>
 
       <MarkdownMessage

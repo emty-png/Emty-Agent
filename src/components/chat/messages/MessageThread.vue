@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import type { Message } from '@/stores/chat'
-import type { Attachment } from '@/stores/chat/attachment-types'
-import type { AgentStatus } from '@/stores/chat/types'
+import type { Attachment } from '@/stores/chat/core/attachmentTypes'
+import type { AgentStatus } from '@/stores/chat/core/types'
 import { computed } from 'vue'
 import { useChatStore } from '@/stores/chat'
-import { isStreamingStatus } from '@/stores/chat/agentStatus'
-import { BG_TASK_COMPLETED_DIVIDER, SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from '@/stores/chat/constants'
+import { isStreamingStatus } from '@/stores/chat/agent/status'
+import { BG_TASK_COMPLETED_DIVIDER, SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from '@/stores/chat/core/constants'
 import { useCheckpointStore } from '@/stores/checkpoints'
+import RestorePointBanner from '../banners/RestorePointBanner.vue'
 import AssistantMessage from './AssistantMessage.vue'
-import RestorePoint from './RestorePoint.vue'
 import UserMessage from './UserMessage.vue'
 
 const props = defineProps<{
@@ -70,7 +70,7 @@ const sessionDividerTextClasses = 'text-[11px] font-semibold tracking-[0.04em] u
 <template>
   <TransitionGroup name="msg" :css="!isStreaming">
     <template v-for="(msg, msgIdx) in displayMessages" :key="msg.id">
-      <RestorePoint
+      <RestorePointBanner
         v-if="!isSubAgent && msg.role === 'user' && !msg.isBgNotification && checkpointAtIndex(msgIdx)"
         :key="`rp-${msg.id}`"
         :checkpoint="checkpointAtIndex(msgIdx)!"

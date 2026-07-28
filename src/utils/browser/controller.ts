@@ -4,7 +4,7 @@ import { writeFile } from '@tauri-apps/plugin-fs'
 import { nextTick } from 'vue'
 import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
-import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
+import { resolveTabWorkspacePath } from '@/stores/chat/utils/workspace'
 import { useProjectStore } from '@/stores/project'
 import {
   closeSurface,

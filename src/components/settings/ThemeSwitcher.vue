@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { getIllustrationPreview, ILLUSTRATION_IDS, ILLUSTRATION_NAMES } from '@/components/chat/layout/useIllustration'
+import { getIllustrationPreview, ILLUSTRATION_IDS, ILLUSTRATION_NAMES } from '@/composables/ui/useIllustration'
 import { ALL_COLOR_VARS, DEFAULT_RADIUS, KEY_COLOR_VARS, useThemeStore } from '@/stores/themes'
 
 const store = useThemeStore()

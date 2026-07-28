@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CommandEntry } from '@/composables/useSlashCommand'
+import type { CommandEntry } from '@/composables/chat/useSlashCommand'
 import { X } from 'lucide-vue-next'
 import { ref, watchEffect } from 'vue'
 import { highlightParts } from '@/utils/highlightParts'

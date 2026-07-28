@@ -7,7 +7,7 @@ import ProviderBrowser from './components/settings/providers/ProviderBrowser.vue
 import SettingsModal from './components/settings/SettingsModal.vue'
 import SideBar from './components/sidebar/Sidebar.vue'
 import TitleBar from './components/titlebar/Titlebar.vue'
-import { useZoom } from './composables/useZoom'
+import { useZoom } from './composables/ui/useZoom'
 import { getDb } from './db/database'
 import { useProjectStore } from './stores/project'
 import { useSettingsStore } from './stores/settings'

@@ -5,7 +5,7 @@
  * stored in ~/.emty/designs/{project_name}/.
  */
 
-import type { DesignProjectType } from '@/stores/chat/types'
+import type { DesignProjectType } from '@/stores/chat/core/types'
 import { homeDir, join } from '@tauri-apps/api/path'
 import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { Command } from '@tauri-apps/plugin-shell'

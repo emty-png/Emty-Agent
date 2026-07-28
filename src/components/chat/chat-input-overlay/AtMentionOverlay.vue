@@ -7,7 +7,7 @@
  */
 
 import type { Component } from 'vue'
-import type { FsEntry } from '@/composables/useAtMention'
+import type { FsEntry } from '@/composables/chat/useAtMention'
 import {
   File,
   FileArchive,

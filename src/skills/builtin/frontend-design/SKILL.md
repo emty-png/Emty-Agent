@@ -58,13 +58,3 @@ Interpret creatively and make unexpected choices that feel genuinely designed fo
 **IMPORTANT**: Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code with extensive animations and effects. Minimalist or refined designs need restraint, precision, and careful attention to spacing, typography, and subtle details. Elegance comes from executing the vision well.
 
 Remember: Emty is capable of extraordinary creative work. Don't hold back, show what can truly be created when thinking outside the box and committing fully to a distinctive vision.
-
-## Related Skills
-
-For deeper guidance on specific aspects, load these skills:
-
-- `builtin:color-theory` — Color palettes, design directions, dark/light themes
-- `builtin:typography-systems` — Font pairing, type scales, readability
-- `builtin:layout-patterns` — CSS Grid, Flexbox, responsive layouts, spacing
-- `builtin:animation-motion` — Transitions, keyframes, micro-interactions
-- `builtin:component-composition` — UI components, state coverage, patterns

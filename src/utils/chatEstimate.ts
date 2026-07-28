@@ -1,4 +1,4 @@
-import type { ChatRequestPreview, EstimatorProviderConfig, PreviewPromptMessage, PreviewPromptPart, PromptToolDefinition } from '@/stores/chat/requestPreview'
+import type { ChatRequestPreview, EstimatorProviderConfig, PreviewPromptMessage, PreviewPromptPart, PromptToolDefinition } from '@/stores/chat/context/requestPreview'
 import { countTokens as countTextTokens } from 'gpt-tokenizer'
 import { platformFetch } from '@/utils/platformFetch'
 

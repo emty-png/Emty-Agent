@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FileDiff, RestoreMode } from '@/composables/useRestoreOverlay'
+import type { FileDiff, RestoreMode } from '@/composables/chat/useRestoreOverlay'
 import type { Checkpoint } from '@/stores/checkpoints'
 import { ChevronDown, FileCode, History, Loader2, X } from 'lucide-vue-next'
 

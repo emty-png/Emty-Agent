@@ -1,5 +1,5 @@
-import type { Attachment } from '@/stores/chat/attachment-types'
-import { IMAGE_QUALITY, isImageMime, MAX_FILE_SIZE, MAX_IMAGE_DIMENSION } from '@/stores/chat/attachment-types'
+import type { Attachment } from '@/stores/chat/core/attachmentTypes'
+import { IMAGE_QUALITY, isImageMime, MAX_FILE_SIZE, MAX_IMAGE_DIMENSION } from '@/stores/chat/core/attachmentTypes'
 
 export type { Attachment }
 

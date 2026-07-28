@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { Attachment } from '@/stores/chat/attachment-types'
+import type { Attachment } from '@/stores/chat/core/attachmentTypes'
 import { FileText, X } from 'lucide-vue-next'
-import { formatFileSize } from '@/stores/chat/attachment-types'
+import { formatFileSize } from '@/stores/chat/core/attachmentTypes'
 
 defineProps<{
   attachments: Attachment[]

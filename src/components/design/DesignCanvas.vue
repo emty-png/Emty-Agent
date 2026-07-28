@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DesignProjectType } from '@/stores/chat/types'
+import type { DesignProjectType } from '@/stores/chat/core/types'
 import { join } from '@tauri-apps/api/path'
 import { save as saveDialog } from '@tauri-apps/plugin-dialog'
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'

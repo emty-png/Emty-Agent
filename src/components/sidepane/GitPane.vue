@@ -13,17 +13,17 @@ import {
   Zap,
 } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, toRef, watch } from 'vue'
-import { useGitWorkspace } from '@/composables/useGitWorkspace'
+import { useGitWorkspace } from '@/composables/git/useGitWorkspace'
 import { useGitPaneStore } from '@/stores/gitPane'
 import { hooksConfigExists } from '@/utils/hooks'
 import { commandTasks } from '@/utils/tools/shell'
-import BackgroundTasksReview from './BackgroundTasksReview.vue'
-import DiffViewer from './DiffViewer.vue'
-import GitChangesReview from './GitChangesReview.vue'
-import HooksTab from './HooksTab.vue'
-import PlanReview from './PlanReview.vue'
-import SkillsMcpReview from './SkillsMcpReview.vue'
-import ToolResultsReview from './ToolResultsReview.vue'
+import BackgroundTasksReview from './BackgroundTasksTab.vue'
+import DiffViewer from './DiffTab.vue'
+import GitChangesReview from './GitTab.vue'
+import HooksTab from './HookResultsTab.vue'
+import PlanReview from './PlanTab.vue'
+import SkillsMcpTab from './SkillsMcpTab.vue'
+import ToolResultsReview from './ToolResultsTab.vue'
 
 const props = defineProps<{
   cwd: string
@@ -381,7 +381,7 @@ const iconBtnClass = 'inline-flex items-center justify-center w-[26px] h-[26px] 
       :tab-id="tabId"
     />
 
-    <SkillsMcpReview
+    <SkillsMcpTab
       v-if="activePane === 'skillsMcp'"
       :tab-id="tabId"
     />

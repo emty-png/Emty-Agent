@@ -1,6 +1,6 @@
 import type { LanguageModelUsage, ModelMessage } from 'ai'
 import type { WorkspaceSnapshot } from './worktrees'
-import type { ToolEvent } from '@/stores/chat/types'
+import type { ToolEvent } from '@/stores/chat/core/types'
 import {
   dbInsertReplayRun,
   dbUpdateReplayRun,

@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { Attachment, ChatTab } from '@/stores/chat/types'
+import type { Attachment, ChatTab } from '@/stores/chat/core/types'
 import { ArrowDown } from 'lucide-vue-next'
 import { computed, onUnmounted, ref, watch } from 'vue'
 
 import AttachmentPreview from '@/components/chat/chat-input/AttachmentPreview.vue'
 import ChatInput from '@/components/chat/chat-input/ChatInput.vue'
-import { useIllustrationComponent } from '@/components/chat/layout/useIllustration'
 import MessageThread from '@/components/chat/messages/MessageThread.vue'
 import DesignCanvas from '@/components/design/DesignCanvas.vue'
+import { useIllustrationComponent } from '@/composables/ui/useIllustration'
 
 import { useChatStore } from '@/stores/chat'
 import { useThemeStore } from '@/stores/themes'

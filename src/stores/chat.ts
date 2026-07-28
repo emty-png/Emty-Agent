@@ -1,4 +1,4 @@
-import type { AgentStatus, Attachment, ChatDraftState, ChatEstimatorState, ChatMode, ChatTab, Message, QueuedMessage } from './chat/types'
+import type { AgentStatus, Attachment, ChatDraftState, ChatEstimatorState, ChatMode, ChatTab, Message, QueuedMessage } from './chat/core/types'
 import type { ToolPermissionDecision, ToolPermissionRequest } from '@/utils/tools/permissions'
 import type { QuestionAnswer } from '@/utils/tools/questions'
 import { defineStore } from 'pinia'
@@ -15,13 +15,13 @@ import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
 import { useTerminalStore } from '@/stores/terminal'
-import { emitStatusChange } from './chat/agentLifecycle'
-import { STATUS_IDLE, statusWaitingPermission } from './chat/agentStatus'
-import { cleanupBgTaskNotifications, handleBgTaskCompletion, initBgTaskNotifications } from './chat/bgTaskNotifications'
-import { compactConversationSession, persistCompactionMessages } from './chat/compaction'
-import { SESSION_COMPACTING_DIVIDER } from './chat/constants'
-import { createSendMessage } from './chat/sendMessage'
-import { createEmptyDraft, createEmptyEstimatorState, makeId, newDesignTab, newTab } from './chat/utils'
+import { emitStatusChange } from './chat/agent/lifecycle'
+import { createSendMessage } from './chat/agent/sendMessage'
+import { STATUS_IDLE, statusWaitingPermission } from './chat/agent/status'
+import { compactConversationSession, persistCompactionMessages } from './chat/context/compaction'
+import { SESSION_COMPACTING_DIVIDER } from './chat/core/constants'
+import { cleanupBgTaskNotifications, handleBgTaskCompletion, initBgTaskNotifications } from './chat/utils/bgTaskNotifications'
+import { createEmptyDraft, createEmptyEstimatorState, makeId, newDesignTab, newTab } from './chat/utils/tabFactory'
 
 export type {
   AgentStatus,
@@ -35,7 +35,7 @@ export type {
   SubAgentInfo,
   SubAgentPersonality,
   ToolEvent,
-} from './chat/types'
+} from './chat/core/types'
 export type { TaskItem } from '@/utils/tools/todos'
 
 // ── Internal helper ───────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ export const useChatStore = defineStore('chat', () => {
   // ── Idle compaction ───────────────────────────────────────────────────────
 
   const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  import('./chat/agentLifecycle').then(({ agentBus }) => {
+  import('./chat/agent/lifecycle').then(({ agentBus }) => {
     agentBus.on('status-change', event => {
       const tab = tabs.value.find(t => t.id === event.tabId)
       if (!tab)
@@ -121,7 +121,7 @@ export const useChatStore = defineStore('chat', () => {
 
       if (event.next.type === 'idle' && event.prev.type !== 'idle') {
         idleTimers.set(tab.id, setTimeout(() => {
-          import('./chat/compaction').then(({ shouldCompactSession }) => {
+          import('./chat/context/compaction').then(({ shouldCompactSession }) => {
             if (shouldCompactSession(tab, settings.agent.sessionCompaction?.thresholdPercent ?? 90)) {
               compactSession(tab.id, 'auto').catch(() => {})
             }

@@ -1,6 +1,6 @@
 import type { WorkspaceSnapshot } from './worktrees'
 import type { MemoryRow } from '@/db/database'
-import type { Message, ToolEvent } from '@/stores/chat/types'
+import type { Message, ToolEvent } from '@/stores/chat/core/types'
 import {
   dbCountMemories,
   dbDeleteMemoriesByScope,

@@ -2,7 +2,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event'
 import type { TerminalEvent } from '@/utils/terminal'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { makeId } from '@/stores/chat/utils'
+import { makeId } from '@/stores/chat/utils/tabFactory'
 import { closeTerminalSession, listenToTerminalEvents, startTerminalSession, writeTerminalSession } from '@/utils/terminal'
 
 export type TerminalSessionStatus = 'starting' | 'ready' | 'closed' | 'error'
