@@ -188,6 +188,8 @@ function getPathClasses(selected: boolean): string {
 const pathMatchClasses = 'text-(--color-accent-text) font-semibold'
 
 const dirBadgeClasses = 'text-[9.5px] font-bold tracking-[0.05em] uppercase text-(--color-warning-text) bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)] border border-[color-mix(in_srgb,var(--color-warning)_28%,transparent)] rounded-(--radius-xs) py-px px-1 shrink-0'
+const designBadgeClasses = 'text-[9.5px] font-bold tracking-[0.05em] uppercase text-(--color-accent-text) bg-[color-mix(in_srgb,var(--color-accent)_12%,transparent)] border border-[color-mix(in_srgb,var(--color-accent)_28%,transparent)] rounded-(--radius-xs) py-px px-1 shrink-0'
+const imageBadgeClasses = 'text-[9.5px] font-bold tracking-[0.05em] uppercase text-(--color-success-text) bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)] border border-[color-mix(in_srgb,var(--color-success)_28%,transparent)] rounded-(--radius-xs) py-px px-1 shrink-0'
 </script>
 
 <template>
@@ -246,6 +248,8 @@ const dirBadgeClasses = 'text-[9.5px] font-bold tracking-[0.05em] uppercase text
         </span>
 
         <span v-if="display.isDir" :class="dirBadgeClasses">dir</span>
+        <span v-else-if="display.entry.kind === 'design'" :class="designBadgeClasses">design</span>
+        <span v-else-if="display.entry.kind === 'image'" :class="imageBadgeClasses">image</span>
       </button>
     </div>
   </div>

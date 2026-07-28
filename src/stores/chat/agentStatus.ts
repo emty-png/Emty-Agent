@@ -23,10 +23,6 @@ export function statusError(message: string): AgentStatus {
   return { type: 'error', message }
 }
 
-export function statusReconnecting(attempt: number, maxAttempts: number, nextRetryMs: number): AgentStatus {
-  return { type: 'reconnecting', attempt, maxAttempts, nextRetryMs }
-}
-
 /** Returns true for any status that represents active agent work. */
 export function isActiveStatus(s: AgentStatus): boolean {
   return s.type !== 'idle' && s.type !== 'error'

@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { ChatMode } from '@/stores/chat/types'
+import type { ChatTab } from '@/stores/chat/types'
 import { computed, nextTick, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { CHIP_PADDING, packSkill } from '@/utils/mentionFormat'
@@ -14,86 +14,123 @@ export interface CommandEntry {
   whenToUse?: string
 }
 
-const SLASH_PATTERN = /(?:^|\n)\/([\w\-]*)$/
+export type CommandProvider = (tab: ChatTab, projectPath: string | null) => Promise<CommandEntry[]> | CommandEntry[]
 
-export function useSlashCommand(
-  textareaRef: Ref<HTMLTextAreaElement | null>,
-  text: Ref<string>,
-  projectPath: Ref<string | null>,
-  mode?: Ref<ChatMode | undefined>,
-) {
+export const baseActionProvider: CommandProvider = tab => {
+  const commands: CommandEntry[] = []
+  if (tab.mode !== 'design') {
+    commands.push(
+      {
+        id: 'new',
+        label: '/new',
+        description: 'Open a new chat tab and close the current one',
+        type: 'action',
+      },
+      {
+        id: 'init',
+        label: '/init',
+        description: 'Generate or update AGENTS.md for this project',
+        type: 'action',
+      },
+      {
+        id: 'restore',
+        label: '/restore',
+        description: 'Browse checkpoints and restore to a previous state',
+        type: 'action',
+      },
+    )
+  }
+  return commands
+}
+
+export const skillProvider: CommandProvider = async (tab, projectPath) => {
   const settings = useSettingsStore()
-  const isOpen = ref(false)
-  const slashStart = ref(-1)
-  const slashQuery = ref('')
-  const selectedIdx = ref(0)
-  const loading = ref(false)
+  const commands: CommandEntry[] = []
+  try {
+    const skills = await getEnabledSkills(projectPath, settings.disabledSkillIds)
+    const currentMode = tab.mode
 
-  const baseCommands = ref<CommandEntry[]>([])
+    for (const skill of skills) {
+      const skillModes = skill.modes
+      const skillMatchesMode = !skillModes || skillModes.length === 0 || (currentMode && skillModes.includes(currentMode))
+      if (!skillMatchesMode)
+        continue
 
-  async function loadCommands() {
-    loading.value = true
-    try {
-      const skills = await getEnabledSkills(projectPath.value, settings.disabledSkillIds)
-      const currentMode = mode?.value
+      if (currentMode === 'design' && skill.name === 'skill-factory')
+        continue
 
-      // Action commands — filter by mode
-      const commands: CommandEntry[] = []
-      if (currentMode !== 'design') {
-        commands.push(
-          {
-            id: 'new',
-            label: '/new',
-            description: 'Open a new chat tab and close the current one',
-            type: 'action',
-          },
-          {
-            id: 'init',
-            label: '/init',
-            description: 'Generate or update AGENTS.md for this project',
-            type: 'action',
-          },
-          {
-            id: 'restore',
-            label: '/restore',
-            description: 'Browse checkpoints and restore to a previous state',
-            type: 'action',
-          },
-        )
-      }
-
-      // Skills — filter by mode compatibility
-      for (const skill of skills) {
-        const skillModes = skill.modes
-        const skillMatchesMode = !skillModes || skillModes.length === 0 || (currentMode && skillModes.includes(currentMode))
-        if (!skillMatchesMode)
-          continue
-
-        if (skill.commands.length > 0) {
-          for (const cmd of skill.commands) {
-            commands.push({
-              id: `skill-${skill.id}-${cmd.name}`,
-              label: `/${cmd.name}`,
-              description: cmd.description,
-              type: 'skill',
-              skillId: skill.id,
-              ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
-            })
-          }
-        }
-        else {
+      if (skill.commands.length > 0) {
+        for (const cmd of skill.commands) {
           commands.push({
-            id: `skill-${skill.id}`,
-            label: `/skill-${skill.name}`,
-            description: skill.title,
+            id: `skill-${skill.id}-${cmd.name}`,
+            label: `/${cmd.name}`,
+            description: cmd.description,
             type: 'skill',
             skillId: skill.id,
             ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
           })
         }
       }
+      else {
+        commands.push({
+          id: `skill-${skill.id}`,
+          label: `/skill-${skill.name}`,
+          description: skill.title,
+          type: 'skill',
+          skillId: skill.id,
+          ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+        })
+      }
+    }
+  }
+  catch {
+    // ignore
+  }
+  return commands
+}
 
-      baseCommands.value = commands
+export const planCommandProvider: CommandProvider = tab => {
+  if (tab.mode === 'design')
+    return []
+  return tab.mode === 'plan'
+    ? [{
+        id: 'exit-plan',
+        label: '/exit-plan',
+        description: 'Exit plan mode and return to build mode',
+        type: 'action',
+      }]
+    : [{
+        id: 'plan',
+        label: '/plan',
+        description: 'Enter plan mode to design the implementation without making code changes',
+        type: 'action',
+      }]
+}
+
+const defaultProviders = [baseActionProvider, skillProvider, planCommandProvider]
+
+const SLASH_PATTERN = /(?:^|\n)\/([\w\-]*)$/
+
+export function useSlashCommand(
+  textareaRef: Ref<HTMLTextAreaElement | null>,
+  text: Ref<string>,
+  projectPath: Ref<string | null>,
+  tab: Ref<ChatTab>,
+  providers: CommandProvider[] = defaultProviders,
+) {
+  const isOpen = ref(false)
+  const slashStart = ref(-1)
+  const slashQuery = ref('')
+  const selectedIdx = ref(0)
+  const loading = ref(false)
+
+  const allCommands = ref<CommandEntry[]>([])
+
+  async function loadCommands() {
+    loading.value = true
+    try {
+      const results = await Promise.all(providers.map(p => p(tab.value, projectPath.value)))
+      allCommands.value = results.flat()
     }
     catch {
       // ignore
@@ -102,26 +139,6 @@ export function useSlashCommand(
       loading.value = false
     }
   }
-
-  const planCommand = computed<CommandEntry | null>(() => {
-    if (mode?.value === 'design')
-      return null
-    return mode?.value === 'plan'
-      ? {
-          id: 'exit-plan',
-          label: '/exit-plan',
-          description: 'Exit plan mode and return to build mode',
-          type: 'action',
-        }
-      : {
-          id: 'plan',
-          label: '/plan',
-          description: 'Enter plan mode to design the implementation without making code changes',
-          type: 'action',
-        }
-  })
-
-  const allCommands = computed<CommandEntry[]>(() => [planCommand.value, ...baseCommands.value].filter((c): c is CommandEntry => c !== null))
 
   const filteredCommands = computed<CommandEntry[]>(() => {
     const q = slashQuery.value.toLowerCase()

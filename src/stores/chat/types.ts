@@ -65,7 +65,6 @@ export type AgentStatus
     | { type: 'waiting-questions' }
     | { type: 'waiting-permission'; toolName: string }
     | { type: 'compacting' }
-    | { type: 'reconnecting'; attempt: number; maxAttempts: number; nextRetryMs: number }
     | { type: 'error'; message: string }
 
 // ── Tool events ───────────────────────────────────────────────────────────────

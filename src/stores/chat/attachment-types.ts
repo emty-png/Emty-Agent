@@ -24,6 +24,15 @@ export interface Attachment {
   dataUrl: string
 }
 
+/** Maximum allowed file size for any attachment (10 MB) */
+export const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+/** Maximum dimension (width or height) for image attachments before downscaling */
+export const MAX_IMAGE_DIMENSION = 2048
+
+/** JPEG/WebP quality factor when compressing images */
+export const IMAGE_QUALITY = 0.90
+
 /** Well-known image MIME types that we render as thumbnail previews. */
 export const IMAGE_MIME_TYPES = new Set([
   'image/png',

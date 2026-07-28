@@ -14,30 +14,21 @@ Typography systems for design projects. Covers font pairing, type scales, respon
 
 Use a multiplicative scale (1.2 or 1.25). Cap at 6–8 sizes per artifact.
 
-| Role    | Range    |
-| ------- | -------- |
-| Display | 48–72 px |
-| H1      | 32–48 px |
-| H2      | 24–32 px |
-| H3      | 20–24 px |
-| Body    | 15–18 px |
-| Small   | 13–14 px |
-| Caption | 11–12 px |
+- **Display**: 48–72 px
+- **H1**: 32–48 px
+- **H2**: 24–32 px
+- **H3**: 20–24 px
+- **Body**: 15–18 px
+- **Small**: 13–14 px
+- **Caption**: 11–12 px
 
 ## Fluid Type Scales
 
 Use `clamp()` for responsive typography that scales smoothly between viewports:
 
-```css
-/* Display: scales from 48px to 72px */
-font-size: clamp(3rem, 5vw, 4.5rem);
-
-/* H1: scales from 32px to 48px */
-font-size: clamp(2rem, 4vw, 3rem);
-
-/* Body: scales from 15px to 18px */
-font-size: clamp(0.9375rem, 1.5vw, 1.125rem);
-```
+- Display: `clamp(3rem, 5vw, 4.5rem)` — scales from 48px to 72px
+- H1: `clamp(2rem, 4vw, 3rem)` — scales from 32px to 48px
+- Body: `clamp(0.9375rem, 1.5vw, 1.125rem)` — scales from 15px to 18px
 
 ---
 
@@ -45,14 +36,12 @@ font-size: clamp(0.9375rem, 1.5vw, 1.125rem);
 
 This is the single most-skipped rule in AI-generated design. **No exceptions.**
 
-| Context                   | Letter-spacing                     |
-| ------------------------- | ---------------------------------- |
-| Body text (14–18 px)      | `0` (default)                      |
-| Small text (11–13 px)     | `0.01em` to `0.02em` (positive)    |
-| UI labels and button text | `0.02em`                           |
-| **ALL CAPS**              | **`0.06em` to `0.1em` (required)** |
-| Headings 32 px+           | `-0.01em` to `-0.02em`             |
-| Display 48 px+            | `-0.02em` to `-0.03em`             |
+- Body text (14–18 px): `0` (default)
+- Small text (11–13 px): `0.01em` to `0.02em` (positive)
+- UI labels and button text: `0.02em`
+- **ALL CAPS**: **`0.06em` to `0.1em` (required)**
+- Headings 32 px+: `-0.01em` to `-0.02em`
+- Display 48 px+: `-0.02em` to `-0.03em`
 
 ALL CAPS without positive tracking looks cramped and amateur. Display text without negative tracking looks loose and weak. These two failures are the most reliable AI-slop tells.
 
@@ -60,11 +49,9 @@ ALL CAPS without positive tracking looks cramped and amateur. Display text witho
 
 # Line Height (Leading)
 
-| Text size             | Line height         |
-| --------------------- | ------------------- |
-| Display / H1 (≥32 px) | `1.0`–`1.2` (tight) |
-| Body (15–18 px)       | `1.5`–`1.6`         |
-| Small (≤14 px)        | `1.5`               |
+- Display / H1 (≥32 px): `1.0`–`1.2` (tight)
+- Body (15–18 px): `1.5`–`1.6`
+- Small (≤14 px): `1.5`
 
 ---
 
@@ -78,49 +65,21 @@ ALL CAPS without positive tracking looks cramped and amateur. Display text witho
 
 ### Serif Display + Sans Body
 
-Best for: Editorial, publishing, luxury brands
-
-```css
-:root {
-  --font-display: 'Iowan Old Style', 'Charter', Georgia, serif;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-}
-```
+Best for: Editorial, publishing, luxury brands. Use `'Iowan Old Style', 'Charter', Georgia, serif` for display and `-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif` for body.
 
 ### Sans Display + Sans Body (Different Weights)
 
-Best for: SaaS, dashboards, modern web apps
-
-```css
-:root {
-  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
-}
-```
+Best for: SaaS, dashboards, modern web apps. Use `'SF Pro Display'` for display and `'SF Pro Text'` for body, both on the system font stack.
 
 ### Mono Display + Sans Body
 
-Best for: Developer tools, data-dense interfaces
-
-```css
-:root {
-  --font-display: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
-}
-```
+Best for: Developer tools, data-dense interfaces. Use `'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, monospace` for display and `-apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif` for body.
 
 ---
 
 # Line Length
 
-Limit body copy to **50–75 characters** per line. In CSS: `max-width: 65ch` is a safe default.
-
-```css
-.prose {
-  max-width: 65ch;
-  margin-inline: auto;
-}
-```
+Limit body copy to **50–75 characters** per line. In CSS: `max-width: 65ch` is a safe default. Use `margin-inline: auto` to center the text block.
 
 ---
 
@@ -136,16 +95,9 @@ Weight 700+ is rarely needed. If your design uses bold for "emphasis on emphasis
 
 ## Tailwind Weight Mapping
 
-```html
-<!-- Read: body copy -->
-<p class="font-normal">Body text at weight 400.</p>
-
-<!-- Emphasize: UI text, labels -->
-<span class="font-medium">Label text at weight 500.</span>
-
-<!-- Announce: headlines, buttons -->
-<h1 class="font-semibold">Headline at weight 600.</h1>
-```
+- Read: `font-normal` (weight 400)
+- Emphasize: `font-medium` (weight 500)
+- Announce: `font-semibold` (weight 600)
 
 ---
 
@@ -153,41 +105,20 @@ Weight 700+ is rarely needed. If your design uses bold for "emphasis on emphasis
 
 ## Headlines
 
-```html
-<!-- Display headline with negative tracking -->
-<h1 class="text-5xl font-semibold tracking-tight leading-none">Headline Text</h1>
-
-<!-- Section heading -->
-<h2 class="text-2xl font-semibold tracking-tight">Section Title</h2>
-
-<!-- Subsection -->
-<h3 class="text-lg font-medium">Subsection Title</h3>
-```
+- Display headline: Use `text-5xl font-semibold tracking-tight leading-none` (negative tracking on large display text)
+- Section heading: Use `text-2xl font-semibold tracking-tight`
+- Subsection: Use `text-lg font-medium`
 
 ## Body Copy
 
-```html
-<!-- Standard body -->
-<p class="text-base leading-relaxed">Body text with comfortable line height for reading.</p>
-
-<!-- Lead paragraph -->
-<p class="text-lg leading-relaxed text-(--color-text-secondary)">
-  Larger introductory text that draws the reader in.
-</p>
-```
+- Standard body: Use `text-base leading-relaxed`
+- Lead paragraph: Use `text-lg leading-relaxed text-(--color-text-secondary)`
 
 ## Labels & Captions
 
-```html
-<!-- ALL CAPS label with required positive tracking -->
-<span class="text-xs font-semibold uppercase tracking-widest">Label Text</span>
-
-<!-- Caption -->
-<span class="text-xs text-(--color-text-secondary)">Caption or metadata</span>
-
-<!-- Code / monospace -->
-<code class="font-mono text-sm">const value = 42;</code>
-```
+- ALL CAPS label: Use `text-xs font-semibold uppercase tracking-widest` with required positive tracking
+- Caption: Use `text-xs text-(--color-text-secondary)`
+- Code / monospace: Use `font-mono text-sm`
 
 ---
 

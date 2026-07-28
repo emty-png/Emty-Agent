@@ -20,10 +20,17 @@ export function useChatAttachments() {
   const previewAttachment = ref<Attachment | null>(null)
 
   async function addFiles(files: FileList | File[]) {
+    if (chat.activeTab.mode === 'design') {
+      console.warn('Attachments are not supported in design mode.')
+      return
+    }
+
     const nextAttachments = [...attachments.value]
     for (const file of files) {
       try { nextAttachments.push(await readFileAsAttachment(file)) }
-      catch (err) { console.warn('[ChatInput] Failed to read file:', file.name, err) }
+      catch (err: unknown) {
+        console.warn('[ChatInput] Failed to read file:', file.name, err instanceof Error ? err.message : err)
+      }
     }
     attachments.value = nextAttachments
   }
@@ -55,8 +62,18 @@ export function useChatAttachments() {
   }
 
   async function handleOpenFileDialog() {
-    const newAttachments = await openFileDialog()
-    attachments.value = [...attachments.value, ...newAttachments]
+    if (chat.activeTab.mode === 'design') {
+      console.warn('Attachments are not supported in design mode.')
+      return
+    }
+
+    try {
+      const newAttachments = await openFileDialog()
+      attachments.value = [...attachments.value, ...newAttachments]
+    }
+    catch (err: unknown) {
+      console.warn('Failed to attach files:', err instanceof Error ? err.message : err)
+    }
   }
 
   return {

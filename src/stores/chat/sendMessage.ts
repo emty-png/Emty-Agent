@@ -1,10 +1,11 @@
 import type { LanguageModel } from 'ai'
 import type { ComputedRef, Ref } from 'vue'
+import type { SettingsSnapshot } from './compaction'
 import type { ChatMode, ChatTab, Message, SubAgentPersonality, ToolEvent } from './types'
 import type { RequestToolPermission, ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { QuestionAnswer, QuestionSpec } from '@/utils/tools/questions'
 import type { TaskItem } from '@/utils/tools/todos'
-import { APICallError, RetryError } from 'ai'
+import { APICallError } from 'ai'
 import {
   dbInsertConversation,
   dbInsertMessage,
@@ -21,16 +22,15 @@ import {
   STATUS_INITIALIZING,
   STATUS_STREAMING,
   statusError,
-  statusReconnecting,
   statusToolRunning,
   statusWaitingPermission,
 } from './agentStatus'
+import { compactConversationSession, persistCompactionMessages, shouldCompactSession } from './compaction'
 import { buildMentionContext } from './mentions'
 import { runSubAgentStream } from './subagent'
 import { toolRegistry } from './toolRegistry'
 import { makeId } from './utils'
 import { resolveTabWorkspacePath } from './workspace'
-import { shouldCompactSession, compactConversationSession, persistCompactionMessages } from './compaction'
 
 // ── Register tool profiles once on first import ───────────────────────────────
 
@@ -45,53 +45,6 @@ function setStatus(tab: ChatTab, next: ChatTab['agentStatus']): void {
   const prev = tab.agentStatus
   tab.agentStatus = next
   emitStatusChange(tab.id, prev, next)
-}
-
-// ── Network retry helpers ──────────────────────────────────────────────────────
-
-const MAX_NETWORK_RETRIES = 15
-
-function isNetworkError(error: Error): boolean {
-  // Unwrap AI SDK RetryError — check the last underlying error
-  if (RetryError.isInstance(error)) {
-    const lastErr = error.errors?.[error.errors.length - 1]
-    if (lastErr instanceof Error)
-      return isNetworkError(lastErr)
-  }
-
-  // Unwrap AI SDK APICallError — no status code means network failure
-  if (APICallError.isInstance(error)) {
-    if (error.statusCode == null)
-      return true // no status = network-level failure
-    return false // has status = HTTP error, not network
-  }
-
-  const msg = error.message.toLowerCase()
-  const name = error.name.toLowerCase()
-  return (
-    (name === 'typeerror' && msg.includes('failed')) // fetch TypeError
-    || msg.includes('network')
-    || msg.includes('fetch')
-    || msg.includes('econnrefused')
-    || msg.includes('econnreset')
-    || msg.includes('etimedout')
-    || msg.includes('enotfound')
-    || msg.includes('timeout')
-    || msg.includes('networkerror')
-    || msg.includes('network request failed')
-    || msg.includes('load failed')
-    || msg.includes('internet')
-    || msg.includes('offline')
-  )
-}
-
-function getRetryDelay(attempt: number): number {
-  const base = 5000
-  const factor = 1.5
-  const maxDelay = 120_000
-  const delay = Math.min(base * factor ** attempt, maxDelay)
-  const jitter = delay * 0.2 * (Math.random() * 2 - 1)
-  return Math.round(delay + jitter)
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────────
@@ -254,16 +207,17 @@ export function createSendMessage(
         setStatus(tab, { type: 'compacting' })
         await compactConversationSession({
           tab,
-          settings: settings as any,
+          settings: settings as unknown as SettingsSnapshot,
           source: 'auto',
           onPersist: async payload => {
             if (tab.conversationId) {
               await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
             }
-          }
+          },
         })
         setStatus(tab, STATUS_INITIALIZING)
-      } catch (err) {
+      }
+      catch (err) {
         console.error('[sendMessage] Preflight compaction failed:', err)
         setStatus(tab, STATUS_INITIALIZING)
       }
@@ -708,15 +662,16 @@ export function createSendMessage(
         try {
           await compactConversationSession({
             tab,
-            settings: settings as any,
+            settings: settings as unknown as SettingsSnapshot,
             source: 'auto',
             onPersist: async payload => {
               if (tab.conversationId) {
                 await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
               }
-            }
+            },
           })
-        } catch (err) {
+        }
+        catch (err) {
           console.error('[sendMessage] In-loop compaction failed:', err)
         }
       }
@@ -724,10 +679,6 @@ export function createSendMessage(
       // ── Auto-drain queue ──────────────────────────────────────────────────
       drainQueue()
     }
-
-    // ── Network retry state ──────────────────────────────────────────────
-    let attempt = 0
-    let finalError: Error | null = null
 
     // ── onError ───────────────────────────────────────────────────────────
     function onError(error: Error) {
@@ -769,8 +720,8 @@ export function createSendMessage(
           conversationId: tab.conversationId ?? null,
           errorMessage: error.message,
           errorCategory: failure.category,
-          retryable: isNetworkError(error),
-          attemptCount: attempt,
+          retryable: false,
+          attemptCount: 0,
           toolCallsCount: liveMsg.toolEvents?.length ?? 0,
         })
       }
@@ -791,107 +742,53 @@ export function createSendMessage(
       }
     }
 
-    // ── Stream (with network retry) ──────────────────────────────────────
+    // ── Stream ───────────────────────────────────────────────────────────
 
-    while (attempt <= MAX_NETWORK_RETRIES) {
-      if (ac.signal.aborted)
-        break
+    setStatus(tab, STATUS_STREAMING)
 
-      if (attempt > 0) {
-        const delay = getRetryDelay(attempt - 1)
-        setStatus(tab, statusReconnecting(attempt, MAX_NETWORK_RETRIES, delay))
-
-        const aborted = await new Promise<boolean>(resolve => {
-          const timer = setTimeout(resolve, delay, false)
-          ac.signal.addEventListener('abort', () => {
-            clearTimeout(timer)
-            resolve(true)
-          }, { once: true })
-        })
-        if (aborted)
-          break
-
-        // Reset live message for fresh attempt
-        liveMsg.content = ''
-        liveMsg.parts = []
-        liveMsg.toolEvents = []
-        delete liveMsg.error
-      }
-
-      setStatus(tab, STATUS_STREAMING)
-
-      // Per-attempt error handler: flush live output but don't finalize on network errors
-      // (we may retry). For non-network errors, call the real onError immediately.
-      let caughtError: Error | null = null
-      const perAttemptOnError = (error: Error) => {
-        caughtError = error
-        streamHandlers.flushLive()
-        if (!isNetworkError(error)) {
-          onError(error)
-        }
-      }
-
-      try {
-        await streamChat({
-          model: model as LanguageModel,
-          messages: apiMessages,
-          systemPrompt,
-          supportsToolCalls: resolvedModel.supportsToolCalls,
-          maxOutputTokens,
-          onDelta: streamHandlers.onDelta,
-          onReasoningDelta: streamHandlers.onReasoningDelta,
-          onToolCall: streamHandlers.onToolCall,
-          onToolResult: streamHandlers.onToolResult,
-          onFinish,
-          onError: perAttemptOnError,
-          signal: ac.signal,
-          ...(providerOptions ? { providerOptions: providerOptions as Record<string, Record<string, import('ai').JSONValue>> } : {}),
-          ...(tools ? { tools } : {}),
-        })
-        // Success
-        finalError = null
-        break
-      }
-      catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error))
-        
-        // ── Overflow compaction ───────────────────────────────────────────────
-        if (APICallError.isInstance(err) && err.statusCode === 413) {
-          try {
-            setStatus(tab, { type: 'compacting' })
-            await compactConversationSession({
-              tab,
-              settings: settings as any,
-              source: 'auto',
-              onPersist: async payload => {
-                if (tab.conversationId) {
-                  await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
-                }
-              }
-            })
-            err.message = 'Context was too large. Auto-compacted history. Please retry your request.'
-          } catch (cErr) {
-            console.error('[sendMessage] Overflow compaction failed:', cErr)
-          }
-          setStatus(tab, STATUS_INITIALIZING)
-        }
-
-        if (!isNetworkError(err) || ac.signal.aborted) {
-          // Non-retryable or user stopped: call onError if not already called
-          if (!caughtError)
-            onError(err)
-          finalError = null
-          break
-        }
-
-        finalError = err
-        attempt++
-      }
+    try {
+      await streamChat({
+        model: model as LanguageModel,
+        messages: apiMessages,
+        systemPrompt,
+        supportsToolCalls: resolvedModel.supportsToolCalls,
+        maxOutputTokens,
+        onDelta: streamHandlers.onDelta,
+        onReasoningDelta: streamHandlers.onReasoningDelta,
+        onToolCall: streamHandlers.onToolCall,
+        onToolResult: streamHandlers.onToolResult,
+        onFinish,
+        onError,
+        signal: ac.signal,
+        ...(providerOptions ? { providerOptions: providerOptions as Record<string, Record<string, import('ai').JSONValue>> } : {}),
+        ...(tools ? { tools } : {}),
+      })
     }
+    catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error))
 
-    // Final failure after exhausting retries
-    if (finalError) {
-      onError(finalError)
+      // ── Overflow compaction ───────────────────────────────────────────────
+      if (APICallError.isInstance(err) && err.statusCode === 413) {
+        try {
+          setStatus(tab, { type: 'compacting' })
+          await compactConversationSession({
+            tab,
+            settings: settings as unknown as SettingsSnapshot,
+            source: 'auto',
+            onPersist: async payload => {
+              if (tab.conversationId) {
+                await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+              }
+            },
+          })
+          err.message = 'Context was too large. Auto-compacted history. Please retry your request.'
+        }
+        catch (cErr) {
+          console.error('[sendMessage] Overflow compaction failed:', cErr)
+        }
+      }
+
+      onError(err)
     }
 
     setStatus(tab, STATUS_IDLE)

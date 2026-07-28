@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { FsEntry } from '@/composables/useAtMention'
 import type { CommandEntry } from '@/composables/useSlashCommand'
 import type { Attachment } from '@/stores/chat/attachment-types'
 import type { AgentStatus } from '@/stores/chat/types'
@@ -19,6 +20,7 @@ import { isStreamingStatus } from '@/stores/chat/agentStatus'
 import { resolveTabWorkspacePath } from '@/stores/chat/workspace'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
+import { readFileFromPath } from '@/utils/attachments'
 import { serializeForSend } from '@/utils/mentionFormat'
 import { transcribeAudio } from '@/utils/voiceApi'
 import { processTranscript } from '@/utils/voicePostProcess'
@@ -37,7 +39,6 @@ import MessageQueue from './MessageQueue.vue'
 import ModelPicker from './ModelPicker.vue'
 import PermissionModePicker from './PermissionModePicker.vue'
 import ProjectPicker from './ProjectPicker.vue'
-import ReconnectingBanner from './ReconnectingBanner.vue'
 import VoiceOverlay from './VoiceOverlay.vue'
 
 const props = defineProps<{
@@ -82,8 +83,9 @@ onMounted(() => {
 })
 
 const mode = computed(() => chat.activeTab.mode)
-const mention = useAtMention(textareaRef, text, projectPath, mode)
-const slash = useSlashCommand(textareaRef, text, projectPath, mode)
+const activeTab = computed(() => chat.activeTab)
+const mention = useAtMention(textareaRef, text, projectPath, activeTab)
+const slash = useSlashCommand(textareaRef, text, projectPath, activeTab)
 const restoreOverlay = useRestoreOverlay()
 
 const settings = useSettingsStore()
@@ -309,6 +311,23 @@ function handleSlashSelect(entry: CommandEntry) {
   }
   else {
     slash.replaceWithText(`${entry.label} `)
+  }
+}
+
+async function handleMentionSelect(entry: FsEntry) {
+  if (entry.kind === 'image') {
+    try {
+      const absPath = projectPath.value ? `${projectPath.value}/${entry.path}` : entry.path
+      const attachment = await readFileFromPath(absPath)
+      attachments.value = [...attachments.value, attachment]
+    }
+    catch (err: unknown) {
+      console.warn('Failed to attach image:', err instanceof Error ? err.message : err)
+    }
+    mention.removeQuery()
+  }
+  else {
+    mention.selectEntry(entry)
   }
 }
 
@@ -588,7 +607,7 @@ const sendBtnClasses = computed(() => {
         :loading="mention.loading.value"
         :query="mention.atQuery.value"
         :header-label="mode === 'design' ? 'Link a design' : 'Link file or folder'"
-        @select="mention.selectEntry($event)"
+        @select="handleMentionSelect"
         @hover="mention.setSelectedIdx($event)"
         @close="mention.close()"
       />
@@ -643,8 +662,6 @@ const sendBtnClasses = computed(() => {
     <Transition v-bind="overlayTransitions">
       <DragOverlay v-if="isDragging" :previews="dragPreviews" :reading="isReading" />
     </Transition>
-
-    <ReconnectingBanner v-bind="props.agentStatus !== undefined ? { agentStatus: props.agentStatus } : {}" />
 
     <div :class="shellClasses">
       <!-- Scanner track & spinning head -->

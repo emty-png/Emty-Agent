@@ -12,12 +12,10 @@ Animation and motion design for design projects. Covers CSS transitions, keyfram
 
 # Timing Guidelines
 
-| Duration   | Use Case                                                     |
-| ---------- | ------------------------------------------------------------ |
-| 50–100 ms  | Instant feedback (button press, toggle, hover)               |
-| 150 ms     | State confirmation (checkbox check, switch toggle)           |
-| 200–300 ms | Entering UI (modals, sheets, dropdowns)                      |
-| 300–500 ms | Cross-screen transitions (page changes, major state changes) |
+- 50–100 ms: Instant feedback (button press, toggle, hover)
+- 150 ms: State confirmation (checkbox check, switch toggle)
+- 200–300 ms: Entering UI (modals, sheets, dropdowns)
+- 300–500 ms: Cross-screen transitions (page changes, major state changes)
 
 **Never animate to teach, decorate, or signal "premium"** — animate when the user is moving through space, time, or state.
 
@@ -27,29 +25,15 @@ Animation and motion design for design projects. Covers CSS transitions, keyfram
 
 ## Material 3 Standard (Recommended)
 
-```css
-/* Standard easing for most transitions */
-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
-
-/* Decelerate: entering elements */
-transition-timing-function: cubic-bezier(0, 0, 0, 1);
-
-/* Accelerate: exiting elements */
-transition-timing-function: cubic-bezier(0.3, 0, 1, 1);
-```
+Use `cubic-bezier(0.2, 0, 0, 1)` as the standard easing for most transitions.
+Use `cubic-bezier(0, 0, 0, 1)` for decelerate (entering elements).
+Use `cubic-bezier(0.3, 0, 1, 1)` for accelerate (exiting elements).
 
 ## Common Easings
 
-```css
-/* Ease out: smooth deceleration */
-transition-timing-function: ease-out;
-
-/* Ease in out: smooth acceleration and deceleration */
-transition-timing-function: ease-in-out;
-
-/* Linear: constant speed (rarely appropriate for UI) */
-transition-timing-function: linear;
-```
+- `ease-out`: Smooth deceleration
+- `ease-in-out`: Smooth acceleration and deceleration
+- `linear`: Constant speed (rarely appropriate for UI)
 
 ---
 
@@ -57,75 +41,28 @@ transition-timing-function: linear;
 
 ## Button Hover
 
-```css
-.button {
-  transition: all 150ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.button:hover {
-  background: var(--color-accent);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--color-shadow);
-}
-
-.button:active {
-  transform: translateY(0);
-  box-shadow: none;
-}
-```
+Use `transition: all 150ms cubic-bezier(0.2, 0, 0, 1)` on interactive elements.
+On hover: apply `background`, `transform: translateY(-1px)`, and `box-shadow`.
+On active: reset `transform: translateY(0)` and `box-shadow: none`.
 
 ## Card Hover
 
-```css
-.card {
-  transition:
-    border-color 200ms cubic-bezier(0.2, 0, 0, 1),
-    background-color 200ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.card:hover {
-  border-color: var(--color-accent);
-  background: var(--color-bg-elevated);
-}
-```
+Use `transition: border-color 200ms, background-color 200ms` with Material 3 easing.
+On hover: change `border-color` to accent and `background` to elevated.
 
 ## Focus Ring
 
-```css
-.input {
-  transition:
-    border-color 150ms cubic-bezier(0.2, 0, 0, 1),
-    box-shadow 150ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.input:focus {
-  outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.2);
-}
-```
+Use `transition: border-color 150ms, box-shadow 150ms` with Material 3 easing.
+On focus: set `outline: none`, `border-color` to accent, and `box-shadow: 0 0 0 3px rgba(accent, 0.2)`.
 
 ---
 
 # Tailwind Transition Utilities
 
-```html
-<!-- Basic hover transition -->
-<button class="transition-colors duration-150 hover:bg-(--color-accent)">Hover me</button>
-
-<!-- Transform on hover -->
-<div class="transition-all duration-200 hover:scale-[1.02] hover:shadow-lg">
-  Scales up slightly on hover
-</div>
-
-<!-- Opacity transition -->
-<div class="transition-opacity duration-150 hover:opacity-80">Fades slightly on hover</div>
-
-<!-- Combined transitions -->
-<div class="transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md">
-  Lifts on hover
-</div>
-```
+- `transition-colors duration-150 hover:bg-(--color-accent)`: Basic hover transition
+- `transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`: Transform on hover
+- `transition-opacity duration-150 hover:opacity-80`: Opacity transition
+- `transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-md`: Combined transitions
 
 ---
 
@@ -133,75 +70,19 @@ transition-timing-function: linear;
 
 ## Fade In
 
-```css
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.animate-fade-in {
-  animation: fadeIn 200ms cubic-bezier(0.2, 0, 0, 1) forwards;
-}
-```
+Define `@keyframes fadeIn` from `opacity: 0` to `opacity: 1`. Apply with `animation: fadeIn 200ms cubic-bezier(0.2, 0, 0, 1) forwards`.
 
 ## Slide Up
 
-```css
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-slide-up {
-  animation: slideUp 300ms cubic-bezier(0.2, 0, 0, 1) forwards;
-}
-```
+Define `@keyframes slideUp` from `opacity: 0; transform: translateY(8px)` to `opacity: 1; transform: translateY(0)`. Apply with `animation: slideUp 300ms cubic-bezier(0.2, 0, 0, 1) forwards`.
 
 ## Scale In
 
-```css
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.animate-scale-in {
-  animation: scaleIn 200ms cubic-bezier(0.2, 0, 0, 1) forwards;
-}
-```
+Define `@keyframes scaleIn` from `opacity: 0; transform: scale(0.95)` to `opacity: 1; transform: scale(1)`. Apply with `animation: scaleIn 200ms cubic-bezier(0.2, 0, 0, 1) forwards`.
 
 ## Spin (Loading)
 
-```css
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
-```
+Define `@keyframes spin` from `transform: rotate(0deg)` to `transform: rotate(360deg)`. Apply with `animation: spin 1s linear infinite`.
 
 ---
 
@@ -209,90 +90,25 @@ transition-timing-function: linear;
 
 ## Button Press
 
-```css
-.button:active {
-  transform: scale(0.97);
-  transition-duration: 50ms;
-}
-```
+On active: `transform: scale(0.97); transition-duration: 50ms`.
 
 ## Number Count Up
 
-```css
-@property --num {
-  syntax: '<integer>';
-  initial-value: 0;
-  inherits: false;
-}
-
-.counter {
-  transition: --num 500ms cubic-bezier(0.2, 0, 0, 1);
-  counter-reset: num var(--num);
-}
-
-.counter::after {
-  content: counter(num);
-}
-```
+Use `@property --num` with `syntax: '<integer>'`. Set `transition: --num 500ms cubic-bezier(0.2, 0, 0, 1)` and `counter-reset: num var(--num)`. Display with `counter(num)` via `::after`.
 
 ## Toggle Switch
 
-```css
-.toggle {
-  transition: background-color 150ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.toggle::after {
-  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.toggle.active::after {
-  transform: translateX(20px);
-}
-```
+Use `transition: background-color 150ms` on the toggle and `transition: transform 150ms` on `::after`. On active, set `::after { transform: translateX(20px) }`.
 
 ## Skeleton Loading
 
-```css
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-bg-card) 25%,
-    var(--color-bg-elevated) 50%,
-    var(--color-bg-card) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
-}
-```
+Define `@keyframes shimmer` animating `background-position` from `-200% 0` to `200% 0`. Apply a `linear-gradient` background with `background-size: 200% 100%` and `animation: shimmer 1.5s ease-in-out infinite`.
 
 ---
 
 # Reduced Motion
 
-Always respect the user's motion preferences:
-
-```css
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-```
+Always respect the user's motion preferences. In a `@media (prefers-reduced-motion: reduce)` block, set `animation-duration: 0.01ms !important`, `animation-iteration-count: 1 !important`, `transition-duration: 0.01ms !important`, and `scroll-behavior: auto !important` on all elements.
 
 **Rules:**
 

@@ -4,10 +4,14 @@ import { CheckCircle, Loader2, XCircle, Zap } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { hookLog } from '@/utils/hooks'
 
+const props = defineProps<{
+  tabId: string
+}>()
+
 const logContainer = ref<HTMLElement | null>(null)
 const autoScroll = ref(true)
 
-const filteredLog = computed(() => hookLog.value)
+const filteredLog = computed(() => hookLog.value.filter(entry => entry.tabId === props.tabId))
 
 const eventLabel: Record<string, string> = {
   SessionStart: 'Session',

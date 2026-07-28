@@ -108,16 +108,17 @@ export const useChatStore = defineStore('chat', () => {
   }, { immediate: true })
 
   // ── Idle compaction ───────────────────────────────────────────────────────
-  
+
   const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
   import('./chat/agentLifecycle').then(({ agentBus }) => {
-    agentBus.on('status-change', (event) => {
+    agentBus.on('status-change', event => {
       const tab = tabs.value.find(t => t.id === event.tabId)
-      if (!tab) return
-      
+      if (!tab)
+        return
+
       const settings = useSettingsStore()
       const idleTime = 300
-      
+
       if (event.next.type === 'idle' && event.prev.type !== 'idle') {
         idleTimers.set(tab.id, setTimeout(() => {
           import('./chat/compaction').then(({ shouldCompactSession }) => {
@@ -126,7 +127,8 @@ export const useChatStore = defineStore('chat', () => {
             }
           })
         }, idleTime * 1000))
-      } else if (event.next.type !== 'idle' && event.prev.type === 'idle') {
+      }
+      else if (event.next.type !== 'idle' && event.prev.type === 'idle') {
         const timer = idleTimers.get(tab.id)
         if (timer) {
           clearTimeout(timer)
