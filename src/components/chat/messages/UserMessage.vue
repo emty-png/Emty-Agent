@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { Message } from '@/stores/chat'
 import type { Attachment } from '@/stores/chat/core/attachmentTypes'
-import { Copy, FileText } from 'lucide-vue-next'
+import { Copy, FileText, MessageSquareQuote } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { formatFileSize } from '@/stores/chat/core/attachmentTypes'
+import { formatFileSize, isBrowserElementAttachment, parseBrowserElementAttachment } from '@/stores/chat/core/attachmentTypes'
 
 const props = defineProps<{
   msg: Message
@@ -14,6 +14,29 @@ const emit = defineEmits<{
 }>()
 
 const attachments = computed(() => props.msg.attachments ?? [])
+
+function browserElementTitle(att: Attachment): string {
+  const data = parseBrowserElementAttachment(att)
+  if (!data)
+    return att.name
+  return data.element.text || data.element.selectorHint || `<${data.element.tag}>`
+}
+
+function browserElementHost(att: Attachment): string {
+  const data = parseBrowserElementAttachment(att)
+  if (!data)
+    return 'Browser element'
+  try {
+    return new URL(data.url).hostname
+  }
+  catch {
+    return data.url || 'Browser element'
+  }
+}
+
+function browserElementComment(att: Attachment): string {
+  return parseBrowserElementAttachment(att)?.comment ?? ''
+}
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -316,11 +339,31 @@ onUnmounted(() => {
         <div
           v-for="att in attachments"
           :key="att.id"
-          class="relative max-w-[200px] cursor-pointer rounded-[var(--radius-sm)] border border-[var(--color-accent-dim)] bg-[var(--color-bg-base)] overflow-hidden transition-opacity duration-[120ms] hover:opacity-[0.85]"
+          class="relative cursor-pointer rounded-[var(--radius-sm)] border border-[var(--color-accent-dim)] bg-[var(--color-bg-base)] overflow-hidden transition-opacity duration-[120ms] hover:opacity-[0.85]"
+          :class="isBrowserElementAttachment(att) ? 'max-w-[320px]' : 'max-w-[200px]'"
           @click="emit('previewAttachment', att)"
         >
+          <div
+            v-if="isBrowserElementAttachment(att)"
+            class="flex max-w-[320px] gap-2 px-2.5 py-2 text-[var(--color-text-primary)]"
+          >
+            <div class="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius-sm)] bg-[color-mix(in_srgb,var(--color-accent)_16%,var(--color-bg-base))] text-[var(--color-accent)]">
+              <MessageSquareQuote :size="15" :stroke-width="1.8" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-[12px] font-semibold">
+                {{ browserElementTitle(att) }}
+              </div>
+              <div class="truncate text-[10.5px] text-[var(--color-text-tertiary)]">
+                {{ browserElementHost(att) }}
+              </div>
+              <div v-if="browserElementComment(att)" class="mt-1 line-clamp-2 text-[11.5px] leading-[1.35] text-[var(--color-text-secondary)]">
+                {{ browserElementComment(att) }}
+              </div>
+            </div>
+          </div>
           <img
-            v-if="att.type === 'image'"
+            v-else-if="att.type === 'image'"
             :src="att.dataUrl"
             :alt="att.name"
             class="block h-[60px] w-auto max-w-[140px] object-cover"

@@ -3,7 +3,42 @@
   const MAIN_LABEL = __MAIN_LABEL__
   const STATE_EVENT = __STATE_EVENT__
   const BRIDGE_EVENT = __BRIDGE_EVENT__
+  const ELEMENT_PICK_EVENT = 'browser://element-picked'
   const INTERACTIVE_SELECTOR = 'a,button,input,textarea,select,summary,[role="button"],[role="link"],[contenteditable="true"],[tabindex]'
+  const PICKER_ROOT_ID = '__emty_agent_browser_picker__'
+  const PICKER_STYLE_ID = '__emty_agent_browser_picker_styles__'
+
+  if (!window.__EMTY_AGENT_LOGS__) {
+    window.__EMTY_AGENT_LOGS__ = []
+    const methods = ['log', 'info', 'warn', 'error', 'debug']
+    for (const method of methods) {
+      const original = console[method]
+      console[method] = function (...args) {
+        try {
+          const message = args.map(arg => {
+            if (typeof arg === 'object' && arg !== null) {
+              try {
+                return JSON.stringify(arg)
+              }
+              catch {
+                return String(arg)
+              }
+            }
+            return String(arg)
+          }).join(' ')
+          
+          window.__EMTY_AGENT_LOGS__.push(`[${method.toUpperCase()}] ${message}`)
+          if (window.__EMTY_AGENT_LOGS__.length > 500) {
+            window.__EMTY_AGENT_LOGS__.shift()
+          }
+        }
+        catch (e) {
+          // Ignore serialization errors in interceptor
+        }
+        if (original) original.apply(console, args)
+      }
+    }
+  }
 
   function invoke(command, args) {
     const internals = window.__TAURI_INTERNALS__
@@ -83,6 +118,11 @@
     return text.length > max ? `${text.slice(0, max)}...` : text
   }
 
+  function truncateRaw(value, max = 4000) {
+    const text = String(value ?? '')
+    return text.length > max ? `${text.slice(0, max)}...` : text
+  }
+
   function serializeValue(value) {
     if (value === undefined)
       return null
@@ -130,19 +170,68 @@
     return el.tagName.toLowerCase()
   }
 
-  function describeElement(el) {
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === 'function')
+      return window.CSS.escape(String(value))
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, ch => `\\${ch}`)
+  }
+
+  function selectorForElement(el) {
+    if (!(el instanceof Element))
+      return ''
+
+    if (el.id)
+      return `#${cssEscape(el.id)}`
+
+    const parts = []
+    let current = el
+    while (current && current instanceof Element && current !== document.documentElement) {
+      let part = current.tagName.toLowerCase()
+      const parent = current.parentElement
+      if (!parent)
+        break
+
+      const sameTagSiblings = Array.from(parent.children)
+        .filter(child => child.tagName === current.tagName)
+      if (sameTagSiblings.length > 1)
+        part += `:nth-of-type(${sameTagSiblings.indexOf(current) + 1})`
+
+      parts.unshift(part)
+      if (parts.length >= 6)
+        break
+      current = parent
+    }
+
+    return parts.join(' > ') || elementIdentifier(el)
+  }
+
+  function elementAttributes(el) {
+    const attrs = {}
+    for (const attr of Array.from(el.attributes || [])) {
+      attrs[attr.name] = truncateRaw(attr.value, 300)
+    }
+    return attrs
+  }
+
+  function describeElement(el, options = {}) {
     const rect = el.getBoundingClientRect()
     const value = 'value' in el ? String(el.value ?? '') : ''
     const checked = 'checked' in el ? Boolean(el.checked) : undefined
+    const maxHtmlChars = Number(options.maxHtmlChars ?? 4000)
 
     return {
       tag: el.tagName.toLowerCase(),
       id: el.id || null,
+      classes: [...el.classList],
       name: el.getAttribute('name'),
       role: elementRole(el),
+      ariaLabel: el.getAttribute('aria-label'),
+      selector: selectorForElement(el),
       selectorHint: elementIdentifier(el),
       text: truncate(elementText(el), 220),
       href: el instanceof HTMLAnchorElement ? el.href : null,
+      attributes: elementAttributes(el),
+      outerHTML: truncateRaw(el.outerHTML || '', maxHtmlChars),
       placeholder: el.getAttribute('placeholder'),
       type: 'type' in el ? String(el.type ?? '') : null,
       disabled: 'disabled' in el ? Boolean(el.disabled) : false,
@@ -226,6 +315,543 @@
     if (el instanceof HTMLElement)
       el.focus({ preventScroll: true })
     el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' })
+  }
+
+  const pickerState = {
+    active: false,
+    hovered: null,
+    selected: null,
+    root: null,
+    hoverBox: null,
+    markerLayer: null,
+    composer: null,
+    annotations: [],
+    raf: 0,
+    markerListenersActive: false,
+  }
+
+  function installPickerStyles() {
+    if (document.getElementById(PICKER_STYLE_ID))
+      return
+
+    const style = document.createElement('style')
+    style.id = PICKER_STYLE_ID
+    style.textContent = `
+      #${PICKER_ROOT_ID} {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        pointer-events: none;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #f8fbff;
+      }
+
+      #${PICKER_ROOT_ID} * {
+        box-sizing: border-box;
+      }
+
+      .emty-picker-hover,
+      .emty-picker-marker-box {
+        position: fixed;
+        border: 2px solid #178cff;
+        background: rgba(23, 140, 255, 0.16);
+        box-shadow: 0 0 0 1px rgba(255,255,255,0.76), 0 10px 32px rgba(0,0,0,0.18);
+        pointer-events: none;
+      }
+
+      .emty-picker-hover {
+        display: none;
+      }
+
+      .emty-picker-pin,
+      .emty-picker-marker-pin {
+        position: fixed;
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        border: 2px solid #ffffff;
+        border-radius: 999px;
+        background: #178cff;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+        pointer-events: none;
+      }
+
+      .emty-picker-pin::before,
+      .emty-picker-marker-pin::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #ffffff;
+      }
+
+      .emty-picker-composer {
+        position: fixed;
+        width: min(300px, calc(100vw - 24px));
+        border: 1px solid #262626;
+        border-radius: 12px;
+        background: #0a0a0a;
+        box-shadow: 0 12px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
+        padding: 6px;
+        pointer-events: auto;
+      }
+
+      .emty-picker-composer-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .emty-picker-comment {
+        flex: 1;
+        min-width: 0;
+        height: 28px;
+        box-sizing: border-box;
+        border: 1px solid #333333;
+        border-radius: 8px;
+        outline: 0;
+        resize: none;
+        background: #141414;
+        color: #f2f2f2;
+        font: inherit;
+        font-size: 12px;
+        line-height: 20px;
+        padding: 4px 8px;
+        transition: border-color 150ms ease;
+      }
+
+      .emty-picker-comment:focus {
+        border-color: #00e5ff;
+      }
+
+      .emty-picker-comment::placeholder {
+        color: #595959;
+      }
+
+      .emty-picker-action,
+      .emty-picker-cancel {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        flex-shrink: 0;
+        border: 1px solid #333333;
+        border-radius: 8px;
+        background: #141414;
+        color: #8a8a8a;
+        cursor: pointer;
+        font: inherit;
+        transition: background 100ms cubic-bezier(0.4,0,0.2,1), border-color 100ms cubic-bezier(0.4,0,0.2,1), color 100ms cubic-bezier(0.4,0,0.2,1);
+      }
+
+      .emty-picker-cancel:hover {
+        background: #1c1c1c;
+        color: #f2f2f2;
+      }
+
+      .emty-picker-cancel:active {
+        transform: scale(0.97);
+      }
+
+      .emty-picker-action:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
+
+      .emty-picker-action:not(:disabled) {
+        border-color: rgba(0,229,255,0.4);
+        background: rgba(0,229,255,0.18);
+        color: #00e5ff;
+      }
+
+      .emty-picker-action:not(:disabled):hover {
+        background: rgba(0,229,255,0.28);
+      }
+
+      .emty-picker-action:not(:disabled):active {
+        transform: scale(0.97);
+      }
+
+      .emty-picker-marker-note {
+        position: fixed;
+        max-width: 260px;
+        padding: 7px 10px;
+        border-radius: 12px;
+        background: #178cff;
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.35;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.25);
+        pointer-events: none;
+      }
+    `
+
+    const target = document.head || document.documentElement
+    target.appendChild(style)
+  }
+
+  function ensurePickerRoot() {
+    installPickerStyles()
+
+    if (pickerState.root && document.documentElement.contains(pickerState.root))
+      return pickerState.root
+
+    const root = document.createElement('div')
+    root.id = PICKER_ROOT_ID
+
+    const hoverBox = document.createElement('div')
+    hoverBox.className = 'emty-picker-hover'
+    const pin = document.createElement('div')
+    pin.className = 'emty-picker-pin'
+    hoverBox.appendChild(pin)
+
+    const markerLayer = document.createElement('div')
+    markerLayer.className = 'emty-picker-marker-layer'
+
+    root.appendChild(markerLayer)
+    root.appendChild(hoverBox)
+    document.documentElement.appendChild(root)
+
+    pickerState.root = root
+    pickerState.hoverBox = hoverBox
+    pickerState.markerLayer = markerLayer
+    return root
+  }
+
+  function isPickerElement(node) {
+    return node instanceof Element && !!node.closest(`#${PICKER_ROOT_ID}`)
+  }
+
+  function elementFromPointer(event) {
+    const el = document.elementFromPoint(event.clientX, event.clientY)
+    if (!el || isPickerElement(el) || el === document.documentElement || el === document.body)
+      return null
+    return el
+  }
+
+  function getPageZoomScale() {
+    // CSS zoom on <html> scales getBoundingClientRect() values but NOT
+    // position:fixed coordinates. Divide by the zoom factor to compensate.
+    const zoom = window.__EMTY_AGENT_BROWSER_ZOOM__ ?? 100
+    return zoom / 100
+  }
+
+  function toViewport(value) {
+    return value / getPageZoomScale()
+  }
+
+  function positionBox(box, rect) {
+    const scale = getPageZoomScale()
+    const left = rect.left / scale
+    const top = rect.top / scale
+    const width = rect.width / scale
+    const height = rect.height / scale
+    const right = rect.right / scale
+
+    box.style.display = 'block'
+    box.style.left = `${Math.max(0, Math.round(left))}px`
+    box.style.top = `${Math.max(0, Math.round(top))}px`
+    box.style.width = `${Math.max(1, Math.round(width))}px`
+    box.style.height = `${Math.max(1, Math.round(height))}px`
+
+    const pin = box.querySelector('.emty-picker-pin, .emty-picker-marker-pin')
+    if (pin) {
+      pin.style.left = `${Math.min(window.innerWidth - 26, Math.max(4, Math.round(right - 12)))}px`
+      pin.style.top = `${Math.min(window.innerHeight - 26, Math.max(4, Math.round(top + height / 2 - 11)))}px`
+    }
+  }
+
+  function updateHoverBox() {
+    if (!pickerState.hoverBox || !pickerState.hovered)
+      return
+    positionBox(pickerState.hoverBox, pickerState.hovered.getBoundingClientRect())
+  }
+
+  function hideHoverBox() {
+    if (pickerState.hoverBox)
+      pickerState.hoverBox.style.display = 'none'
+  }
+
+  function scheduleMarkerRender() {
+    if (pickerState.raf)
+      return
+    pickerState.raf = window.requestAnimationFrame(() => {
+      pickerState.raf = 0
+      renderPickerMarkers()
+      updateHoverBox()
+    })
+  }
+
+  function syncMarkerListeners() {
+    const shouldListen = pickerState.active || pickerState.annotations.length > 0
+    if (shouldListen === pickerState.markerListenersActive)
+      return
+
+    pickerState.markerListenersActive = shouldListen
+    const method = shouldListen ? 'addEventListener' : 'removeEventListener'
+    window[method]('scroll', scheduleMarkerRender, true)
+    window[method]('resize', scheduleMarkerRender, true)
+  }
+
+  function renderPickerMarkers() {
+    ensurePickerRoot()
+    const layer = pickerState.markerLayer
+    if (!layer)
+      return
+
+    layer.textContent = ''
+    for (const annotation of pickerState.annotations) {
+      if (!annotation?.element?.selector)
+        continue
+      let el = null
+      try {
+        el = document.querySelector(annotation.element.selector)
+      }
+      catch {
+        el = null
+      }
+      if (!el || !isVisible(el))
+        continue
+
+      const rect = el.getBoundingClientRect()
+      const box = document.createElement('div')
+      box.className = 'emty-picker-marker-box'
+      const pin = document.createElement('div')
+      pin.className = 'emty-picker-marker-pin'
+      box.appendChild(pin)
+      positionBox(box, rect)
+
+      const note = document.createElement('div')
+      note.className = 'emty-picker-marker-note'
+      note.textContent = truncate(annotation.comment, 90)
+      const scale = getPageZoomScale()
+      note.style.left = `${Math.min(window.innerWidth - 272, Math.max(8, Math.round(rect.left / scale)))}px`
+      note.style.top = `${Math.min(window.innerHeight - 48, Math.max(8, Math.round(rect.bottom / scale + 8)))}px`
+
+      layer.appendChild(box)
+      layer.appendChild(note)
+    }
+  }
+
+  function removeComposer() {
+    if (pickerState.composer) {
+      pickerState.composer.remove()
+      pickerState.composer = null
+    }
+    pickerState.selected = null
+  }
+
+  function showComposerFor(el) {
+    ensurePickerRoot()
+    removeComposer()
+
+    pickerState.selected = el
+    const rect = el.getBoundingClientRect()
+    const composer = document.createElement('div')
+    composer.className = 'emty-picker-composer'
+    composer.innerHTML = `
+      <div class="emty-picker-composer-row">
+        <button class="emty-picker-cancel" type="button" aria-label="Cancel annotation">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+        <textarea class="emty-picker-comment" rows="1" placeholder="Add a comment..."></textarea>
+        <button class="emty-picker-action" type="button" aria-label="Attach comment" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        </button>
+      </div>
+    `
+
+    const scale = getPageZoomScale()
+    const scaledLeft = rect.left / scale
+    const scaledTop = rect.top / scale
+    const scaledBottom = rect.bottom / scale
+    const scaledWidth = rect.width / scale
+    const left = Math.min(window.innerWidth - 332, Math.max(12, scaledLeft + scaledWidth / 2 - 160))
+    const below = scaledBottom + 10
+    const top = below + 58 < window.innerHeight
+      ? below
+      : Math.max(12, scaledTop - 58)
+    composer.style.left = `${left}px`
+    composer.style.top = `${top}px`
+
+    const textarea = composer.querySelector('.emty-picker-comment')
+    const action = composer.querySelector('.emty-picker-action')
+    const cancel = composer.querySelector('.emty-picker-cancel')
+
+    textarea.addEventListener('input', () => {
+      action.disabled = textarea.value.trim().length === 0
+    })
+
+    textarea.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        removeComposer()
+      }
+      if ((event.key === 'Enter' && (event.metaKey || event.ctrlKey)) || (event.key === 'Enter' && !event.shiftKey)) {
+        event.preventDefault()
+        submitPickerComment(textarea.value)
+      }
+    })
+
+    action.addEventListener('click', () => submitPickerComment(textarea.value))
+    cancel.addEventListener('click', removeComposer)
+
+    pickerState.root.appendChild(composer)
+    pickerState.composer = composer
+    window.setTimeout(() => textarea.focus(), 0)
+  }
+
+  function makePickerId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function')
+      return window.crypto.randomUUID()
+    return `browser-element-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  }
+
+  function submitPickerComment(rawComment) {
+    const comment = normalizeText(rawComment)
+    const el = pickerState.selected
+    if (!comment || !el)
+      return
+
+    const annotation = {
+      id: makePickerId(),
+      comment,
+      url: window.location.href,
+      title: document.title,
+      createdAt: Date.now(),
+      element: describeElement(el, { maxHtmlChars: 6000 }),
+    }
+
+    pickerState.annotations.push(annotation)
+    removeComposer()
+    renderPickerMarkers()
+    emitToMain(ELEMENT_PICK_EVENT, { annotation }).catch(() => {})
+  }
+
+  function onPickerPointerMove(event) {
+    if (!pickerState.active || pickerState.composer)
+      return
+    const el = elementFromPointer(event)
+    if (el === pickerState.hovered)
+      return
+    pickerState.hovered = el
+    if (!el) {
+      hideHoverBox()
+      return
+    }
+    updateHoverBox()
+  }
+
+  function onPickerPointerDown(event) {
+    if (!pickerState.active)
+      return
+    if (isPickerElement(event.target))
+      return
+    const el = elementFromPointer(event)
+    if (!el)
+      return
+    event.preventDefault()
+    event.stopPropagation()
+    showComposerFor(el)
+  }
+
+  function onPickerClick(event) {
+    if (!pickerState.active || isPickerElement(event.target))
+      return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  function onPickerKeydown(event) {
+    if (!pickerState.active)
+      return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      stopElementPicker()
+    }
+  }
+
+  async function startElementPicker() {
+    await waitForReady()
+    ensurePickerRoot()
+    if (pickerState.active)
+      return { active: true }
+
+    pickerState.active = true
+    document.addEventListener('pointermove', onPickerPointerMove, true)
+    document.addEventListener('pointerdown', onPickerPointerDown, true)
+    document.addEventListener('click', onPickerClick, true)
+    document.addEventListener('keydown', onPickerKeydown, true)
+    syncMarkerListeners()
+    renderPickerMarkers()
+    return { active: true }
+  }
+
+  function stopElementPicker() {
+    if (!pickerState.active)
+      return { active: false }
+
+    pickerState.active = false
+    pickerState.hovered = null
+    document.removeEventListener('pointermove', onPickerPointerMove, true)
+    document.removeEventListener('pointerdown', onPickerPointerDown, true)
+    document.removeEventListener('click', onPickerClick, true)
+    document.removeEventListener('keydown', onPickerKeydown, true)
+    removeComposer()
+    hideHoverBox()
+    syncMarkerListeners()
+    return { active: false }
+  }
+
+  async function setElementAnnotations(args = {}) {
+    await waitForReady()
+    ensurePickerRoot()
+    pickerState.annotations = Array.isArray(args.annotations) ? args.annotations : []
+    renderPickerMarkers()
+    syncMarkerListeners()
+    return { count: pickerState.annotations.length }
+  }
+
+  async function setPageZoom(args = {}) {
+    await waitForReady()
+    const zoomPercent = Math.max(25, Math.min(Number(args.zoomPercent ?? 100), 200))
+    document.documentElement.style.zoom = `${zoomPercent}%`
+    window.__EMTY_AGENT_BROWSER_ZOOM__ = zoomPercent
+    return {
+      title: document.title,
+      url: window.location.href,
+      zoomPercent,
+    }
+  }
+
+  async function printPage() {
+    await waitForReady()
+    window.print()
+    return {
+      title: document.title,
+      url: window.location.href,
+      ok: true,
+    }
+  }
+
+  async function findText(args = {}) {
+    await waitForReady()
+    const query = String(args.query ?? '').trim()
+    if (!query)
+      return { found: false }
+
+    const backwards = args.backwards === true
+    const found = typeof window.find === 'function'
+      ? window.find(query, false, backwards, true, false, false, false)
+      : false
+    return {
+      title: document.title,
+      url: window.location.href,
+      query,
+      found,
+    }
   }
 
   function dispatchInputEvents(el) {
@@ -841,6 +1467,18 @@
         return cookies(args)
       case 'screenshot':
         return screenshot(args)
+      case 'startPicker':
+        return startElementPicker(args)
+      case 'stopPicker':
+        return stopElementPicker(args)
+      case 'setAnnotations':
+        return setElementAnnotations(args)
+      case 'setZoom':
+        return setPageZoom(args)
+      case 'print':
+        return printPage(args)
+      case 'findText':
+        return findText(args)
       default:
         throw new Error(`Unsupported browser bridge action "${action}"`)
     }

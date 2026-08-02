@@ -11,7 +11,7 @@ export interface BrowserBounds {
 
 export interface BrowserBridgeRequest {
   id: string
-  action: 'snapshot' | 'extract' | 'click' | 'type' | 'press' | 'scroll' | 'wait' | 'history' | 'execute' | 'cookies' | 'screenshot'
+  action: 'snapshot' | 'extract' | 'click' | 'type' | 'press' | 'scroll' | 'wait' | 'history' | 'execute' | 'cookies' | 'screenshot' | 'startPicker' | 'stopPicker' | 'setAnnotations' | 'setZoom' | 'print' | 'findText'
   args?: Record<string, unknown>
 }
 
@@ -50,6 +50,7 @@ interface BrowserNewTabEventPayload {
 const BROWSER_STATE_EVENT = 'browser://state'
 const BROWSER_BRIDGE_EVENT = 'browser://bridge'
 const BROWSER_NEW_TAB_EVENT = 'browser://new-tab'
+export const BROWSER_ELEMENT_PICKED_EVENT = 'browser://element-picked'
 
 let listenersPromise: Promise<void> | null = null
 let activeSurfaceSessionId: string | null = null
@@ -176,7 +177,7 @@ async function ensureListeners(): Promise<void> {
   return listenersPromise
 }
 
-export async function waitForSurface(sessionId: string, timeoutMs = 60_000): Promise<void> {
+export async function waitForSurface(sessionId: string, timeoutMs = 120_000): Promise<void> {
   await ensureListeners()
 
   if (readySurfaceSessionId === sessionId || readySurfaceSessions.has(sessionId))
@@ -380,7 +381,7 @@ export async function executeScriptSurface(sessionId: string, script: string): P
     sessionId,
     'execute',
     { script },
-    30_000,
+    120_000,
   )
   return result?.value ?? null
 }
@@ -434,11 +435,47 @@ export async function deleteCookiesSurface(sessionId: string, url: string, name?
   )
 }
 
+export async function startElementPickerSurface(sessionId: string): Promise<void> {
+  if (!sessionId)
+    throw new Error('No browser page is open. Call browser_open first.')
+  await dispatchBridgeRequest(sessionId, 'startPicker', {}, 5000)
+}
+
+export async function stopElementPickerSurface(sessionId: string): Promise<void> {
+  if (!sessionId)
+    return
+  await dispatchBridgeRequest(sessionId, 'stopPicker', {}, 5000)
+}
+
+export async function setElementAnnotationsSurface(sessionId: string, annotations: unknown[]): Promise<void> {
+  if (!sessionId)
+    return
+  await dispatchBridgeRequest(sessionId, 'setAnnotations', { annotations }, 5000)
+}
+
+export async function setZoomSurface(sessionId: string, zoomPercent: number): Promise<void> {
+  if (!sessionId)
+    return
+  await dispatchBridgeRequest(sessionId, 'setZoom', { zoomPercent }, 5000)
+}
+
+export async function printSurface(sessionId: string): Promise<void> {
+  if (!sessionId)
+    throw new Error('No browser page is open. Call browser_open first.')
+  await dispatchBridgeRequest(sessionId, 'print', {}, 5000)
+}
+
+export async function findTextSurface(sessionId: string, query: string, backwards = false): Promise<{ found?: boolean }> {
+  if (!sessionId)
+    throw new Error('No browser page is open. Call browser_open first.')
+  return dispatchBridgeRequest<{ found?: boolean }>(sessionId, 'findText', { query, backwards }, 5000)
+}
+
 export async function dispatchBridgeRequest<T = unknown>(
   sessionId: string,
   action: BrowserBridgeRequest['action'],
   args?: Record<string, unknown>,
-  timeoutMs = 30_000,
+  timeoutMs = 120_000,
 ): Promise<T> {
   await ensureListeners()
   await waitForSurface(sessionId)

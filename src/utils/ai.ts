@@ -198,6 +198,10 @@ export interface StreamChatOptions {
   tools?: ToolSet | undefined
   supportsToolCalls: boolean
   providerOptions?: Record<string, Record<string, JSONValue>>
+  prepareStep?: (event: {
+    stepNumber: number
+    messages: ModelMessage[]
+  }) => PromiseLike<{ messages?: ModelMessage[] } | undefined> | { messages?: ModelMessage[] } | undefined
   onDelta: (delta: string) => void
   onReasoningDelta?: (delta: string) => void
   onToolCall?: (event: ToolCallEvent) => void
@@ -301,6 +305,7 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     tools,
     supportsToolCalls,
     providerOptions,
+    prepareStep,
     onDelta,
     onReasoningDelta,
     onToolCall,
@@ -344,6 +349,7 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
           }
         : {}),
       maxOutputTokens,
+      ...(prepareStep ? { prepareStep } : {}),
       ...(providerOptions ? { providerOptions } : {}),
       ...(signal ? { abortSignal: signal } : {}),
     })

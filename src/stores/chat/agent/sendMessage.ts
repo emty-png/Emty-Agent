@@ -1,7 +1,7 @@
-import type { LanguageModel } from 'ai'
+import type { LanguageModel, ModelMessage } from 'ai'
 import type { ComputedRef, Ref } from 'vue'
 import type { SettingsSnapshot } from '@/stores/chat/context/compaction'
-import type { ChatMode, ChatTab, Message, SubAgentPersonality, ToolEvent } from '@/stores/chat/core/types'
+import type { Attachment, ChatMode, ChatTab, Message, SubAgentPersonality, ToolEvent } from '@/stores/chat/core/types'
 import type { RequestToolPermission, ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { QuestionAnswer, QuestionSpec } from '@/utils/tools/questions'
 import type { TaskItem } from '@/utils/tools/todos'
@@ -27,7 +27,10 @@ import {
 import { runSubAgentStream } from '@/stores/chat/agent/subagent'
 import { compactConversationSession, persistCompactionMessages, shouldCompactSession } from '@/stores/chat/context/compaction'
 import { buildMentionContext } from '@/stores/chat/context/mentions'
+import { toModelMessages } from '@/stores/chat/context/messageSerializer'
+import { BG_TASK_COMPLETED_DIVIDER } from '@/stores/chat/core/constants'
 import { toolRegistry } from '@/stores/chat/tools/registry'
+import { consumePendingBgTaskNotifications } from '@/stores/chat/utils/bgTaskNotifications'
 import { makeId } from '@/stores/chat/utils/tabFactory'
 import { resolveTabWorkspacePath } from '@/stores/chat/utils/workspace'
 import { getEffectiveMcpServers } from '@/utils/perTabOverrides'
@@ -47,6 +50,10 @@ function setStatus(tab: ChatTab, next: ChatTab['agentStatus']): void {
   emitStatusChange(tab.id, prev, next)
 }
 
+function debugStreamInterceptor(message: string, data?: Record<string, unknown>): void {
+  console.warn('[stream-interceptor]', message, data ?? {})
+}
+
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 export function createSendMessage(
@@ -58,7 +65,7 @@ export function createSendMessage(
   requestToolPermission: (tabId: string, request: Parameters<RequestToolPermission>[0]) => Promise<ToolPermissionDecision>,
   drainQueue: () => void,
 ) {
-  async function sendMessage(content: string, _mode: ChatMode = 'build', attachments?: import('@/stores/chat/core/types').Attachment[], modelOverride?: string | null, isBgNotification?: boolean): Promise<void> {
+  async function sendMessage(content: string, _mode: ChatMode = 'build', attachments?: Attachment[], modelOverride?: string | null, isBgNotification?: boolean): Promise<void> {
     const tab = activeTab.value
     if ((!content.trim() && (!attachments || attachments.length === 0)) || tab.agentStatus.type !== 'idle')
       return
@@ -259,8 +266,130 @@ export function createSendMessage(
     tab.messages.push(assistantMsg)
     setStatus(tab, STATUS_INITIALIZING)
 
-    await dbInsertMessage({ id: assistantId, conversation_id: tab.conversationId!, role: 'assistant', content: '', created_at: Date.now(), is_complete: 0, model_uid: resolvedModelUid ?? null, model_name: activeModel?.name ?? null })
+    const assistantCreatedAt = Date.now()
+    await dbInsertMessage({ id: assistantId, conversation_id: tab.conversationId!, role: 'assistant', content: '', created_at: assistantCreatedAt, is_complete: 0, model_uid: resolvedModelUid ?? null, model_name: activeModel?.name ?? null })
       .catch(e => console.error('[sendMessage] Failed to pre-insert assistant row:', e))
+
+    const interceptedStepMessages: ModelMessage[] = []
+
+    function insertBeforeLiveAssistant(message: Message): void {
+      const assistantIndex = tab.messages.findIndex(m => m.id === assistantId)
+      if (assistantIndex >= 0)
+        tab.messages.splice(assistantIndex, 0, message)
+      else
+        tab.messages.push(message)
+    }
+
+    function modelMessageSignature(message: ModelMessage): string {
+      try {
+        return JSON.stringify(message)
+      }
+      catch {
+        return `${message.role}:${String(message.content)}`
+      }
+    }
+
+    function appendMissingInterceptedMessages(messages: ModelMessage[]): ModelMessage[] {
+      if (interceptedStepMessages.length === 0)
+        return messages
+
+      const existing = new Set(messages.map(modelMessageSignature))
+      const missing = interceptedStepMessages.filter(message => !existing.has(modelMessageSignature(message)))
+      return missing.length > 0 ? [...messages, ...missing] : messages
+    }
+
+    async function appendInterceptedUserMessage(input: {
+      text: string
+      attachments?: Attachment[] | undefined
+      isBgNotification?: boolean | undefined
+      mentionContext?: string | undefined
+      createdAt?: number
+    }): Promise<Message> {
+      const createdAt = input.createdAt ?? Date.now()
+      const message: Message = {
+        id: makeId(),
+        role: 'user',
+        content: input.text,
+        timestamp: new Date(createdAt),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+        ...(input.mentionContext?.trim() ? { mentionContext: input.mentionContext } : {}),
+        ...(input.isBgNotification ? { isBgNotification: true } : {}),
+      }
+
+      insertBeforeLiveAssistant(message)
+
+      await dbInsertMessage({
+        id: message.id,
+        conversation_id: tab.conversationId!,
+        role: 'user',
+        content: message.content,
+        created_at: createdAt,
+        ...(message.mentionContext ? { mention_context: message.mentionContext } : {}),
+        ...(message.attachments?.length ? { attachments: JSON.stringify(message.attachments) } : {}),
+        ...(message.isBgNotification ? { is_bg_notification: 1 } : {}),
+      }).catch(e => console.error('[sendMessage] Failed to insert intercepted user row:', e))
+
+      return message
+    }
+
+    async function consumePendingRequestMessages(): Promise<ModelMessage[]> {
+      const createdMessages: Message[] = []
+      const queuedCount = tab.messageQueue.length
+
+      const bgNotification = consumePendingBgTaskNotifications(tabId)
+      debugStreamInterceptor('checking pending request messages', {
+        tabId,
+        queuedCount,
+        hasBgNotification: Boolean(bgNotification),
+      })
+      if (bgNotification) {
+        const dividerCreatedAt = Date.now()
+        const dividerMsg: Message = {
+          id: makeId(),
+          role: 'assistant',
+          content: BG_TASK_COMPLETED_DIVIDER,
+          timestamp: new Date(dividerCreatedAt),
+        }
+        insertBeforeLiveAssistant(dividerMsg)
+        await dbInsertMessage({
+          id: dividerMsg.id,
+          conversation_id: tab.conversationId!,
+          role: 'assistant',
+          content: BG_TASK_COMPLETED_DIVIDER,
+          created_at: dividerCreatedAt,
+        }).catch(e => console.error('[sendMessage] Failed to insert bg divider row:', e))
+
+        createdMessages.push(await appendInterceptedUserMessage({
+          text: bgNotification,
+          isBgNotification: true,
+          createdAt: dividerCreatedAt + 1,
+        }))
+      }
+
+      const queued = tab.messageQueue.splice(0)
+      for (const item of queued) {
+        const queuedMentionContext = await buildMentionContext(item.text, effectiveProjectPath, tab.readRegistry, mode, tab.designs).catch(() => '')
+        createdMessages.push(await appendInterceptedUserMessage({
+          text: item.text,
+          attachments: item.attachments.length > 0 ? item.attachments : undefined,
+          mentionContext: queuedMentionContext,
+          createdAt: Math.max(item.queuedAt, Date.now()),
+        }))
+      }
+
+      if (createdMessages.length > 0 && tab.conversationId)
+        await dbTouchConversation(tab.conversationId).catch(() => {})
+
+      const modelMessages = createdMessages.length > 0 ? toModelMessages(createdMessages) : []
+      debugStreamInterceptor('consumed pending request messages', {
+        tabId,
+        createdCount: createdMessages.length,
+        modelMessageCount: modelMessages.length,
+      })
+      return modelMessages
+    }
+
+    await consumePendingRequestMessages()
 
     // ── Build run context (model, system prompt, api messages, cache) ─────
     let runCtx: Awaited<ReturnType<typeof buildRunContext>>
@@ -759,6 +888,22 @@ export function createSendMessage(
         onToolResult: streamHandlers.onToolResult,
         onFinish,
         onError,
+        prepareStep: async ({ stepNumber, messages }) => {
+          const nextMessages = await consumePendingRequestMessages()
+          if (nextMessages.length > 0)
+            interceptedStepMessages.push(...nextMessages)
+          const preparedMessages = appendMissingInterceptedMessages(messages)
+          debugStreamInterceptor('prepareStep', {
+            tabId,
+            stepNumber,
+            incomingMessageCount: messages.length,
+            newlyInterceptedCount: nextMessages.length,
+            retainedInterceptedCount: interceptedStepMessages.length,
+            outgoingMessageCount: preparedMessages.length,
+            appended: preparedMessages !== messages,
+          })
+          return preparedMessages === messages ? undefined : { messages: preparedMessages }
+        },
         signal: ac.signal,
         ...(providerOptions ? { providerOptions: providerOptions as Record<string, Record<string, import('ai').JSONValue>> } : {}),
         ...(tools ? { tools } : {}),

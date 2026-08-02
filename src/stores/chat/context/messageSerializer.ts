@@ -1,6 +1,6 @@
 import type { JSONValue, ModelMessage, ToolResultPart } from 'ai'
 import type { Message, ToolEvent } from '@/stores/chat/core/types'
-import { isImageMime } from '@/stores/chat/core/attachmentTypes'
+import { isBrowserElementAttachment, isImageMime, parseBrowserElementAttachment } from '@/stores/chat/core/attachmentTypes'
 import { BG_TASK_COMPLETED_DIVIDER, SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from '@/stores/chat/core/constants'
 
 // ── tool result helpers ─────────────────────────────────────────────────────
@@ -218,9 +218,10 @@ export function toModelMessages(
         // Older messages keep file/text attachments but drop images to save context.
         const isLatestUserMessage = i === lastUserMessageIndex
         const imageAttachments = isLatestUserMessage
-          ? m.attachments.filter(a => isImageMime(a.mimeType))
+          ? m.attachments.filter(a => a.type === 'image' && isImageMime(a.mimeType))
           : []
-        const fileAttachments = m.attachments.filter(a => !isImageMime(a.mimeType))
+        const browserElementAttachments = m.attachments.filter(isBrowserElementAttachment)
+        const fileAttachments = m.attachments.filter(a => !isBrowserElementAttachment(a) && !isImageMime(a.mimeType))
 
         // Build multimodal content parts
         const content: Array<
@@ -229,10 +230,37 @@ export function toModelMessages(
         > = []
 
         // Prepend file contents as text context (non-image attachments)
+        const attachmentContext: string[] = []
+        if (browserElementAttachments.length > 0) {
+          attachmentContext.push(...browserElementAttachments.map(att => {
+            const data = parseBrowserElementAttachment(att)
+            if (!data)
+              return `--- Browser element comment: ${att.name} ---\n${att.dataUrl}`
+
+            const attrs = Object.entries(data.element.attributes)
+              .map(([key, value]) => `${key}="${value}"`)
+              .join(' ')
+            return [
+              `--- Browser element comment: ${att.name} ---`,
+              `Page: ${data.title || data.url}`,
+              `URL: ${data.url}`,
+              `User comment: ${data.comment}`,
+              `Selector: ${data.element.selector}`,
+              `Element: <${data.element.tag}${attrs ? ` ${attrs}` : ''}>`,
+              data.element.text ? `Visible text: ${data.element.text}` : '',
+              data.element.outerHTML ? `HTML:\n${data.element.outerHTML}` : '',
+            ].filter(Boolean).join('\n')
+          }))
+        }
+
         if (fileAttachments.length > 0) {
-          const fileContext = fileAttachments
-            .map(f => `--- ${f.name} ---\n${f.dataUrl}`)
-            .join('\n\n')
+          attachmentContext.push(...fileAttachments
+            .map(f => `--- ${f.name} ---\n${f.dataUrl}`),
+          )
+        }
+
+        if (attachmentContext.length > 0) {
+          const fileContext = attachmentContext.join('\n\n')
           const combinedText = messageText ? `${messageText}\n\n${fileContext}` : fileContext
           content.push({ type: 'text', text: combinedText })
         }

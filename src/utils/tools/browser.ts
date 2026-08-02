@@ -8,6 +8,7 @@ import {
   browserExecuteScript,
   browserGoHistory,
   browserListPages,
+  browserLogs,
   browserOpen,
   browserRead,
   browserReload,
@@ -230,6 +231,17 @@ Note: this does not expose HTTP-only cookies because the browser page itself can
         browserCookies(ownerId, action, { url, cookie, name }),
       ),
     }),
+
+    browser_logs: tool({
+      description: `\
+Retrieve and optionally clear the console logs of the currently active browser page.
+Intercepts console.log, console.warn, console.error, console.info, etc.
+Useful for debugging page errors or extracting logged information.`,
+      inputSchema: z.object({
+        clear: z.boolean().optional().describe('Clear the logs array after retrieving them. Default: true.'),
+      }),
+      execute: wrapExecute(async ({ clear = true }) => browserLogs(ownerId, clear)),
+    }),
   } as const
 }
 
@@ -273,6 +285,8 @@ export function browserToolDisplayLabel(
       return `Execute JS: ${String(args.script ?? '').slice(0, 40)}`
     case 'browser_cookies':
       return `Cookies: ${String(args.action ?? 'get')}`
+    case 'browser_logs':
+      return 'Get console logs'
     default:
       return `Called ${toolName}`
   }

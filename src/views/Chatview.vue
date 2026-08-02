@@ -512,15 +512,15 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
         @mousedown="onDragStart"
       />
 
-      <div v-if="activeBrowserOwner.isPanelOpen" class="chat-browser-panel">
+      <div v-show="activeBrowserOwner.isPanelOpen" class="chat-browser-panel">
         <BrowserPane :owner-id="activeTab.id" />
       </div>
 
-      <div v-else-if="activeGitOwner.isPanelOpen && resolvedWorkspacePath" class="chat-git-panel">
+      <div v-if="!activeBrowserOwner.isPanelOpen && activeGitOwner.isPanelOpen && resolvedWorkspacePath" class="chat-git-panel">
         <GitPane :cwd="resolvedWorkspacePath" :messages="activeTab.messages" :tab-id="activeTab.id" @close="gitPane.closePanel(activeId)" />
       </div>
 
-      <div v-else-if="terminalInRightPane" class="chat-terminal-right-panel">
+      <div v-if="!activeBrowserOwner.isPanelOpen && !activeGitOwner.isPanelOpen && terminalInRightPane" class="chat-terminal-right-panel">
         <TerminalPane
           :owner-id="activeId"
           :cwd="resolvedWorkspacePath"

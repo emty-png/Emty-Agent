@@ -12,13 +12,16 @@ import {
   deleteCookiesSurface,
   dispatchBridgeRequest,
   executeScriptSurface,
+  findTextSurface,
   getCookiesSurface,
   goBackSurface,
   goForwardSurface,
   navigateSurface,
+  printSurface,
   reloadSurface,
   screenshotSurface,
   setCookieSurface,
+  setZoomSurface,
   syncSurface,
   waitForSurface,
 } from './runtime'
@@ -130,7 +133,6 @@ export async function browserOpen(ownerId: string, rawUrl: string, options?: { n
 
 export async function browserCreateBlankPage(ownerId: string) {
   const browser = useBrowserStore()
-  browser.openPanel(ownerId)
   const page = browser.createPage(ownerId)
   await nextTick()
 
@@ -150,7 +152,6 @@ export async function browserSwitchPage(ownerId: string, pageId: string) {
   if (!page)
     throw new Error(`Browser page "${pageId}" was not found. Use browser_tabs action="list" to get valid page IDs.`)
 
-  browser.openPanel(ownerId)
   await nextTick()
 
   if (page.url)
@@ -301,6 +302,55 @@ export async function browserExecuteScript(ownerId: string, script: string) {
     pageId: page.id,
     url: page.url,
     result,
+  }
+}
+
+export async function browserSetZoom(ownerId: string, zoomPercent: number) {
+  const browser = useBrowserStore()
+  const page = requireActivePage(ownerId)
+  browser.setPageZoom(ownerId, page.id, zoomPercent)
+  await setZoomSurface(page.sessionId, zoomPercent)
+  return {
+    pageId: page.id,
+    url: page.url,
+    zoomPercent: page.zoomPercent,
+  }
+}
+
+export async function browserPrint(ownerId: string) {
+  const page = requireActivePage(ownerId)
+  await printSurface(page.sessionId)
+  return {
+    pageId: page.id,
+    url: page.url,
+    ok: true,
+  }
+}
+
+export async function browserFindText(ownerId: string, query: string, backwards = false) {
+  const page = requireActivePage(ownerId)
+  const result = await findTextSurface(page.sessionId, query, backwards)
+  return {
+    pageId: page.id,
+    url: page.url,
+    found: result.found === true,
+  }
+}
+
+export async function browserLogs(ownerId: string, clear = true) {
+  const page = requireActivePage(ownerId)
+  const result = await executeScriptSurface(
+    page.sessionId,
+    `
+      const logs = window.__EMTY_AGENT_LOGS__ || [];
+      ${clear ? 'window.__EMTY_AGENT_LOGS__ = [];' : ''}
+      return logs;
+    `,
+  )
+  return {
+    pageId: page.id,
+    url: page.url,
+    logs: Array.isArray(result) ? result : [],
   }
 }
 

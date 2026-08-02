@@ -18,6 +18,7 @@ export interface BrowserPageState {
   pendingHistoryMode?: BrowserHistoryMode | undefined
   pendingHistoryIndex?: number | undefined
   updatedAt: number
+  zoomPercent: number
 }
 
 export interface BrowserOwnerState {
@@ -54,6 +55,7 @@ function createPageState(url = ''): BrowserPageState {
     history: [],
     historyIndex: -1,
     updatedAt: now(),
+    zoomPercent: 100,
   }
 }
 
@@ -111,6 +113,15 @@ export const useBrowserStore = defineStore('browser', () => {
     ensureOwner(ownerId).splitPercent = percent
   }
 
+  function setPageZoom(ownerId: string, pageId: string, zoomPercent: number): void {
+    const owner = ensureOwner(ownerId)
+    const page = owner.pages.find(page => page.id === pageId)
+    if (!page)
+      return
+    page.zoomPercent = Math.min(200, Math.max(25, Math.round(zoomPercent)))
+    page.updatedAt = now()
+  }
+
   function prepareNavigation(ownerId: string, url: string, options?: {
     newPage?: boolean | undefined
     historyMode?: BrowserHistoryMode | undefined
@@ -131,7 +142,6 @@ export const useBrowserStore = defineStore('browser', () => {
     page.updatedAt = now()
 
     owner.activePageId = page.id
-    owner.isPanelOpen = true
     return page
   }
 
@@ -306,6 +316,7 @@ export const useBrowserStore = defineStore('browser', () => {
     openPanel,
     closePanel,
     setSplitPercent,
+    setPageZoom,
     prepareNavigation,
     markReload,
     markPageMounted,

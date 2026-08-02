@@ -170,8 +170,8 @@ pub async fn browser_mount_surface<R: Runtime>(
     hide_other_surfaces(&app, &label)?;
 
     if let Some(surface) = app.get_webview(&label) {
-        let x = bounds.x.max(0.0);
-        let y = bounds.y.max(0.0);
+        let x = bounds.x;
+        let y = bounds.y;
         let width = bounds.width.max(1.0);
         let height = bounds.height.max(1.0);
 
@@ -249,8 +249,8 @@ pub async fn browser_mount_surface<R: Runtime>(
         })
         .initialization_script(browser_bridge_script(&session_id)?);
 
-    let x = bounds.x.max(0.0);
-    let y = bounds.y.max(0.0);
+    let x = bounds.x;
+    let y = bounds.y;
     let width = bounds.width.max(1.0);
     let height = bounds.height.max(1.0);
 
@@ -279,8 +279,8 @@ pub async fn browser_resize_surface<R: Runtime>(
         browser_surfaces(&app)
     };
 
-    let x = bounds.x.max(0.0);
-    let y = bounds.y.max(0.0);
+    let x = bounds.x;
+    let y = bounds.y;
     let width = bounds.width.max(1.0);
     let height = bounds.height.max(1.0);
 

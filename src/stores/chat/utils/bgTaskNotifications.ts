@@ -81,6 +81,12 @@ export function handleBgTaskCompletion(event: BackgroundTaskCompletionEvent): vo
   if (!pendingByTab.has(event.tabId))
     pendingByTab.set(event.tabId, [])
   pendingByTab.get(event.tabId)!.push({ event, tabId: event.tabId })
+  debugBgTaskInterceptor('buffered completion event', {
+    tabId: event.tabId,
+    taskId: event.taskId,
+    pendingCount: pendingByTab.get(event.tabId)?.length ?? 0,
+    agentStatus: tab.agentStatus.type,
+  })
 
   // Debounce: reset timer so rapid completions batch together
   const existingTimer = flushTimers.get(event.tabId)
@@ -114,14 +120,18 @@ function tryFlushTab(tabId: string): void {
 
   // If agent is idle, deliver now
   if (!isActiveStatus(tab.agentStatus)) {
+    debugBgTaskInterceptor('idle fallback delivery', { tabId, count: pending.length })
     deliverNotifications(tabId, pending)
     return
   }
 
   // Agent is busy — wait for idle
-  if (waitingForIdle.has(tabId))
+  if (waitingForIdle.has(tabId)) {
+    debugBgTaskInterceptor('already waiting for idle fallback', { tabId, count: pending.length })
     return
+  }
   waitingForIdle.add(tabId)
+  debugBgTaskInterceptor('waiting for idle fallback', { tabId, count: pending.length, agentStatus: tab.agentStatus.type })
 
   const unsub = agentBus.on('status-change', evt => {
     if (evt.tabId !== tabId)
@@ -133,12 +143,14 @@ function tryFlushTab(tabId: string): void {
     waitingForIdle.delete(tabId)
     idleWaitUnsub.delete(tabId)
     unsub()
+    debugBgTaskInterceptor('idle fallback triggered', { tabId })
 
     // Re-check tab still exists and notifications still pending
     const buffered = pendingByTab.get(tabId)
     if (buffered && buffered.length > 0) {
       const stillTab = getTabs!().find((t: ChatTab) => t.id === tabId)
       if (stillTab) {
+        debugBgTaskInterceptor('delivering buffered notifications after idle', { tabId, count: buffered.length })
         deliverNotifications(tabId, buffered)
       }
       else {
@@ -154,6 +166,85 @@ function tryFlushTab(tabId: string): void {
 const MAX_NOTIFY_OUTPUT_CHARS = 4000
 const MAX_NOTIFY_OUTPUT_LINES = 100
 
+function debugBgTaskInterceptor(message: string, data?: Record<string, unknown>): void {
+  console.warn('[bg-task-interceptor]', message, data ?? {})
+}
+
+/**
+ * Consume pending background task notifications for a tab so they can be
+ * attached to the next outbound model request instead of waiting for idle.
+ */
+export function consumePendingBgTaskNotifications(tabId: string): string | null {
+  const pending = pendingByTab.get(tabId)
+  if (!pending || pending.length === 0) {
+    debugBgTaskInterceptor('consume skipped: no pending notifications', { tabId })
+    return null
+  }
+
+  const tab = getTabs?.().find((t: ChatTab) => t.id === tabId)
+  if (!tab) {
+    pendingByTab.delete(tabId)
+    clearPendingFlushState(tabId)
+    debugBgTaskInterceptor('consume dropped: tab no longer exists', { tabId, count: pending.length })
+    return null
+  }
+
+  pendingByTab.delete(tabId)
+  clearPendingFlushState(tabId)
+  const content = buildNotificationContent(pending)
+  debugBgTaskInterceptor('consumed pending notifications for next api call', {
+    tabId,
+    count: pending.length,
+    hasContent: Boolean(content),
+  })
+  return content
+}
+
+function buildNotificationContent(notifications: PendingNotification[]): string | null {
+  const lines: string[] = []
+  for (const { event } of notifications) {
+    const statusLabel = event.status === 'completed'
+      ? (event.exitCode === 0 ? 'completed successfully' : `completed with exit code ${event.exitCode}`)
+      : event.status === 'failed'
+        ? 'failed'
+        : event.status === 'killed'
+          ? 'was killed'
+          : 'timed out'
+
+    lines.push(`Background task ${event.taskId} (${event.command}): ${statusLabel}`)
+
+    const stdout = event.stdout?.trim()
+    const stderr = event.stderr?.trim()
+    const parts: string[] = []
+
+    if (stdout) {
+      const truncated = truncateForNotification(stdout)
+      if (truncated)
+        parts.push(truncated)
+    }
+    if (stderr) {
+      const truncated = truncateForNotification(stderr)
+      if (truncated)
+        parts.push(`[stderr]\n${truncated}`)
+    }
+
+    if (parts.length > 0)
+      lines.push(parts.join('\n\n'))
+    lines.push('')
+  }
+
+  const contentText = lines.join('\n').trim()
+  if (!contentText)
+    return null
+
+  return `[SYSTEM NOTIFICATION]
+This is an automated system reminder indicating that the background task(s) have finished. This is NOT a message from the user.
+Please do NOT reply to or mention this notification in your response to the user, as it would disrupt the conversation flow. Simply proceed with your work or wait for the user's next instructions.
+
+---
+${contentText}`
+}
+
 /**
  * Build notification messages and deliver them to the tab.
  * Produces: divider message (assistant role) + content (user role).
@@ -168,6 +259,7 @@ function deliverNotifications(tabId: string, notifications: PendingNotification[
 
   // Clear the buffer
   pendingByTab.delete(tabId)
+  clearPendingFlushState(tabId)
 
   // Build the content message
   const lines: string[] = []
@@ -275,6 +367,20 @@ ${contentText}`
 
 // ── Internal: truncation ───────────────────────────────────────────────────
 
+function clearPendingFlushState(tabId: string): void {
+  const timer = flushTimers.get(tabId)
+  if (timer) {
+    clearTimeout(timer)
+    flushTimers.delete(tabId)
+  }
+  waitingForIdle.delete(tabId)
+  const unsub = idleWaitUnsub.get(tabId)
+  if (unsub) {
+    unsub()
+    idleWaitUnsub.delete(tabId)
+  }
+}
+
 function truncateForNotification(text: string): string {
   const lines = text.split(/\r?\n/g)
   let result = text
@@ -298,15 +404,5 @@ function truncateForNotification(text: string): string {
  */
 export function cleanupBgTaskNotifications(tabId: string): void {
   pendingByTab.delete(tabId)
-  const timer = flushTimers.get(tabId)
-  if (timer) {
-    clearTimeout(timer)
-    flushTimers.delete(tabId)
-  }
-  waitingForIdle.delete(tabId)
-  const unsub = idleWaitUnsub.get(tabId)
-  if (unsub) {
-    unsub()
-    idleWaitUnsub.delete(tabId)
-  }
+  clearPendingFlushState(tabId)
 }
