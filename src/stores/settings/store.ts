@@ -148,7 +148,7 @@ export const useSettingsStore = defineStore(
     })
     const completedOnboarding = ref(false)
     const dismissedBetaCloseNotice = ref(false)
-    const toolDisabledIds = ref<{ build: string[], design: string[] }>({ build: [], design: [] })
+    const toolDisabledIds = ref<{ build: string[]; design: string[] }>({ build: [], design: [] })
 
     // Migrate legacy flat disabledToolIds → per-mode toolDisabledIds.build
     onMounted(() => {

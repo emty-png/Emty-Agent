@@ -5,8 +5,8 @@ import { storeToRefs } from 'pinia'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useSidebarStore } from '@/stores/sidebar'
-import BetaCloseDialog from './BetaCloseDialog.vue'
 import Sidebar from '../sidebar/Sidebar.vue'
+import BetaCloseDialog from './BetaCloseDialog.vue'
 
 interface Props {
   title?: string
@@ -221,8 +221,6 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
     </div>
 
     <div class="flex items-stretch flex-none h-[29px] ml-auto [-webkit-app-region:no-drag]">
-
-
       <button :class="ctrlBtnClass" aria-label="Minimize" @click.stop="minimize">
         <Minus :size="15" :stroke-width="1.8" />
       </button>

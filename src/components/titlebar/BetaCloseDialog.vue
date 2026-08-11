@@ -53,6 +53,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
       leave-to-class="opacity-0"
     >
       <div
+        v-if="true"
         class="fixed inset-0 z-[99999] flex items-center justify-center bg-[color-mix(in_srgb,var(--color-bg-base)_65%,transparent)] p-6"
         @click.self="handleDismiss"
         @keydown="onKeydown"
@@ -66,6 +67,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           leave-to-class="opacity-0 [transform:scale(0.95)_translateY(8px)]"
         >
           <div
+            v-if="true"
             class="w-[380px] bg-(--color-bg-card) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[0_16px_48px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)] overflow-hidden"
             role="dialog"
             aria-modal="true"

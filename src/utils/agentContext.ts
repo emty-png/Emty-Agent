@@ -1,5 +1,5 @@
-import type { ToolCatalogGroup } from '@/utils/tools/catalog'
 import type { SelectedSkill, SkillDefinition, SkillMetadata } from '@/utils/skills'
+import type { ToolCatalogGroup } from '@/utils/tools/catalog'
 import { getEnabledSkills, loadSkillDefinition, selectRelevantSkills, trimSkillContent } from '@/utils/skills'
 
 export interface AutoContextSettings {

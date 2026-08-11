@@ -107,7 +107,7 @@ For very large files, write in chunks: first call creates the file (append: fals
     execute: async ({ file_path, content, append }) => {
       const isAppend = append === true
 
-      console.info(`[write_file] start path=${file_path} append=${isAppend} contentChars=${content.length}`)
+      console.warn(`[write_file] start path=${file_path} append=${isAppend} contentChars=${content.length}`)
 
       try {
         if (content.includes('\0')) {
@@ -198,7 +198,7 @@ For very large files, write in chunks: first call creates the file (append: fals
                 return (
                   `Error: ${file_path} was only partially read (lines 1–${readEndLine}). `
                   + `The unread region (lines ${unreadStartIdx + 1}–${diskLines.length}) must not be changed. `
-                  + `Re-read the full file with read_files before overwriting.`
+                  + 'Re-read the full file with read_files before overwriting.'
                 )
               }
 
@@ -230,7 +230,7 @@ For very large files, write in chunks: first call creates the file (append: fals
 
               if (!mtimesMatch && registryEntry.hash !== existingSnapshot.hash) {
                 console.warn(
-                  `[write_file] rejected: file modified since last read. `
+                  '[write_file] rejected: file modified since last read. '
                   + `registry.mtime=${registryEntry.mtimeMs} `
                   + `disk.mtime=${existingSnapshot.mtimeMs} `
                   + `registry.hash=${registryEntry.hash.slice(0, 12)}… `
@@ -312,7 +312,7 @@ For very large files, write in chunks: first call creates the file (append: fals
             changedLines,
           )
 
-          console.info(`[write_file] success ${operation} ${file_path} (+${added}/-${removed})`)
+          console.warn(`[write_file] success ${operation} ${file_path} (+${added}/-${removed})`)
 
           const message = operation === 'create'
             ? `The file ${file_path} has been created successfully.`

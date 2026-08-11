@@ -141,6 +141,8 @@ function selectProject(path: string) {
   projectStore.setProject(path)
 }
 
+const confirmRemoveProjectPath = ref<string | null>(null)
+
 function removeProject(path: string) {
   const project = projects.value.find(p => p.workspace_path === path)
   if (project && project.totalCount > 0) {
@@ -151,8 +153,6 @@ function removeProject(path: string) {
     loadProjects()
   }
 }
-
-const confirmRemoveProjectPath = ref<string | null>(null)
 const confirmRemoveProjectCount = computed(() => {
   if (!confirmRemoveProjectPath.value)
     return 0
@@ -170,8 +170,9 @@ async function confirmRemoveProject() {
   emit('contextMenuClose')
 }
 
-watch(confirmRemoveProjectPath, (val) => {
-  if (val) emit('contextMenuOpen')
+watch(confirmRemoveProjectPath, val => {
+  if (val)
+    emit('contextMenuOpen')
 })
 
 function toggleProject(path: string) {
@@ -268,8 +269,9 @@ async function confirmDelete() {
   confirmDeleteId.value = null
 }
 
-watch(confirmDeleteId, (val) => {
-  if (val) emit('contextMenuOpen')
+watch(confirmDeleteId, val => {
+  if (val)
+    emit('contextMenuOpen')
   else emit('contextMenuClose')
 })
 
@@ -336,7 +338,7 @@ function btnClasses(isActive: boolean) {
   ].join(' ')
 }
 
-function labelClasses(isActive: boolean) {
+function labelClasses(_isActive: boolean) {
   const size = props.flyout ? 'text-[12.5px]' : 'text-[13px]'
   return `${size} font-normal tracking-[0.01em] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis`
 }

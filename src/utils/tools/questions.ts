@@ -142,7 +142,7 @@ AFTER RECEIVING ANSWERS:
         .describe('Questions to ask in this batch. Group ALL related questions into one single call.'),
     }),
     execute: async ({ questions }, { abortSignal }) => {
-      return new Promise<{ answers: QuestionAnswer[] }>((resolve) => {
+      return new Promise<{ answers: QuestionAnswer[] }>(resolve => {
         // Already aborted before we even start — skip all questions immediately.
         if (abortSignal?.aborted) {
           resolve({ answers: questions.map(q => ({ question: q.question, answer: 'skipped' })) })
