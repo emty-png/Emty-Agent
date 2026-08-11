@@ -1,16 +1,30 @@
 <script setup lang="ts">
-import { Check, Minus } from 'lucide-vue-next'
+import { Check, Hammer, Minus, Palette } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
+import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
 
 const { availableToolGroups } = storeToRefs(settingsStore)
 
+const toolView = ref<'build' | 'design'>('build')
+
+const DESIGN_GROUP_IDS = new Set(['design-scaffold', 'design-files', 'design-build'])
+
+const filteredToolGroups = computed(() => {
+  if (toolView.value === 'design')
+    return availableToolGroups.value.filter(g => DESIGN_GROUP_IDS.has(g.id))
+  return availableToolGroups.value.filter(g => !DESIGN_GROUP_IDS.has(g.id))
+})
+
 type ToolGroup = typeof availableToolGroups.value[number]
 
+type ToolMode = 'build' | 'design'
+
 function getGroupState(group: ToolGroup): 'on' | 'off' | 'mixed' {
-  const enabledCount = group.tools.filter(tool => settingsStore.isToolEnabled(tool.id)).length
+  const mode: ToolMode = toolView.value
+  const enabledCount = group.tools.filter(tool => settingsStore.isToolEnabled(tool.id, mode)).length
   if (enabledCount === 0)
     return 'off'
   if (enabledCount === group.tools.length)
@@ -23,11 +37,12 @@ function toggleGroup(group: ToolGroup) {
   settingsStore.setToolsEnabled(
     group.tools.map(tool => tool.id),
     !isCurrentlyOn,
+    toolView.value,
   )
 }
 
 function toggleTool(toolId: string) {
-  settingsStore.setToolEnabled(toolId, !settingsStore.isToolEnabled(toolId))
+  settingsStore.setToolEnabled(toolId, !settingsStore.isToolEnabled(toolId, toolView.value), toolView.value)
 }
 </script>
 
@@ -39,6 +54,26 @@ function toggleTool(toolId: string) {
       </h2>
     </header>
 
+    <!-- View tabs -->
+    <div class="view-tabs">
+      <button
+        class="view-tab"
+        :class="{ 'view-tab--active': toolView === 'build' }"
+        @click="toolView = 'build'"
+      >
+        <Hammer :size="16" :stroke-width="1.8" />
+        <span class="view-tab-title">Build</span>
+      </button>
+      <button
+        class="view-tab"
+        :class="{ 'view-tab--active': toolView === 'design' }"
+        @click="toolView = 'design'"
+      >
+        <Palette :size="16" :stroke-width="1.8" />
+        <span class="view-tab-title">Design</span>
+      </button>
+    </div>
+
     <div class="settings-card">
       <div class="settings-card-header">
         <h3 class="settings-card-title">
@@ -48,7 +83,7 @@ function toggleTool(toolId: string) {
 
       <div class="tool-groups">
         <div
-          v-for="group in availableToolGroups"
+          v-for="group in filteredToolGroups"
           :key="group.id"
           class="tool-group"
         >
@@ -69,7 +104,7 @@ function toggleTool(toolId: string) {
               <div class="group-title-row">
                 <span class="settings-item-label">{{ group.label }}</span>
                 <span class="badge">
-                  {{ group.tools.filter(tool => settingsStore.isToolEnabled(tool.id)).length }} / {{ group.tools.length }}
+                  {{ group.tools.filter(tool => settingsStore.isToolEnabled(tool.id, toolView)).length }} / {{ group.tools.length }}
                 </span>
               </div>
               <p class="settings-item-desc">
@@ -85,11 +120,11 @@ function toggleTool(toolId: string) {
               class="tool-item"
               type="button"
               role="checkbox"
-              :aria-checked="settingsStore.isToolEnabled(tool.id) ? 'true' : 'false'"
+              :aria-checked="settingsStore.isToolEnabled(tool.id, toolView) ? 'true' : 'false'"
               @click="toggleTool(tool.id)"
             >
               <span class="checkbox-indicator checkbox-indicator--small">
-                <Check v-if="settingsStore.isToolEnabled(tool.id)" class="icon" :size="11" :stroke-width="3" />
+                <Check v-if="settingsStore.isToolEnabled(tool.id, toolView)" class="icon" :size="11" :stroke-width="3" />
               </span>
               <span class="settings-item-content">
                 <span class="tool-name">{{ tool.label }}</span>
@@ -114,7 +149,54 @@ function toggleTool(toolId: string) {
 .content-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
+}
+
+/* =========================================
+   View Tabs
+ ========================================= */
+.view-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.view-tab {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 150ms ease;
+  text-align: left;
+}
+
+.view-tab:hover {
+  background: var(--color-state-hover);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-primary);
+}
+
+.view-tab--active {
+  background: var(--color-accent-muted);
+  border-color: var(--color-accent-dim);
+  color: var(--color-accent-text);
+}
+
+.view-tab--active:hover {
+  background: var(--color-accent-muted);
+  border-color: var(--color-accent-dim);
+  color: var(--color-accent-text);
+}
+
+.view-tab-title {
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .section-head {

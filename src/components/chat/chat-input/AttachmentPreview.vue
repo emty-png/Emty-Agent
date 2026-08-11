@@ -53,7 +53,7 @@ const panelTransitions = {
   <Teleport to="body">
     <div :class="backdropClasses" @click.self="$emit('close')">
       <Transition appear v-bind="panelTransitions">
-        <div :class="panelClasses">
+        <div :class="panelClasses" role="dialog" aria-modal="true" aria-label="Attachment preview">
           <div :class="headerClasses">
             <div :class="infoClasses">
               <span :class="filenameClasses">{{ attachment.name }}</span>

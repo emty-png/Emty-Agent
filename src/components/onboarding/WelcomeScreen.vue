@@ -1,338 +1,109 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, useTemplateRef } from 'vue'
 
 const emit = defineEmits<{ next: [] }>()
 
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter')
-    emit('next')
-}
+const svgEl = useTemplateRef<SVGSVGElement>('pinwheel')
+let timer: ReturnType<typeof setTimeout> | null = null
+let rotateAnim: Animation | null = null
+let scaleAnim: Animation | null = null
+let opacityAnim: Animation | null = null
 
-onMounted(() => window.addEventListener('keydown', handleKeydown))
-onUnmounted(() => window.removeEventListener('keydown', handleKeydown))
+onMounted(() => {
+  const svg = svgEl.value
+  if (svg && typeof svg.animate === 'function') {
+    // Fade in almost instantly - this should never be the thing the eye tracks.
+    opacityAnim = svg.animate(
+      [{ opacity: 0 }, { opacity: 1 }],
+      { duration: 180, easing: 'linear', fill: 'forwards' },
+    )
+
+    // Pop in with a soft spring overshoot (settles past 1 then eases back to
+    // it) so it feels like it "lands" rather than just fading up in size.
+    scaleAnim = svg.animate(
+      [{ scale: '0.04' }, { scale: '1' }],
+      {
+        duration: 650,
+        easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        fill: 'forwards',
+      },
+    )
+
+    // Spin independently of scale/opacity, like it's been flicked: nearly all
+    // the speed is spent in the first third, then a long, slow, honest decay
+    // to a stop - no artificial hold at the end, it just naturally runs out.
+    // 1087deg = 3 full turns + a few degrees, landing on the angle that keeps
+    // the 3-blade shape's weight most evenly spread across the frame at rest.
+    rotateAnim = svg.animate(
+      [{ rotate: '0deg' }, { rotate: '1087deg' }],
+      {
+        duration: 2000,
+        easing: 'cubic-bezier(0.11, 0.85, 0.13, 1)',
+        fill: 'forwards',
+      },
+    )
+  }
+
+  timer = setTimeout(() => {
+    emit('next')
+  }, 3000)
+})
+
+onUnmounted(() => {
+  if (timer) {
+    clearTimeout(timer)
+    timer = null
+  }
+  for (const a of [rotateAnim, scaleAnim, opacityAnim]) {
+    a?.cancel()
+  }
+  rotateAnim = null
+  scaleAnim = null
+  opacityAnim = null
+})
 </script>
 
 <template>
   <div class="welcome-root">
-    <div class="grid-bg" aria-hidden="true" />
-
-    <div class="canvas-frame">
-      <span class="bracket bracket-tl" aria-hidden="true" />
-      <span class="bracket bracket-tr" aria-hidden="true" />
-      <span class="bracket bracket-bl" aria-hidden="true" />
-      <span class="bracket bracket-br" aria-hidden="true" />
-
-      <div class="content">
-        <p class="eyebrow">
-          <span class="eyebrow-chevron">›</span> new agent
-        </p>
-
-        <h1 class="title">
-          <span class="title-text">Empty Agent</span><span class="cursor" aria-hidden="true" />
-        </h1>
-
-        <p class="description">
-          No presets. No defaults. Just a blank canvas — and an agent
-          waiting to become whatever you build.
-        </p>
-
-        <button class="cta" @click="emit('next')">
-          <span>Get started</span>
-          <svg class="cta-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M3.5 8H12.5M12.5 8L8.5 4M12.5 8L8.5 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-
-        <p class="hint">
-          or press <kbd>Enter</kbd>
-        </p>
-      </div>
+    <div class="logo-wrap">
+      <svg ref="pinwheel" class="pinwheel" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+        <g>
+          <polygon class="blade" points="100,100 183.45,66.29 109.56,55.01" transform="rotate(0 100 100)" />
+          <polygon class="blade" points="100,100 183.45,66.29 109.56,55.01" transform="rotate(120 100 100)" />
+          <polygon class="blade" points="100,100 183.45,66.29 109.56,55.01" transform="rotate(240 100 100)" />
+        </g>
+      </svg>
     </div>
   </div>
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
-
 .welcome-root {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   height: 100%;
   flex: 1;
-  overflow: hidden;
   background: var(--color-bg-base);
 }
 
-/* Faint blueprint grid standing in for the old glow blob — this is the
-   "blank canvas" the product name refers to, not decoration for its own sake. */
-.grid-bg {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--color-border-mid) 55%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--color-border-mid) 55%, transparent) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(ellipse 55% 60% at 50% 46%, black 0%, transparent 78%);
-  -webkit-mask-image: radial-gradient(ellipse 55% 60% at 50% 46%, black 0%, transparent 78%);
-  opacity: 0;
-  animation: grid-in 1.6s ease-out 0.1s forwards;
-  pointer-events: none;
+.logo-wrap {
+  width: min(46vw, 46vh, 260px);
+  aspect-ratio: 1 / 1;
 }
 
-@keyframes grid-in {
-  to {
-    opacity: 1;
-  }
+.pinwheel {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform-box: view-box;
+  transform-origin: 50% 50%;
 }
 
-.canvas-frame {
-  position: relative;
-  padding: 88px 128px;
-  z-index: 1;
-}
-
-/* Corner brackets frame the content like an empty selection — a viewfinder
-   waiting to lock onto something, echoing "empty" more directly than a glow. */
-.bracket {
-  position: absolute;
-  width: 26px;
-  height: 26px;
-  opacity: 0;
-  transform: scale(1.6);
-}
-
-.bracket-tl {
-  top: 0;
-  left: 0;
-  border-top: 2px solid var(--color-border-mid);
-  border-left: 2px solid var(--color-border-mid);
-  transform-origin: top left;
-  animation: bracket-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0s forwards;
-}
-
-.bracket-tr {
-  top: 0;
-  right: 0;
-  border-top: 2px solid var(--color-border-mid);
-  border-right: 2px solid var(--color-border-mid);
-  transform-origin: top right;
-  animation: bracket-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.06s forwards;
-}
-
-.bracket-bl {
-  bottom: 0;
-  left: 0;
-  border-bottom: 2px solid var(--color-border-mid);
-  border-left: 2px solid var(--color-border-mid);
-  transform-origin: bottom left;
-  animation: bracket-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.12s forwards;
-}
-
-.bracket-br {
-  bottom: 0;
-  right: 0;
-  border-bottom: 2px solid var(--color-border-mid);
-  border-right: 2px solid var(--color-border-mid);
-  transform-origin: bottom right;
-  animation: bracket-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.18s forwards;
-}
-
-@keyframes bracket-in {
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-}
-
-.eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--color-text-secondary);
-  opacity: 0;
-  transform: translateY(8px);
-  animation: fade-up 0.6s ease-out 0.4s forwards;
-}
-
-.eyebrow-chevron {
-  color: var(--color-accent);
-}
-
-.title {
-  margin: 0;
-  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 56px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--color-text-primary);
-  display: flex;
-  align-items: baseline;
-}
-
-/* Typed reveal via clip-path (not width) so the box keeps its natural size
-   from the start — the cursor that follows never has to guess where to sit. */
-.title-text {
-  display: inline-block;
-  white-space: nowrap;
-  clip-path: inset(0 100% 0 0);
-  animation: type-in 0.65s steps(11) 0.85s forwards;
-}
-
-@keyframes type-in {
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-
-.cursor {
-  display: inline-block;
-  width: 4px;
-  height: 0.8em;
-  margin-left: 6px;
-  background: var(--color-accent);
-  opacity: 0;
-  animation:
-    cursor-in 0.1s 0.85s forwards,
-    cursor-blink 0.9s steps(1) 1.5s infinite;
-}
-
-@keyframes cursor-in {
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes cursor-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-.description {
-  max-width: 400px;
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.55;
-  color: var(--color-text-secondary);
-  text-align: center;
-  opacity: 0;
-  transform: translateY(8px);
-  animation: fade-up 0.6s ease-out 1.65s forwards;
-}
-
-.cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 46px;
-  padding: 0 24px;
-  margin-top: 12px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: 8px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-primary);
-  font-family: inherit;
-  font-size: 14.5px;
-  font-weight: 500;
-  cursor: pointer;
-  opacity: 0;
-  transform: translateY(8px);
-  animation: fade-up 0.6s ease-out 2s forwards;
-  transition:
-    background 180ms ease,
-    border-color 180ms ease,
-    color 180ms ease,
-    transform 180ms ease;
-}
-
-.cta-arrow {
-  transition: transform 180ms ease;
-}
-
-.cta:hover {
-  border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border-mid));
-  color: var(--color-accent);
-}
-
-.cta:hover .cta-arrow {
-  transform: translateX(3px);
-}
-
-.cta:active {
-  transform: translateY(1px);
-}
-
-.cta:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent);
-}
-
-.hint {
-  margin: 0;
-  font-size: 12.5px;
-  color: var(--color-text-secondary);
-  opacity: 0;
-  animation: fade-up 0.6s ease-out 2.2s forwards;
-}
-
-.hint kbd {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
-  font-size: 11px;
-  padding: 1px 5px;
-  border: 1px solid var(--color-border-mid);
-  border-radius: 4px;
-  background: var(--color-bg-elevated);
-  color: var(--color-text-secondary);
-}
-
-@keyframes fade-up {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (max-width: 640px) {
-  .canvas-frame {
-    padding: 56px 32px;
-  }
-  .title {
-    font-size: 36px;
-  }
-  .description {
-    font-size: 14px;
-    max-width: 280px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .grid-bg,
-  .bracket,
-  .eyebrow,
-  .title-text,
-  .cursor,
-  .description,
-  .cta,
-  .hint {
-    animation: none !important;
-    opacity: 1 !important;
-    transform: none !important;
-    clip-path: inset(0 0 0 0) !important;
-  }
+.blade {
+  fill: var(--color-text-primary);
+  transition: fill 0.5s ease;
 }
 </style>

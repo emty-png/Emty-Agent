@@ -22,9 +22,9 @@ import { useTerminalStore } from '@/stores/terminal'
 import { useThemeStore } from '@/stores/themes'
 import DesignView from '@/views/DesignView.vue'
 
-const SPLIT_MIN = 35
+const SPLIT_MIN = 40
 const SPLIT_MAX = 70
-const SPLIT_DEFAULT = 35
+const SPLIT_DEFAULT = 40
 const TERMINAL_SPLIT_MIN = 18
 const TERMINAL_SPLIT_MAX = 50
 

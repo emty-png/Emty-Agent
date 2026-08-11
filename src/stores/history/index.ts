@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   dbDeleteConversation,
+  dbDeleteConversationsByWorkspace,
   dbListConversations,
   dbLoadMessages,
   dbSearchConversations,
@@ -80,6 +81,24 @@ export const useHistoryStore = defineStore('history', () => {
     const tab = chat.tabs.find(t => t.conversationId === id)
     if (tab)
       chat.closeTab(tab.id)
+  }
+
+  async function removeByWorkspace(workspacePath: string): Promise<void> {
+    // collect ids of conversations belonging to this workspace so we can close open tabs
+    const convIds = conversations.value
+      .filter(c => c.workspace_path === workspacePath)
+      .map(c => c.id)
+
+    await dbDeleteConversationsByWorkspace(workspacePath)
+    conversations.value = conversations.value.filter(c => c.workspace_path !== workspacePath)
+
+    // close any open tabs for the deleted conversations
+    const chat = useChatStore()
+    for (const id of convIds) {
+      const tab = chat.tabs.find(t => t.conversationId === id)
+      if (tab)
+        chat.closeTab(tab.id)
+    }
   }
 
   // ── open in tab ──────────────────────────────────────────────────────────────
@@ -188,6 +207,7 @@ export const useHistoryStore = defineStore('history', () => {
     search,
     rename,
     remove,
+    removeByWorkspace,
     openInTab,
     prepend,
   }

@@ -315,12 +315,10 @@ onUnmounted(() => {
         :disabled="isDesignTab"
         @click="toggleTerminal"
       >
-        <!-- Collapsed: outline with horizontal divider -->
         <svg v-if="!activeTerminalOwner.isPanelOpen" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
           <line x1="3" x2="21" y1="15" y2="15" />
         </svg>
-        <!-- Expanded: bottom strip filled -->
         <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
           <rect width="18" height="6" x="3" y="15" fill="currentColor" stroke="none" />
@@ -335,12 +333,10 @@ onUnmounted(() => {
         :disabled="isDesignTab"
         @click="toggleGitPane"
       >
-        <!-- Collapsed: outline only -->
         <svg v-if="!activeGitOwner.isPanelOpen" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
           <line x1="15" x2="15" y1="3" y2="21" />
         </svg>
-        <!-- Expanded: right strip filled -->
         <svg v-else xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
           <rect width="6" height="18" x="15" y="3" fill="currentColor" stroke="none" />
@@ -350,7 +346,6 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <!-- Design Beta confirmation dialog -->
   <Teleport to="body">
     <div v-if="showDesignBetaConfirm" class="dbeta-backdrop" @click.self="cancelDesignBeta">
       <div class="dbeta-dialog">
@@ -406,8 +401,6 @@ onUnmounted(() => {
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 30%, transparent));
 }
 
-/* Permission-waiting — gradient-stroked square with glow + fill pulse */
-
 @keyframes gpRotate {
   0% {
     transform: rotate(0deg);
@@ -447,7 +440,6 @@ onUnmounted(() => {
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-warning-text) 30%, transparent));
 }
 
-/* Design Beta confirmation dialog */
 .dbeta-backdrop {
   position: fixed;
   inset: 0;

@@ -13,7 +13,7 @@ const settings = useSettingsStore()
 const chat = useChatStore()
 const permOpen = ref(false)
 
-/** Per-tab permission mode with global fallback. */
+// Per-tab override wins; falls back to global setting.
 const permissionMode = computed<'ask' | 'auto' | 'yolo'>(
   () => chat.activeTab.permissionMode ?? settings.agent.permissionMode,
 )
@@ -39,12 +39,10 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
 
 <template>
   <div class="relative flex items-center gap-2">
-    <!-- Plan Mode Chip -->
     <div v-if="isPlanMode" class="inline-flex items-center px-2 py-1 bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)] text-(--color-accent) rounded-(--radius-sm) text-[11px] font-bold uppercase tracking-[0.05em]">
       <span>Plan Mode</span>
     </div>
 
-    <!-- Trigger Button -->
     <button
       class="flex items-center justify-center gap-1.5 h-[30px] border rounded-(--radius-md) text-[13px] font-semibold tracking-[0.01em] cursor-pointer shrink-0 transition-[background,border-color,border-radius,color] duration-[120ms] active:scale-[0.97]"
       :class="[
@@ -77,11 +75,7 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
       />
     </button>
 
-    <!--
-      POSITIONING WRAPPER
-      This div guarantees it perfectly centers above the button statically.
-      By keeping it separate from the animation below, CSS transforms NEVER conflict!
-    -->
+    <!-- Separate from <Transition> so CSS centering transforms don't conflict with animation transforms -->
     <div class="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 z-[10000]">
       <Transition
         enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-bottom"
@@ -91,12 +85,10 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
         leave-from-class="opacity-100 [transform:translateY(0)_scale(1)]"
         leave-to-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"
       >
-        <!-- The Animated Dropdown -->
         <div
           v-if="permOpen"
           class="w-[148px] bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),0_4px_12px_rgba(0,0,0,0.3),0_12px_28px_rgba(0,0,0,0.35)] p-1 flex flex-col gap-0.5" role="menu"
         >
-          <!-- Ask Option (Includes Active Styling) -->
           <button
             class="flex items-center gap-2 w-full h-[30px] px-2 border rounded-(--radius-md) text-[13px] font-medium cursor-pointer text-left transition-[background,border-color,color] duration-100"
             :class="permissionMode === 'ask'
@@ -108,7 +100,6 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
             <span>Ask Permission</span>
           </button>
 
-          <!-- Auto Option (AI Review, Accent Styling) -->
           <button
             class="flex items-center gap-2 w-full h-[30px] px-2 border rounded-(--radius-md) text-[13px] font-medium cursor-pointer text-left transition-[background,border-color,color] duration-100"
             :class="permissionMode === 'auto'
@@ -120,7 +111,6 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
             <span>Auto</span>
           </button>
 
-          <!-- Yolo Option (Danger Active Styling) -->
           <button
             class="flex items-center gap-2 w-full h-[30px] px-2 border rounded-(--radius-md) text-[13px] font-medium cursor-pointer text-left transition-[background,border-color,color] duration-100"
             :class="permissionMode === 'yolo'
@@ -135,7 +125,6 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
       </Transition>
     </div>
 
-    <!-- Invisible Backdrop to detect outside clicks -->
     <div v-if="permOpen" class="fixed inset-0 z-[9999] bg-transparent" @click="permOpen = false" />
   </div>
 </template>

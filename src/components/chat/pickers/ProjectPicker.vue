@@ -64,7 +64,6 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
-// ── Tailwind v4 class strings ────────────────────────────────────────────────
 const triggerClasses = computed(() => {
   const base = 'flex items-center gap-1.5 h-[28px] px-2 border rounded-(--radius-md) text-[12.5px] cursor-pointer shrink-0 transition-[background,border-color,border-radius] duration-120ms'
   return pickerOpen.value
@@ -90,14 +89,13 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
 
 <template>
   <div class="relative flex items-center">
-    <!-- Trigger -->
     <button
       :class="triggerClasses"
       aria-label="Select project"
       @click="togglePicker"
     >
       <FolderOpen :size="13" :stroke-width="1.8" class="shrink-0 text-(--color-text-tertiary)" />
-      <span v-if="!compact" class="whitespace-nowrap overflow-hidden text-ellipsis">{{ projectName ?? 'Select Project' }}</span>
+      <span v-if="!compact" class="min-w-0 flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{{ projectName ?? 'Select Project' }}</span>
       <ChevronDown
         :size="13"
         :stroke-width="2.5"
@@ -106,7 +104,6 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
       />
     </button>
 
-    <!-- Positioned wrapper -->
     <div class="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 z-[10000]">
       <Transition
         enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-bottom"
@@ -120,7 +117,6 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
           v-if="pickerOpen"
           class="w-[210px] bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-lg) shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03),0_4px_12px_rgba(0,0,0,0.3),0_12px_28px_rgba(0,0,0,0.35)] p-1 flex flex-col gap-0.5"
         >
-          <!-- New Project -->
           <button
             :class="itemClasses(false, 'new')"
             :disabled="picking"
@@ -130,7 +126,6 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
             <span>New Project</span>
           </button>
 
-          <!-- Existing projects -->
           <template v-if="project.openProjects.length > 0">
             <div class="h-px bg-(--color-border-mid) mx-1 my-0.5" />
             <button
@@ -144,7 +139,6 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
             </button>
           </template>
 
-          <!-- No Project -->
           <div class="h-px bg-(--color-border-mid) mx-1 my-0.5" />
           <button
             :class="itemClasses(false, 'danger')"
@@ -157,7 +151,6 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
       </Transition>
     </div>
 
-    <!-- Backdrop -->
     <div v-if="pickerOpen" class="fixed inset-0 z-[9999] bg-transparent" @click="closePicker" />
   </div>
 </template>

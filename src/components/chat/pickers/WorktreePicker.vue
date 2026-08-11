@@ -91,9 +91,7 @@ function updatePos() {
     boundedX = vw - halfWidth - padding
   }
 
-  // Intelligently choose placement based on available vertical space
   if (spaceAbove < maxPopupHeight + 16 && spaceBelow > spaceAbove) {
-    // Open below (shifted down from +8 to +12 for more breathing room)
     pickerPos.value = {
       x: Math.round(boundedX),
       y: Math.round(rect.bottom + 12),
@@ -101,7 +99,6 @@ function updatePos() {
     placement.value = 'bottom'
   }
   else {
-    // Open above (shifted slightly down from -8 to -4 to sit lower)
     pickerPos.value = {
       x: Math.round(boundedX),
       y: Math.round(rect.top - 4),
@@ -139,7 +136,6 @@ onUnmounted(() => {
 
 watch(() => props.projectPath, loadWorktrees, { immediate: true })
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const backdropClasses = 'fixed inset-0 bg-transparent z-[9998]'
 
 const pickerClasses = computed(() => {
@@ -171,7 +167,6 @@ function itemClasses(isActive: boolean) {
 
 const itemNameClasses = 'flex-1 min-w-0 text-[12px] font-medium text-inherit whitespace-nowrap overflow-hidden text-ellipsis'
 
-// ── Transitions ─────────────────────────────────────────────────────────────
 const fadeTransitions = {
   enterActiveClass: 'transition-opacity duration-[120ms] ease-in-out',
   leaveActiveClass: 'transition-opacity duration-100 ease-in-out',
@@ -215,7 +210,6 @@ const pickerTransitions = {
           </div>
         </div>
 
-        <!-- Empty / Loading States -->
         <div v-if="error" :class="emptyWrapClasses">
           <span :class="emptyIconClasses">
             <GitBranch :size="18" :stroke-width="1.5" />
@@ -246,7 +240,6 @@ const pickerTransitions = {
           </p>
         </div>
 
-        <!-- Results List -->
         <div v-else :class="listClasses">
           <button
             v-for="entry in filteredEntries"

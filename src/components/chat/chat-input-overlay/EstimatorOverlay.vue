@@ -7,21 +7,17 @@ import { buildChatRequestPreview } from '@/stores/chat/context/requestPreview'
 import { useSettingsStore } from '@/stores/settings'
 import { estimateChatPrompt } from '@/utils/chatEstimate'
 
-// --- Props ---
 const props = defineProps<{
   text: string
   attachments: Attachment[]
 }>()
-// --- Emits ---
 const emit = defineEmits<{
   compactSession: [payload: { source: 'auto' | 'manual' }]
 }>()
 
-// --- Stores ---
 const chat = useChatStore()
 const settings = useSettingsStore()
 
-// --- Constants & Formatters ---
 const RING_RADIUS = 9
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS // ~56.55
 
@@ -33,7 +29,6 @@ const usdFormatter = new Intl.NumberFormat('en-US', {
 })
 const intFormatter = new Intl.NumberFormat('en-US')
 
-// --- Internal State ---
 const debounceHandle = ref<ReturnType<typeof setTimeout> | null>(null)
 const activeController = shallowRef<AbortController | null>(null)
 const activeEstimateTabId = ref<string | null>(null)
@@ -41,7 +36,6 @@ const prevStreaming = shallowRef(false)
 const lastAutoCompactKey = ref('')
 const lastAutoCompactionDebugState = ref('')
 
-// --- Dynamic Positioning & Teleport Controls ---
 const isOpen = ref(false)
 
 const closeTimeout = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -62,7 +56,6 @@ function closePopover() {
   }, 150) // Small grace period delay to allow cursor transitions
 }
 
-// --- Computed: Model & Estimator State ---
 const estimatorState = computed(() => chat.activeTab.estimator)
 const estimate = computed(() => estimatorState.value.estimate)
 const estimateError = computed(() => estimatorState.value.error)
@@ -72,7 +65,6 @@ const hasModel = computed(
   () => !!(chat.activeTab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid ?? settings.activeModel?.uid),
 )
 
-// --- Computed: UI Presentation ---
 const usagePercent = computed(() => {
   const ratio = estimate.value?.contextUsageRatio
   if (ratio == null)
@@ -151,7 +143,6 @@ function valueSize(value: unknown): number {
   }
 }
 
-// --- Logic: Fingerprinting & Dependencies ---
 const estimationDependencies = computed(() => ({
   text: props.text,
   mode: 'build',
@@ -180,7 +171,6 @@ const estimationDependencies = computed(() => ({
     .join('|'),
 }))
 
-// --- Logic: Watchers ---
 watch(
   estimationDependencies,
   () => {
@@ -275,7 +265,6 @@ watch(
   },
 )
 
-// --- Logic: Fetching & Concurrency ---
 onUnmounted(() => {
   if (debounceHandle.value)
     clearTimeout(debounceHandle.value)

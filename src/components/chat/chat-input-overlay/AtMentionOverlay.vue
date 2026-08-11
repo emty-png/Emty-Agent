@@ -1,11 +1,4 @@
 <script setup lang="ts">
-/**
- * AtMentionDropdown.vue
- *
- * The file-picker panel that appears above the chat input when the user types "@".
- * Appears as a detached, floating panel above the chat input shell.
- */
-
 import type { Component } from 'vue'
 import type { FsEntry } from '@/composables/chat/useAtMention'
 import {
@@ -44,8 +37,6 @@ const emit = defineEmits<{
   hover: [idx: number]
   close: []
 }>()
-
-// ── icon logic migrated from FileTree ─────────────────────────────────────────
 
 interface FileStyle { icon: Component; color: string }
 
@@ -144,10 +135,7 @@ function buildEntryDisplay(entry: FsEntry): EntryDisplay {
   return { entry, name, icon: style.icon, color: style.color, isDir: false, devicon }
 }
 
-// ── pre-computed display list ───────────────────────────────────────────────
 const displays = computed(() => props.entries.map(buildEntryDisplay))
-
-// ── auto-scroll selected item into view ───────────────────────────────────────
 
 const listRef = ref<HTMLElement | null>(null)
 
@@ -157,7 +145,6 @@ watchEffect(() => {
   child?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
 })
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const rootClasses = 'w-full mb-2 bg-(--color-bg-card) border border-(--color-border-bright) rounded-(--radius-lg) flex flex-col overflow-hidden max-h-80'
 
 const headerClasses = 'flex items-center gap-2 py-2.5 pr-3 pl-3.5 border-b border-(--color-border-mid) shrink-0'
@@ -222,7 +209,6 @@ const imageBadgeClasses = 'text-[9.5px] font-bold tracking-[0.05em] uppercase te
         @click="emit('select', display.entry)"
         @mouseenter="emit('hover', idx)"
       >
-        <!-- Icon -->
         <i
           v-if="display.devicon"
           :class="[iconClasses, display.devicon]"
@@ -239,7 +225,6 @@ const imageBadgeClasses = 'text-[9.5px] font-bold tracking-[0.05em] uppercase te
           aria-hidden="true"
         />
 
-        <!-- Path with match highlighting -->
         <span :class="getPathClasses(idx === selectedIdx)">
           <template v-for="part in highlightParts(display.entry.path, query)" :key="part.text + String(part.match)">
             <span v-if="part.match" :class="pathMatchClasses">{{ part.text }}</span>

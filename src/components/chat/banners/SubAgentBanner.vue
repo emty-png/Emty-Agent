@@ -5,7 +5,6 @@ defineProps<{
   subAgent: SubAgentInfo
 }>()
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const bannerClasses = 'shrink-0 px-5 pb-4'
 const innerClasses = 'max-w-[720px] mx-auto'
 const bodyClasses = 'bg-(--color-bg-surface) border border-(--color-border-subtle) rounded-(--radius-lg) py-4 px-5'

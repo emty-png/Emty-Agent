@@ -32,7 +32,6 @@ async function copyDebug() {
   }
 }
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const screenClasses = 'fixed inset-0 bg-(--color-bg-base) text-(--color-text-primary) flex items-center justify-center font-[inherit] z-[9999] select-none'
 const contentClasses = 'w-full max-w-[760px] py-12 px-6 flex flex-col items-center text-center'
 
@@ -56,9 +55,8 @@ const versionClasses = 'text-(--color-text-dim) text-[11.5px] m-0'
 </script>
 
 <template>
-  <div :class="screenClasses">
+  <div :class="screenClasses" role="dialog" aria-modal="true" aria-label="Fatal error">
     <div :class="contentClasses">
-      <!-- Header -->
       <div :class="headerClasses">
         <h1 :class="titleClasses">
           Something went wrong
@@ -68,12 +66,10 @@ const versionClasses = 'text-(--color-text-dim) text-[11.5px] m-0'
         </p>
       </div>
 
-      <!-- Error Box -->
       <div :class="boxClasses">
         <pre :class="codeClasses"><code><span :class="errorNameClasses">{{ error.name }}: </span>{{ error.message }}<br>{{ error.stack }}</code></pre>
       </div>
 
-      <!-- Actions -->
       <div :class="actionsClasses">
         <button :class="btnSecondaryClasses" @click="handleRestart">
           Restart
@@ -83,7 +79,6 @@ const versionClasses = 'text-(--color-text-dim) text-[11.5px] m-0'
         </button>
       </div>
 
-      <!-- Footer -->
       <div :class="footerClasses">
         <p :class="contactClasses">
           Please report this error to the OpenCode team on

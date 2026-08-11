@@ -1,29 +1,4 @@
 <script setup lang="ts">
-/**
- * ThinkingMarkdown.vue
- *
- * A dedicated markdown renderer for AI *reasoning* / "thinking" content.
- *
- * Why a separate component?
- *   `MarkdownMessage` is tuned for the final response: full Shiki highlighting,
- *   copy buttons, primary text color, 12.5px code, and `border-collapse` tables.
- *   None of those are right inside a Thinking block:
- *     • The reasoning text should look *visibly different* from the answer —
- *       a dimmer gray (`--color-text-tertiary`) signals "scratchpad".
- *     • Code blocks inside reasoning should match the surrounding "Thinking"
- *       label size (13px / 1em), not 12.5px.
- *     • The parent's `white-space: pre-wrap` was breaking table layout.
- *     • Shiki is heavy for content that's typically short-lived and may
- *       never even be expanded.
- *
- * This renderer is intentionally lean:
- *   • Synchronous render — no async, no Shiki, no version counter.
- *   • Streaming-friendly: open code fences render as plain `<pre>` with a
- *     blinking cursor; final re-render replaces everything cleanly.
- *   • All text is gray by default. Strong/em/headings get a small contrast
- *     bump so the hierarchy still reads.
- */
-
 import { onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps<{
@@ -32,11 +7,7 @@ const props = defineProps<{
   streaming?: boolean
 }>()
 
-// ── rendered output ───────────────────────────────────────────────────────────
-
 const html = ref('')
-
-// ── HTML escaping ─────────────────────────────────────────────────────────────
 
 function escHtml(s: string): string {
   return s
@@ -45,8 +16,6 @@ function escHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 }
-
-// ── inline renderer ───────────────────────────────────────────────────────────
 
 function renderInline(raw: string): string {
   // Split on inline-code spans first so we never apply formatting inside them.
@@ -75,8 +44,6 @@ function renderInline(raw: string): string {
   }).join('')
 }
 
-// ── block types ───────────────────────────────────────────────────────────────
-
 interface CodeBlock { type: 'code'; lang: string; code: string; closed: boolean }
 interface HeadingBlock { type: 'heading'; level: number; text: string }
 interface ParagraphBlock { type: 'paragraph'; lines: string[] }
@@ -91,8 +58,6 @@ type Block
     | UlBlock | OlBlock | BlockquoteBlock
     | TableBlock | HrBlock
 
-// ── tokeniser ─────────────────────────────────────────────────────────────────
-
 function tokenise(content: string): Block[] {
   const blocks: Block[] = []
   const lines = content.split('\n')
@@ -101,7 +66,6 @@ function tokenise(content: string): Block[] {
   while (i < lines.length) {
     const line = lines[i]!
 
-    // ── fenced code block ──────────────────────────────────────────────────────
     const fenceMatch = line.match(/^```(\w*)/)
     if (fenceMatch) {
       const lang = fenceMatch[1] || ''
@@ -121,7 +85,6 @@ function tokenise(content: string): Block[] {
       continue
     }
 
-    // ── ATX heading ───────────────────────────────────────────────────────────
     const hm = line.match(/^(#{1,6})\s+(.+)/)
     if (hm) {
       blocks.push({ type: 'heading', level: hm[1]!.length, text: hm[2]! })
@@ -129,14 +92,12 @@ function tokenise(content: string): Block[] {
       continue
     }
 
-    // ── horizontal rule ───────────────────────────────────────────────────────
     if (/^(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
       blocks.push({ type: 'hr' })
       i++
       continue
     }
 
-    // ── blockquote ────────────────────────────────────────────────────────────
     if (line.startsWith('> ') || line === '>') {
       const qLines: string[] = []
       while (i < lines.length && (lines[i]!.startsWith('> ') || lines[i] === '>')) {
@@ -147,7 +108,6 @@ function tokenise(content: string): Block[] {
       continue
     }
 
-    // ── unordered list (with GFM task-item support) ──────────────────────────
     if (/^[-*+]\s/.test(line)) {
       const items: string[] = []
       while (i < lines.length && /^[-*+]\s/.test(lines[i]!)) {
@@ -163,7 +123,6 @@ function tokenise(content: string): Block[] {
       continue
     }
 
-    // ── ordered list ──────────────────────────────────────────────────────────
     if (/^\d+\.\s/.test(line)) {
       const items: string[] = []
       while (i < lines.length && /^\d+\.\s/.test(lines[i]!)) {
@@ -179,7 +138,6 @@ function tokenise(content: string): Block[] {
       continue
     }
 
-    // ── pipe table ────────────────────────────────────────────────────────────
     if (line.includes('|') && /^[\s|:-]+$/.test(lines[i + 1] ?? '')) {
       const tLines: string[] = []
       while (i < lines.length && lines[i]!.includes('|')) {
@@ -198,13 +156,11 @@ function tokenise(content: string): Block[] {
       }
     }
 
-    // ── blank line ────────────────────────────────────────────────────────────
     if (line.trim() === '') {
       i++
       continue
     }
 
-    // ── paragraph ─────────────────────────────────────────────────────────────
     const paraLines: string[] = []
     while (i < lines.length) {
       const l = lines[i]!
@@ -225,8 +181,6 @@ function tokenise(content: string): Block[] {
 
   return blocks
 }
-
-// ── block → HTML ──────────────────────────────────────────────────────────────
 
 function renderBlock(block: Block): string {
   switch (block.type) {
@@ -283,16 +237,12 @@ function renderBlock(block: Block): string {
   }
 }
 
-// ── full render (synchronous — no Shiki, no async) ─────────────────────────────
-
 function renderAll(content: string): string {
   if (!content)
     return ''
   const blocks = tokenise(content)
   return blocks.map(renderBlock).join('\n')
 }
-
-// ── watchers ──────────────────────────────────────────────────────────────────
 
 function scheduleRender(): void {
   html.value = renderAll(props.content)
@@ -313,16 +263,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!--
-    v-html is intentional and safe here:
-    • Content is produced by the AI model, not by arbitrary user HTML.
-    • All text that originates from block parsing is passed through escHtml().
-  -->
   <div class="text-[13px] leading-[1.6] text-[var(--color-text-tertiary)] whitespace-normal break-words [word-break:break-word] [&_svg]:block [&_svg]:max-w-full [&_svg]:h-auto [&_svg]:max-h-[480px]" v-html="html" />
 </template>
 
 <style>
-/* Unscoped global style block to ensure keyframes are available to arbitrary Tailwind values */
 @keyframes tm-blink {
   0%,
   100% {

@@ -22,7 +22,6 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 
 function onUploadClick() {
-  // Pause live recording immediately when the button is clicked
   emit('pause')
   uploading.value = true
   startIdleLoop()
@@ -138,7 +137,6 @@ function drawWaveform() {
   rafId = requestAnimationFrame(drawWaveform)
 }
 
-// Pulsing sine-wave bars during file upload transcription
 function drawIdleWaveform() {
   const setup = setupCanvas()
   if (!setup) {
@@ -190,7 +188,6 @@ function startLiveLoop() {
   drawWaveform()
 }
 
-// Switch to idle animation when upload transcription starts or file picker is open
 watch(() => [props.transcribing, props.uploadingFileName, uploading.value] as const, ([t, , u]) => {
   if (t || u)
     startIdleLoop()
@@ -213,7 +210,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onKeydown)
 })
 
-// Keyboard shortcuts
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     e.preventDefault()
@@ -227,7 +223,6 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-// -- Tailwind Class Extractions --
 const rootClasses = 'w-full bg-(--color-bg-card) border border-(--color-border-bright) rounded-(--radius-lg) mb-2 flex flex-col overflow-hidden'
 
 const bodyClasses = 'flex flex-col items-center gap-3 px-4 pt-4 pb-4'
@@ -266,12 +261,10 @@ const btnDangerClasses = `${btnBase} bg-[color-mix(in_srgb,var(--color-danger)_1
     aria-label="Voice recording"
   >
     <div :class="bodyClasses">
-      <!-- Waveform canvas -->
       <div :class="canvasWrapClasses">
         <canvas ref="canvasRef" class="voice-canvas" />
       </div>
 
-      <!-- Status row -->
       <div :class="statusRowClasses">
         <template v-if="error">
           <span :class="errorClasses">{{ error }}</span>

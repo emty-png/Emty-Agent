@@ -142,9 +142,37 @@ function selectProject(path: string) {
 }
 
 function removeProject(path: string) {
-  projectStore.removeProject(path)
-  loadProjects()
+  const project = projects.value.find(p => p.workspace_path === path)
+  if (project && project.totalCount > 0) {
+    confirmRemoveProjectPath.value = path
+  }
+  else {
+    projectStore.removeProject(path)
+    loadProjects()
+  }
 }
+
+const confirmRemoveProjectPath = ref<string | null>(null)
+const confirmRemoveProjectCount = computed(() => {
+  if (!confirmRemoveProjectPath.value)
+    return 0
+  return projects.value.find(p => p.workspace_path === confirmRemoveProjectPath.value)?.totalCount ?? 0
+})
+
+async function confirmRemoveProject() {
+  const path = confirmRemoveProjectPath.value
+  if (!path)
+    return
+  await history.removeByWorkspace(path)
+  projectStore.removeProject(path)
+  await loadProjects()
+  confirmRemoveProjectPath.value = null
+  emit('contextMenuClose')
+}
+
+watch(confirmRemoveProjectPath, (val) => {
+  if (val) emit('contextMenuOpen')
+})
 
 function toggleProject(path: string) {
   if (collapsedProjects.value.has(path))
@@ -240,6 +268,11 @@ async function confirmDelete() {
   confirmDeleteId.value = null
 }
 
+watch(confirmDeleteId, (val) => {
+  if (val) emit('contextMenuOpen')
+  else emit('contextMenuClose')
+})
+
 // ── computed classes ──────────────────────────────────────────────────────────
 
 const WIDTH_TRANSITION
@@ -305,8 +338,7 @@ function btnClasses(isActive: boolean) {
 
 function labelClasses(isActive: boolean) {
   const size = props.flyout ? 'text-[12.5px]' : 'text-[13px]'
-  const weight = isActive ? 'font-medium' : 'font-normal'
-  return `${size} ${weight} tracking-[0.01em] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis`
+  return `${size} font-normal tracking-[0.01em] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis`
 }
 </script>
 
@@ -332,7 +364,7 @@ function labelClasses(isActive: boolean) {
       <template v-if="projects.length > 0">
         <div :class="dividerClasses" />
         <div class="px-2 pt-1.5 pb-1">
-          <span class="text-[10px] font-bold tracking-[0.1em] uppercase text-(--color-text-dim) select-none">Projects</span>
+          <span class="text-[10px] font-semibold tracking-[0.1em] uppercase text-(--color-text-dim) select-none">Projects</span>
         </div>
         <div v-for="project in projects" :key="project.workspace_path">
           <div class="sidebar-project-row">
@@ -342,8 +374,8 @@ function labelClasses(isActive: boolean) {
               :class="{ 'sidebar-project-btn--active': projectStore.projectPath === project.workspace_path }"
               @click="selectProject(project.workspace_path); toggleProject(project.workspace_path)"
             >
-              <FolderOpen :size="13" :stroke-width="1.7" class="shrink-0 text-(--color-text-tertiary)" />
-              <span class="text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis flex-1">{{ project.project_name }}</span>
+              <FolderOpen :size="13" :stroke-width="1.7" class="shrink-0" />
+              <span class="text-[12.5px] font-normal whitespace-nowrap overflow-hidden text-ellipsis flex-1">{{ project.project_name }}</span>
             </button>
             <button
               class="sidebar-project-remove"
@@ -466,6 +498,32 @@ function labelClasses(isActive: boolean) {
           </button>
           <button class="dialog-btn dialog-btn--delete" @click="confirmDelete">
             Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- ── project remove confirm dialog ────────────────────────────────── -->
+  <Teleport to="body">
+    <div v-if="confirmRemoveProjectPath" class="dialog-backdrop" @click.self="confirmRemoveProjectPath = null">
+      <div class="dialog">
+        <button class="dialog-close" @click="confirmRemoveProjectPath = null">
+          <X :size="14" :stroke-width="1.8" />
+        </button>
+        <h2 class="dialog-title">
+          Delete project and all conversations?
+        </h2>
+        <p class="dialog-body">
+          This will permanently delete {{ confirmRemoveProjectCount }} conversation{{ confirmRemoveProjectCount !== 1 ? 's' : '' }}
+          and all their messages under this project. This cannot be undone.
+        </p>
+        <div class="dialog-actions">
+          <button class="dialog-btn dialog-btn--cancel" @click="confirmRemoveProjectPath = null">
+            Cancel
+          </button>
+          <button class="dialog-btn dialog-btn--delete" @click="confirmRemoveProject">
+            Delete all
           </button>
         </div>
       </div>

@@ -25,7 +25,7 @@ import type {
 import type { SttProvider, SttProviderConfig, TtsProvider, TtsProviderConfig, VoiceDictionaryEntry, VoiceProcessingConfig, VoiceSnippet } from './voiceTypes'
 import type { SkillMetadata } from '@/utils/skills'
 import { defineStore } from 'pinia'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useProjectStore } from '@/stores/project'
 import { inspectMcpServer, invalidateMcpServerSession } from '@/utils/mcp'
 import { getModelsDevData } from '@/utils/modelsdev'
@@ -147,7 +147,22 @@ export const useSettingsStore = defineStore(
       subagentModelUid: null,
     })
     const completedOnboarding = ref(false)
-    const disabledToolIds = ref<string[]>([])
+    const dismissedBetaCloseNotice = ref(false)
+    const toolDisabledIds = ref<{ build: string[], design: string[] }>({ build: [], design: [] })
+
+    // Migrate legacy flat disabledToolIds → per-mode toolDisabledIds.build
+    onMounted(() => {
+      try {
+        const raw = localStorage.getItem('settings')
+        if (raw) {
+          const parsed = JSON.parse(raw) as Record<string, unknown>
+          const legacy = parsed?.disabledToolIds
+          if (Array.isArray(legacy) && legacy.length > 0 && toolDisabledIds.value.build.length === 0)
+            toolDisabledIds.value = { ...toolDisabledIds.value, build: legacy }
+        }
+      }
+      catch { /* ignore parse errors */ }
+    })
     const disabledSkillIds = ref<string[]>([])
     const globalSkills = ref<SkillMetadata[]>([])
     const projectSkills = ref<SkillMetadata[]>([])
@@ -217,29 +232,33 @@ export const useSettingsStore = defineStore(
         disabledSkillIds.value = [...disabledSkillIds.value, id]
     }
 
-    function isToolEnabled(id: string): boolean {
-      return !disabledToolIds.value.includes(id)
+    function isToolEnabled(id: string, mode: 'build' | 'design' = 'build'): boolean {
+      return !toolDisabledIds.value[mode].includes(id)
     }
 
-    function setToolEnabled(id: string, enabled: boolean): void {
+    function setToolEnabled(id: string, enabled: boolean, mode: 'build' | 'design' = 'build'): void {
       if (enabled)
-        disabledToolIds.value = disabledToolIds.value.filter(toolId => toolId !== id)
-      else if (!disabledToolIds.value.includes(id))
-        disabledToolIds.value = [...disabledToolIds.value, id]
+        toolDisabledIds.value = { ...toolDisabledIds.value, [mode]: toolDisabledIds.value[mode].filter(toolId => toolId !== id) }
+      else if (!toolDisabledIds.value[mode].includes(id))
+        toolDisabledIds.value = { ...toolDisabledIds.value, [mode]: [...toolDisabledIds.value[mode], id] }
     }
 
-    function setToolsEnabled(ids: string[], enabled: boolean): void {
+    function setToolsEnabled(ids: string[], enabled: boolean, mode: 'build' | 'design' = 'build'): void {
       const uniqueIds = [...new Set(ids)]
       if (enabled) {
-        const disabled = new Set(disabledToolIds.value)
+        const disabled = new Set(toolDisabledIds.value[mode])
         uniqueIds.forEach(id => disabled.delete(id))
-        disabledToolIds.value = [...disabled]
+        toolDisabledIds.value = { ...toolDisabledIds.value, [mode]: [...disabled] }
         return
       }
 
-      const next = new Set(disabledToolIds.value)
+      const next = new Set(toolDisabledIds.value[mode])
       uniqueIds.forEach(id => next.add(id))
-      disabledToolIds.value = [...next]
+      toolDisabledIds.value = { ...toolDisabledIds.value, [mode]: [...next] }
+    }
+
+    function getToolDisabledIds(mode: 'build' | 'design' = 'build'): string[] {
+      return toolDisabledIds.value[mode]
     }
 
     async function refreshProjectSkills(projectPath: string | null): Promise<void> {
@@ -1217,7 +1236,9 @@ export const useSettingsStore = defineStore(
       agent,
       completedOnboarding,
       completeOnboarding,
-      disabledToolIds,
+      dismissedBetaCloseNotice,
+      toolDisabledIds,
+      getToolDisabledIds,
       disabledSkillIds,
       globalSkills,
       projectSkills,
@@ -1281,7 +1302,8 @@ export const useSettingsStore = defineStore(
         'memory',
         'agent',
         'completedOnboarding',
-        'disabledToolIds',
+        'dismissedBetaCloseNotice',
+        'toolDisabledIds',
         'disabledSkillIds',
         'compatibleProviders',
         'mcpServers',

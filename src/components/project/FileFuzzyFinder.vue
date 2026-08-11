@@ -74,7 +74,7 @@ const inputRef = ref<HTMLInputElement | null>(null)
     @click.self="emit('close')"
     @keydown="() => {}"
   >
-    <div class="w-[420px] max-h-[380px] rounded-[var(--radius-lg)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[0_8px_24px_rgba(0,0,0,0.35),0_2px_6px_rgba(0,0,0,0.2)] flex flex-col overflow-hidden">
+    <div role="dialog" aria-modal="true" aria-label="Find file" class="w-[420px] max-h-[380px] rounded-[var(--radius-lg)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[0_8px_24px_rgba(0,0,0,0.35),0_2px_6px_rgba(0,0,0,0.2)] flex flex-col overflow-hidden">
       <!-- search input -->
       <div class="px-3 pt-3 pb-2.5 shrink-0">
         <input

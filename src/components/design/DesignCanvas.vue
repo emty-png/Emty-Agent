@@ -20,8 +20,6 @@ const props = defineProps<{
   previewUrl?: string | undefined
 }>()
 
-// ── Device toggle ─────────────────────────────────────────────────────────────
-
 type DeviceType = 'phone' | 'desktop'
 const device = ref<DeviceType>('desktop')
 
@@ -31,8 +29,6 @@ const DEVICES: Record<DeviceType, { w: number; h: number; label: string }> = {
 }
 
 const deviceSize = computed(() => DEVICES[device.value])
-
-// ── Zoom & pan ────────────────────────────────────────────────────────────────
 
 const canvasRef = ref<HTMLElement | null>(null)
 const scale = ref(1)
@@ -59,7 +55,6 @@ function setZoom(next: number, originX?: number, originY?: number) {
   const cx = originX ?? rect.width / 2
   const cy = originY ?? rect.height / 2
 
-  // Zoom toward cursor
   const prevScale = scale.value
   const nextScale = clampScale(next)
   const ratio = nextScale / prevScale
@@ -79,7 +74,6 @@ function fitToCanvas() {
   const rect = el.getBoundingClientRect()
   const { w, h } = deviceSize.value
 
-  // Leave some padding
   const PADDING = 48
   const scaleX = (rect.width - PADDING * 2) / w
   const scaleY = (rect.height - PADDING * 2) / h
@@ -90,7 +84,6 @@ function fitToCanvas() {
   panY.value = rect.height / 2
 }
 
-// Fit on mount and when device/project changes
 onMounted(() => {
   fitToCanvas()
 })
@@ -98,8 +91,6 @@ onMounted(() => {
 watch([device, () => props.activeProject?.path], () => {
   fitToCanvas()
 })
-
-// ── Wheel zoom ────────────────────────────────────────────────────────────────
 
 function onWheel(e: WheelEvent) {
   e.preventDefault()
@@ -113,8 +104,6 @@ function onWheel(e: WheelEvent) {
   const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP
   setZoom(scale.value + delta, cursorX, cursorY)
 }
-
-// ── Pan (middle-click + drag, or Space + drag) ────────────────────────────────
 
 const isPanning = ref(false)
 const spaceDown = ref(false)
@@ -172,8 +161,6 @@ onUnmounted(() => {
   window.removeEventListener('keyup', onKeyUp)
 })
 
-// ── iframe srcdoc composition ─────────────────────────────────────────────────
-
 const iframeKey = ref(0)
 const srcdoc = ref('')
 const isLoading = ref(false)
@@ -183,7 +170,6 @@ function refresh() {
   iframeKey.value++
 }
 
-/** Read project files from disk and compose a srcdoc for the iframe. */
 async function readProjectFiles() {
   const project = props.activeProject
   if (!project) {
@@ -208,7 +194,6 @@ async function readProjectFiles() {
 
       let html = await readTextFile(htmlPath)
 
-      // Read CSS and inline it
       try {
         const css = await readTextFile(cssPath)
         html = html.replace(
@@ -216,9 +201,8 @@ async function readProjectFiles() {
           `<style>${css}</style>`,
         )
       }
-      catch { /* styles.css may not exist */ }
+      catch {}
 
-      // Read JS and inline it
       try {
         const js = await readTextFile(jsPath)
         html = html.replace(
@@ -226,13 +210,12 @@ async function readProjectFiles() {
           `<script>${js}<\/script>`,
         )
       }
-      catch { /* script.js may not exist */ }
+      catch {}
 
       console.warn(`[DesignCanvas] Composed multiple-files srcdoc: ${html.length} bytes`)
       srcdoc.value = html
     }
     else if (type.startsWith('vite-')) {
-      // Vite projects use a dev server — previewUrl is set externally
       console.warn('[DesignCanvas] Vite project, using previewUrl instead of srcdoc')
       srcdoc.value = ''
     }
@@ -249,7 +232,6 @@ async function readProjectFiles() {
   }
 }
 
-// Re-read files whenever projectVersion changes or project changes
 watch(
   [() => props.projectVersion, () => props.activeProject?.path, () => props.activeProject?.type],
   () => {
@@ -264,8 +246,6 @@ watch(() => props.previewUrl, (newUrl, oldUrl) => {
   console.warn(`[DesignCanvas] previewUrl changed: ${oldUrl ?? 'null'} -> ${newUrl ?? 'null'}`)
 })
 
-// ── Export ────────────────────────────────────────────────────────────────────
-
 async function exportDesign() {
   if (!srcdoc.value)
     return
@@ -279,8 +259,6 @@ async function exportDesign() {
   await writeTextFile(filePath, srcdoc.value)
 }
 
-// ── Frame transform ───────────────────────────────────────────────────────────
-
 const frameStyle = computed(() => {
   const w = deviceSize.value.w
   const h = deviceSize.value.h
@@ -288,10 +266,7 @@ const frameStyle = computed(() => {
   return {
     width: `${w}px`,
     height: `${h}px`,
-    // Use zoom instead of transform: scale() — zoom re-rasterizes at the target
-    // resolution so text and edges stay sharp (transform downscales a bitmap).
     zoom: s,
-    // Center the (now layout-scaled) element on the pan point
     left: `${panX.value - (w * s) / 2}px`,
     top: `${panY.value - (h * s) / 2}px`,
   }
@@ -300,9 +275,7 @@ const frameStyle = computed(() => {
 
 <template>
   <div class="design-canvas-root">
-    <!-- ── Toolbar ── -->
     <div class="dc-toolbar">
-      <!-- Device toggle -->
       <div class="dc-toolbar-group">
         <button
           class="dc-icon-btn"
@@ -324,7 +297,6 @@ const frameStyle = computed(() => {
 
       <div class="dc-toolbar-sep" />
 
-      <!-- Zoom controls -->
       <div class="dc-toolbar-group">
         <button class="dc-icon-btn" title="Zoom out" @click="zoomOut">
           <Minus :size="13" :stroke-width="2" />
@@ -340,12 +312,10 @@ const frameStyle = computed(() => {
 
       <div class="dc-toolbar-sep" />
 
-      <!-- Refresh -->
       <button class="dc-icon-btn" title="Refresh preview" @click="refresh">
         <RefreshCw :size="13" :stroke-width="2" />
       </button>
 
-      <!-- Export -->
       <button
         class="dc-icon-btn"
         title="Export as HTML"
@@ -357,13 +327,11 @@ const frameStyle = computed(() => {
 
       <div class="dc-toolbar-spacer" />
 
-      <!-- Project name -->
       <span v-if="activeProject" class="dc-active-name">
         {{ activeProject.name }}
       </span>
     </div>
 
-    <!-- ── Canvas area ── -->
     <div
       ref="canvasRef"
       class="dc-canvas"
@@ -375,7 +343,6 @@ const frameStyle = computed(() => {
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
     >
-      <!-- Empty state -->
       <Transition name="dc-fade">
         <div v-if="!activeProject" class="dc-empty">
           <div class="dc-empty-icon">
@@ -396,11 +363,9 @@ const frameStyle = computed(() => {
         </div>
       </Transition>
 
-      <!-- Device frame + iframe -->
       <Transition name="dc-fade">
         <div v-if="activeProject" class="dc-frame-wrap" :style="frameStyle">
           <div class="dc-frame" :class="`dc-frame--${device}`">
-            <!-- Vite projects: use dev server URL -->
             <iframe
               v-if="previewUrl"
               :key="`${iframeKey}-dev-${previewUrl}`"
@@ -409,7 +374,6 @@ const frameStyle = computed(() => {
               sandbox="allow-scripts allow-forms allow-same-origin"
               title="Design preview"
             />
-            <!-- Static projects: use srcdoc -->
             <iframe
               v-else
               :key="`${iframeKey}-${activeProject.path}`"
@@ -419,7 +383,6 @@ const frameStyle = computed(() => {
               title="Design preview"
             />
 
-            <!-- Phone home indicator -->
             <div v-if="device === 'phone'" class="dc-phone-home-bar" />
           </div>
         </div>
@@ -429,7 +392,6 @@ const frameStyle = computed(() => {
 </template>
 
 <style scoped>
-/* ── Root ──────────────────────────────────────────────────────────────────── */
 .design-canvas-root {
   display: flex;
   flex-direction: column;
@@ -438,7 +400,6 @@ const frameStyle = computed(() => {
   overflow: hidden;
 }
 
-/* ── Toolbar ───────────────────────────────────────────────────────────────── */
 .dc-toolbar {
   display: flex;
   align-items: center;
@@ -520,7 +481,6 @@ const frameStyle = computed(() => {
   padding-right: 4px;
 }
 
-/* ── Canvas ────────────────────────────────────────────────────────────────── */
 .dc-canvas {
   flex: 1;
   min-height: 0;
@@ -541,7 +501,6 @@ const frameStyle = computed(() => {
   cursor: grabbing;
 }
 
-/* ── Empty state ───────────────────────────────────────────────────────────── */
 .dc-empty {
   position: absolute;
   inset: 0;
@@ -575,14 +534,11 @@ const frameStyle = computed(() => {
   line-height: 1.6;
 }
 
-/* ── Device frame wrap (positioned for pan/zoom) ───────────────────────────── */
 .dc-frame-wrap {
   position: absolute;
   will-change: left, top, zoom;
-  /* left/top/zoom set inline via :style */
 }
 
-/* ── Device frame ─────────────────────────────────────────────────────────── */
 .dc-frame {
   position: relative;
   overflow: hidden;
@@ -606,7 +562,6 @@ const frameStyle = computed(() => {
   height: 800px;
 }
 
-/* Phone home indicator */
 .dc-phone-home-bar {
   position: absolute;
   bottom: 10px;
@@ -620,7 +575,6 @@ const frameStyle = computed(() => {
   pointer-events: none;
 }
 
-/* iframe fills the frame */
 .dc-iframe {
   position: absolute;
   inset: 0;
@@ -638,7 +592,6 @@ const frameStyle = computed(() => {
   display: none;
 }
 
-/* ── Transitions ───────────────────────────────────────────────────────────── */
 .dc-fade-enter-active,
 .dc-fade-leave-active {
   transition: opacity 200ms ease;

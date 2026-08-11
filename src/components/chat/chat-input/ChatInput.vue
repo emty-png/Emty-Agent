@@ -119,7 +119,6 @@ async function startVoiceRecording() {
   voiceOverlayOpen.value = true
   try {
     await voice.start()
-    // Start streaming session if provider supports it
     if (isStreamingSupported(settings.sttProvider)) {
       const config = settings.stt[settings.sttProvider]
       activeStreamSession = startStreamingSession(settings.sttProvider, config, event => {
@@ -142,7 +141,6 @@ async function startVoiceRecording() {
 }
 
 async function stopVoiceRecording() {
-  // Guard: recording never started (e.g. getUserMedia rejected or was too slow)
   if (!voice.recording.value) {
     cancelVoiceRecording()
     return
@@ -153,7 +151,6 @@ async function stopVoiceRecording() {
   activeStreamSession = null
   try {
     const blob = await voice.stop()
-    // If streaming produced a transcript, use it (no need for batch STT)
     if (streamSession && streamSession.finalTranscript.trim()) {
       streamSession.close()
       const transcript = processTranscript(streamSession.finalTranscript, settings.voiceProcessing, dictationContext.value, settings.voiceDictionary, settings.voiceSnippets)
@@ -168,7 +165,6 @@ async function stopVoiceRecording() {
       return
     }
     streamSession?.close()
-    // Guard: empty blob (shouldn't happen after recording, but be safe)
     if (blob.size === 0) {
       cancelVoiceRecording()
       return
@@ -207,7 +203,6 @@ function pauseVoiceRecording() {
   voice.cancel()
 }
 
-// ── Push-to-talk (Ctrl+Space) ──────────────────────────────────────────────
 const pushToTalkHeld = ref(false)
 const voiceStarting = ref(false)
 let pendingStop = false
@@ -385,7 +380,6 @@ function onKeydown(e: KeyboardEvent) {
   if (mention.handleKeydown(e))
     return
 
-  // ── Arrow keys: skip over tokens atomically (chip body + padding) ────────
   if (
     (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
     && !e.shiftKey
@@ -473,7 +467,6 @@ function onInput(e: Event) {
   syncScroll()
 }
 
-/** Snap cursor/selection out of tokens after mouse interaction. */
 function onMouseUp() {
   const el = textareaRef.value
   if (!el)
@@ -523,7 +516,6 @@ watch(
   { immediate: true },
 )
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const overlayTransitions = {
   enterActiveClass: 'transition-[opacity,transform] duration-200 ease-out',
   enterFromClass: 'opacity-0 translate-y-3',
@@ -664,7 +656,6 @@ const sendBtnClasses = computed(() => {
     </Transition>
 
     <div :class="shellClasses">
-      <!-- Scanner track & spinning head -->
       <div
         v-if="isStreaming"
         class="box-border absolute -inset-px rounded-[inherit] p-px pointer-events-none z-10 overflow-hidden"
@@ -675,9 +666,7 @@ const sendBtnClasses = computed(() => {
         </div>
       </div>
 
-      <!-- Syntax Highlighter wrapper -->
       <div class="relative w-full flex">
-        <!-- Colored Backdrop -->
         <div ref="backdropRef" :class="backdropClasses" aria-hidden="true">
           <span v-if="!text" class="text-(--color-text-tertiary)">
             {{ 'Ask anything\u2026 (@ to link files)' }}
@@ -690,7 +679,6 @@ const sendBtnClasses = computed(() => {
           </template>
         </div>
 
-        <!-- Invisible physical Textarea -->
         <textarea
           ref="textareaRef"
           v-model="text"

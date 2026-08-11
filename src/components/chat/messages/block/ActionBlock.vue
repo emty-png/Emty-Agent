@@ -33,8 +33,6 @@ const emit = defineEmits<{
   toggle: []
 }>()
 
-// ── Body chunks: split interleaved items into text/actions segments ──
-
 const bodyChunks = computed<BodyChunk[]>(() => {
   const chunks: BodyChunk[] = []
   let currentChunk: BodyChunk | null = null
@@ -52,8 +50,6 @@ const bodyChunks = computed<BodyChunk[]>(() => {
 
   return chunks
 })
-
-// ── Per-actions-chunk summary pills ──
 
 function computeSummaryParts(groups: ProcessedGroup[]) {
   const counts = new Map<string, number>()
@@ -111,8 +107,6 @@ function computeSummaryParts(groups: ProcessedGroup[]) {
   return parts
 }
 
-// ── Per-actions-chunk open/close state (key-based, no index mismatch) ──
-
 const expandedChunks = ref<Set<string>>(new Set())
 
 function getActionsChunkKey(chunk: BodyChunk): string {
@@ -132,8 +126,6 @@ function toggleActionsChunk(chunkKey: string) {
   expandedChunks.value = next
 }
 
-// ── Latest actions chunk: identify for bright header ──
-
 const lastActionsChunkKey = computed(() => {
   for (let i = bodyChunks.value.length - 1; i >= 0; i--) {
     if (bodyChunks.value[i]!.type === 'actions')
@@ -145,8 +137,6 @@ const lastActionsChunkKey = computed(() => {
 function isLatestActionsChunk(chunk: BodyChunk): boolean {
   return lastActionsChunkKey.value !== null && getActionsChunkKey(chunk) === lastActionsChunkKey.value
 }
-
-// ── Collapsed preview: last text + last actions summary ──
 
 const lastTextChunk = computed(() => {
   const textChunks = bodyChunks.value.filter(c => c.type === 'text')
@@ -173,8 +163,6 @@ const lastActionsSummary = computed(() => {
   return computeSummaryParts(lastActionsChunk.value.groups)
 })
 
-// ── Interrupt detection: agent was interrupted if last item is not text ──
-
 const wasInterrupted = computed(() => !props.hasRestContent)
 
 function expandFromPreview() {
@@ -190,7 +178,6 @@ function expandFromPreview() {
 
 <template>
   <div class="flex w-full flex-col">
-    <!-- ── Outer header: "Working…" (live) or "Worked for Xs" (done) ── -->
     <div
       v-if="streaming"
       class="group/header pointer-events-none -ml-2 flex min-h-[30px] w-[calc(100%+8px)] cursor-default select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)]"
@@ -219,7 +206,6 @@ function expandFromPreview() {
       />
     </button>
 
-    <!-- ── Collapsed preview: shown only when agent was interrupted ── -->
     <div v-if="wasInterrupted && !isOpen && !streaming && (lastText || lastActionsSummary.length > 0)" class="flex flex-col gap-2 pl-2">
       <div v-if="lastText" class="max-h-[80px] overflow-hidden text-[14px] leading-[1.6] text-[var(--color-text)]">
         <MarkdownMessage :content="lastText" :streaming="false" />
@@ -240,16 +226,13 @@ function expandFromPreview() {
       </button>
     </div>
 
-    <!-- ── Outer body (slides open when isOpen or streaming) ── -->
     <div class="grid grid-rows-[0fr] transition-[grid-template-rows] duration-[360ms] ease-[cubic-bezier(0.25,1,0.5,1)] will-change-[grid-template-rows] motion-reduce:transition-none" :class="isOpen || streaming ? 'grid-rows-[1fr]' : ''">
       <div class="min-h-0 -translate-y-[3px] overflow-hidden opacity-0 transition-[opacity,transform] duration-[220ms,360ms] ease-[ease,cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none" :class="isOpen || streaming ? 'translate-y-0 opacity-100 delay-[40ms,40ms] duration-[300ms,360ms]' : ''">
         <div
           class="relative ml-2 flex flex-col gap-2.5 border-l-[1.5px] border-[var(--color-border-subtle)] pb-[6px] pl-[14px] pt-1 transition-colors duration-300 ease-[ease]"
           :class="streaming ? 'before:absolute before:-left-[1.75px] before:top-0 before:bottom-0 before:z-[1] before:w-[2px] before:rounded-[2px] before:bg-[var(--color-accent)] before:content-[\'\'] before:animate-[rail-pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite_alternate] motion-reduce:before:animate-none' : ''"
         >
-          <!-- Iterate body chunks: text renders at body level, actions in sub-sections -->
           <template v-for="(chunk, chunkIdx) in bodyChunks" :key="chunkIdx">
-            <!-- Text chunk: render directly at body level (normal color) -->
             <template v-if="chunk.type === 'text'">
               <MarkdownMessage
                 v-for="group in chunk.groups"
@@ -259,9 +242,7 @@ function expandFromPreview() {
               />
             </template>
 
-            <!-- Actions chunk: collapsible sub-section with summary pills -->
             <div v-else class="flex flex-col gap-[2px]">
-              <!-- Sub-header: summary pills + chevron -->
               <div
                 v-if="streaming"
                 class="group/header pointer-events-none flex min-h-[30px] w-full cursor-default select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left"
@@ -308,7 +289,6 @@ function expandFromPreview() {
                 />
               </button>
 
-              <!-- Sub-body: tool badges + thinking blocks -->
               <div class="grid grid-rows-[0fr] transition-[grid-template-rows] duration-[340ms] ease-[cubic-bezier(0.25,1,0.5,1)] will-change-[grid-template-rows] motion-reduce:transition-none" :class="isActionsExpanded(getActionsChunkKey(chunk)) || streaming ? 'grid-rows-[1fr]' : ''">
                 <div class="min-h-0 -translate-y-[3px] overflow-hidden opacity-0 transition-[opacity,transform] duration-[200ms,340ms] ease-[ease,cubic-bezier(0.25,1,0.5,1)] motion-reduce:transition-none" :class="isActionsExpanded(getActionsChunkKey(chunk)) || streaming ? 'translate-y-0 opacity-100 delay-[40ms,40ms] duration-[280ms,340ms]' : ''">
                   <div

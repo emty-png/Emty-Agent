@@ -54,7 +54,6 @@ async function copyMessage(text: string) {
   }
 }
 
-/* ── Markdown Renderer Logic (User Custom) ───────────────────────────────── */
 const html = ref('')
 
 function escHtml(s: string): string {
@@ -288,7 +287,6 @@ watch(() => props.msg.content, newContent => {
   html.value = renderAll(newContent)
 }, { immediate: true })
 
-/* ── Seamless Truncation Logic ───────────────────────────────────────────── */
 const textContentRef = ref<HTMLElement | null>(null)
 const showToggle = ref(false)
 const isCollapsed = ref(true)
@@ -318,7 +316,6 @@ onUnmounted(() => {
 <template>
   <div class="group flex flex-col items-end gap-1 py-0.5">
     <div class="flex min-w-0 w-full flex-col rounded-[var(--radius-lg)] bg-[var(--color-accent-muted-plus)] px-3.5 py-2.5 text-[var(--color-text-primary)]">
-      <!-- Rendered Markdown Content with Masking -->
       <div
         v-if="msg.content"
         class="relative w-full"
@@ -327,14 +324,12 @@ onUnmounted(() => {
         <div ref="textContentRef" class="um-root whitespace-normal break-words text-[13.5px] leading-[1.55] text-[var(--color-text-primary)] [word-break:break-word]" v-html="html" />
       </div>
 
-      <!-- Centered "Show more" link -->
       <div v-if="showToggle" class="flex w-full justify-center" :class="isCollapsed ? 'relative z-[2] -mt-4' : 'mt-1.5'">
         <button class="cursor-pointer border-none bg-transparent px-2.5 py-1 text-[12px] font-semibold text-inherit opacity-60 transition-all duration-[150ms] hover:underline hover:opacity-100" @click="isCollapsed = !isCollapsed">
           {{ isCollapsed ? 'Show more' : 'Show less' }}
         </button>
       </div>
 
-      <!-- Attachments -->
       <div v-if="attachments.length > 0" class="mt-2 flex flex-wrap gap-2 border-t border-[var(--color-accent-dim)] pt-2">
         <div
           v-for="att in attachments"
@@ -377,7 +372,6 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Meta -->
     <div class="mr-1 flex items-center gap-1.5 opacity-0 transition-opacity duration-[150ms] group-hover:opacity-100">
       <button
         class="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border border-transparent bg-transparent text-[var(--color-text-tertiary)] transition-colors duration-[120ms] hover:border-[var(--color-border-mid)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)]"
@@ -393,13 +387,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* ── User Markdown Renderer (.um-root) ───────────────────────────────────── */
-/*
-  Styled specifically to look native inside the --color-accent-muted-plus
-  bubble background. Using `color-mix` heavily to blend natively.
-*/
-
-/* Reset spacing */
 .um-root :deep(p),
 .um-root :deep(ul),
 .um-root :deep(ol),

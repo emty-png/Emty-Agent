@@ -4,14 +4,6 @@
  * The ask_questions tool lets the agent ask the user up to 5 clarifying
  * questions in a single batch before proceeding with a task.
  *
- * FIX 2: Each question now accepts 2–4 pre-written options (was exactly 3).
- * The UI still appends a free-text "something else" field as a final option.
- *
- * FIX 2: Questions may declare a `dependsOn` field — a reference to a prior
- * question index and the answer value that should trigger this question.
- * The UI skips a dependent question when its condition isn't met, and the
- * tool resolves it with answer: "skipped (condition not met)".
- *
  * Architecture:
  *   execute() stores a Promise resolver in a module-level variable and sets
  *   the reactive `pendingBatch` ref that QuestionOverlay observes directly.
@@ -35,9 +27,7 @@ import { z } from 'zod'
 
 export interface QuestionSpec {
   question: string
-
   options: string[]
-
   dependsOn?: {
     questionIndex: number
     whenAnswer: string
@@ -57,7 +47,7 @@ export interface QuestionAnswer {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * FIX 2: Resolve which questions are active given answers collected so far.
+ * Resolve which questions are active given answers collected so far.
  * A question with `dependsOn` is skipped unless the referenced answer
  * matches `whenAnswer` (case-insensitive prefix, so "TypeScript" matches "ts").
  */
@@ -68,9 +58,12 @@ function isQuestionActive(
 ): boolean {
   if (!spec.dependsOn)
     return true
+
   const { questionIndex, whenAnswer } = spec.dependsOn
+
   if (questionIndex >= index)
     return true // forward references don't make sense — show it
+
   const priorAnswer = answers[questionIndex]?.answer ?? ''
   return priorAnswer.toLowerCase().startsWith(whenAnswer.toLowerCase())
 }
@@ -84,14 +77,26 @@ export type QuestionsCallback = (
 
 export function createQuestionsTool(onQuestions: QuestionsCallback) {
   return tool({
-    description: `Ask the user clarifying questions before proceeding. Use when the answer will meaningfully change your approach — not when you could read the codebase or make a reasonable assumption instead.
+    description: `Ask the user clarifying questions before proceeding with a complex or ambiguous task.
 
-Rules:
-- Batch ALL related questions in one call (max 5). Never call this multiple times for related questions.
-- Each question needs 2–4 distinct options. The UI appends a free-text field automatically.
-- Use dependsOn to skip irrelevant follow-ups based on a prior answer.
-- Treat a "skipped" answer as "no preference — use your judgment".
-- Don't ask yes/no questions with an obvious answer. Don't ask what you can find by reading files.`,
+WHEN TO USE:
+- Use ONLY when missing information will fundamentally change your implementation approach, architecture, or file structure.
+- Use when multiple valid architectural paths exist and you cannot confidently choose one without user preference.
+
+WHEN NOT TO USE:
+- NEVER use this if you can find the answer by reading the codebase, checking configuration files, or reading documentation.
+- NEVER use this for trivial decisions, styling choices, or standard best practices. Make a reasonable professional assumption instead.
+- NEVER ask yes/no questions where the answer is obvious.
+
+EXECUTION RULES:
+1. Batch ALL related questions into a SINGLE tool call. The maximum is 5 questions per batch. Do not call this tool multiple times for the same task.
+2. Provide 2 to 4 highly distinct, mutually exclusive options for each question. Order them from most recommended to least recommended.
+3. The UI automatically appends a free-text "Other" option, so do not include "Other" or "Custom" in your options array.
+4. Use the "dependsOn" field to conditionally show follow-up questions based on a prior answer. This keeps the UI clean and relevant.
+
+AFTER RECEIVING ANSWERS:
+- Treat "skipped" or "skipped (condition not met)" as "no preference — use your best professional judgment".
+- Once you receive the answers, acknowledge them briefly and immediately proceed with the task. Do not ask more questions.`,
     inputSchema: z.object({
       questions: z
         .array(
@@ -99,46 +104,45 @@ Rules:
             question: z
               .string()
               .min(1)
-              .describe('The question to ask. Keep it concise and specific.'),
+              .max(250)
+              .describe('The question to ask. Keep it concise, highly specific, and under 250 characters.'),
             options: z
-              .array(z.string())
-              // FIX 2: was .min(3).max(3) — now 2–4 for flexibility
+              .array(z.string().min(1).max(100))
               .min(2)
               .max(4)
               .describe(
-                '2–4 pre-written answer options. '
-                + 'Make them meaningfully distinct and cover the most likely choices. '
-                + 'The UI always appends a free-text "something else" input as a final option. '
-                + 'Use 2 options for binary choices, 3–4 for multi-way decisions.',
+                '2–4 highly distinct, mutually exclusive answer options. '
+                + 'Order them from most recommended to least recommended. '
+                + 'Do NOT include "Other" or "Custom" as the UI adds a free-text field automatically.',
               ),
-            // FIX 2: optional conditional display
             dependsOn: z
               .object({
                 questionIndex: z
                   .number()
                   .int()
                   .min(0)
-                  .describe('0-based index of the earlier question this depends on.'),
+                  .describe('0-based index of the earlier question this depends on. Must be strictly less than the current question index.'),
                 whenAnswer: z
                   .string()
+                  .min(1)
                   .describe(
                     'Show this question only when the answer to questionIndex starts with this string (case-insensitive). '
-                    + 'Example: whenAnswer: "TypeScript" will match answers "TypeScript", "typescript", "ts" (if user typed that).',
+                    + 'Example: "TypeScript" will match "TypeScript", "typescript", or "ts".',
                   ),
               })
               .optional()
               .describe(
                 'If set, this question is only shown when a prior question was answered with a matching value. '
-                + 'Use to avoid asking irrelevant follow-ups.',
+                + 'Use to avoid asking irrelevant follow-ups and keep the UI clean.',
               ),
           }),
         )
         .min(1)
         .max(5)
-        .describe('Questions to ask in this batch. Group all related questions into one call.'),
+        .describe('Questions to ask in this batch. Group ALL related questions into one single call.'),
     }),
     execute: async ({ questions }, { abortSignal }) => {
-      return new Promise<{ answers: QuestionAnswer[] }>(resolve => {
+      return new Promise<{ answers: QuestionAnswer[] }>((resolve) => {
         // Already aborted before we even start — skip all questions immediately.
         if (abortSignal?.aborted) {
           resolve({ answers: questions.map(q => ({ question: q.question, answer: 'skipped' })) })
@@ -172,7 +176,7 @@ Rules:
         onQuestions(normalizedQuestions, (rawAnswers: QuestionAnswer[]) => {
           abortSignal?.removeEventListener('abort', onAbort)
 
-          // FIX 2: back-fill "skipped (condition not met)" for any dependsOn
+          // Back-fill "skipped (condition not met)" for any dependsOn
           // questions whose condition wasn't satisfied.
           const resolved: QuestionAnswer[] = normalizedQuestions.map((spec, i) => {
             if (!isQuestionActive(spec, i, rawAnswers)) {

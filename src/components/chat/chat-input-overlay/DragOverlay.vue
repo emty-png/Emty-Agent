@@ -65,12 +65,9 @@ const categoryColors: Record<'image' | 'code' | 'doc' | 'file', { bg: string; bo
 
 <template>
   <div class="drag-overlay-root relative w-full rounded-(--radius-lg) mb-2 overflow-hidden">
-    <!-- Outer glow ring -->
     <div class="absolute -inset-px rounded-[inherit] opacity-60 drag-glow-ring pointer-events-none" />
 
-    <!-- Main card -->
     <div class="relative flex flex-col items-center gap-4 px-6 py-6 rounded-(--radius-lg) border border-[color-mix(in_srgb,var(--color-accent)_35%,transparent)] drag-glass">
-      <!-- Drop zone indicator -->
       <div class="relative flex items-center justify-center w-16 h-16 rounded-2xl drag-icon-ring">
         <template v-if="reading">
           <svg viewBox="0 0 28 28" width="22" height="22" class="animate-spin">
@@ -88,7 +85,6 @@ const categoryColors: Record<'image' | 'code' | 'doc' | 'file', { bg: string; bo
         <Upload v-else :size="22" class="text-[var(--color-accent-bright)] drag-icon-breathe" :stroke-width="2" />
       </div>
 
-      <!-- File previews -->
       <div v-if="visiblePreviews.length > 0" class="flex items-stretch gap-2 flex-wrap justify-center">
         <TransitionGroup
           enter-active-class="transition-[opacity,transform] duration-200 ease-out"
@@ -130,7 +126,6 @@ const categoryColors: Record<'image' | 'code' | 'doc' | 'file', { bg: string; bo
         </div>
       </div>
 
-      <!-- Status -->
       <div class="flex flex-col items-center gap-1">
         <span class="text-[13px] font-semibold text-[var(--color-text-primary)] tracking-wide">{{ statusText }}</span>
         <span v-if="!reading" class="text-[11px] text-[var(--color-text-tertiary)]">Release to add files to your message</span>
@@ -140,14 +135,12 @@ const categoryColors: Record<'image' | 'code' | 'doc' | 'file', { bg: string; bo
 </template>
 
 <style scoped>
-/* Glass card */
 .drag-glass {
   background: color-mix(in srgb, var(--color-bg-card) 88%, transparent);
   backdrop-filter: blur(24px) saturate(1.4);
   -webkit-backdrop-filter: blur(24px) saturate(1.4);
 }
 
-/* Outer glow ring that pulses */
 .drag-glow-ring {
   background: conic-gradient(
     from 0deg,
@@ -167,7 +160,6 @@ const categoryColors: Record<'image' | 'code' | 'doc' | 'file', { bg: string; bo
   }
 }
 
-/* Icon ring */
 .drag-icon-ring {
   background: color-mix(in srgb, var(--color-accent) 6%, transparent);
   border: 1.5px dashed color-mix(in srgb, var(--color-accent) 35%, transparent);
@@ -186,7 +178,6 @@ const categoryColors: Record<'image' | 'code' | 'doc' | 'file', { bg: string; bo
   }
 }
 
-/* Breathing icon animation */
 .drag-icon-breathe {
   animation: iconBreathe 2.5s ease-in-out infinite;
 }
@@ -203,7 +194,6 @@ const categoryColors: Record<'image' | 'code' | 'doc' | 'file', { bg: string; bo
   }
 }
 
-/* Badge pop-in */
 .drag-badge-pop {
   animation: badgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -219,7 +209,6 @@ const categoryColors: Record<'image' | 'code' | 'doc' | 'file', { bg: string; bo
   }
 }
 
-/* File card hover glow */
 .drag-file-card:hover {
   box-shadow: 0 0 12px -2px color-mix(in srgb, var(--color-accent) 12%, transparent);
 }

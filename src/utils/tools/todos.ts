@@ -4,18 +4,17 @@
  * Four granular task tools that replace the monolithic write_todo tool.
  *
  * Design:
- *   State lives entirely inside the closure returned by createTaskTools().
- *   The agent operates on individual tasks by stable auto-increment ID,
+ * - State lives entirely inside the closure returned by createTaskTools().
+ * - The agent operates on individual tasks by stable auto-increment ID,
  *   eliminating the full-list replacement problem of the old write_todo.
- *
- *   onUpdate fires after every mutation so Vue reactivity in the chat store
+ * - onUpdate fires after every mutation so Vue reactivity in the chat store
  *   propagates changes to TaskOverlay without any module-level singletons.
  *
  * Tools:
- *   create_task  — add a new task, returns its assigned ID
- *   update_task  — mutate status / subject / description / activeForm, or delete
- *   list_tasks   — read all tasks (agent read-before-write, no token cost)
- *   get_task     — read one task in full detail
+ * - create_task  — add a new task and return its assigned ID
+ * - update_task  — mutate status / subject / description / activeForm, or delete
+ * - list_tasks   — read all tasks
+ * - get_task     — read one task in full detail
  */
 
 import { tool } from 'ai'
@@ -26,12 +25,16 @@ import { z } from 'zod'
 export interface TaskItem {
   /** Stable auto-increment identifier: "1", "2", "3"… */
   id: string
+
   /** Brief, actionable title in imperative form. */
   subject: string
+
   /** Full detail of what needs to be done. */
   description: string
+
   /** Present-continuous label shown in the UI while status === 'in_progress'. */
   activeForm?: string
+
   status: 'pending' | 'in_progress' | 'completed'
 }
 
@@ -40,9 +43,9 @@ export interface TaskItem {
 /**
  * Create the four task tools bound to an update callback.
  *
- * @param onUpdate  Called after every mutation with a snapshot of current tasks.
- *                  Chat store writes it to the active tab; Vue reactivity updates
- *                  TaskOverlay automatically.
+ * @param onUpdate Called after every mutation with a snapshot of current tasks.
+ *                 Chat store writes it to the active tab; Vue reactivity updates
+ *                 TaskOverlay automatically.
  */
 export function createTaskTools(
   onUpdate: (items: TaskItem[]) => void,
@@ -50,6 +53,7 @@ export function createTaskTools(
 ) {
   let tasks: TaskItem[] = initialTasks ? initialTasks.map(t => ({ ...t })) : []
   let nextId = 1
+
   if (tasks.length > 0) {
     const maxId = Math.max(...tasks.map(t => Number.parseInt(t.id, 10) || 0))
     nextId = maxId + 1
@@ -66,24 +70,27 @@ export function createTaskTools(
   // ── create_task ─────────────────────────────────────────────────────────────
 
   const create_task = tool({
-    description: `Add a new task to the task list.
+    description: `Create a new task and add it to the task list.
 
-Use at the start of complex multi-step work (3+ steps). Never use for trivial single-step tasks.
-Create all tasks upfront so the user sees the full plan before work begins.`,
+Always create tasks to track progress for multi-step or non-trivial work.
+Create all expected tasks before starting execution so the user sees the full plan.
+Use a clear imperative subject and a complete description.
+Do not create tasks for trivial single-step actions.
+Return the new task ID.`,
     inputSchema: z.object({
       subject: z
         .string()
         .min(1)
         .max(200)
-        .describe('Brief, actionable title in imperative form. E.g. "Fix auth bug", "Add input validation".'),
+        .describe('Brief, actionable title in imperative form. Example: "Fix auth bug".'),
       description: z
         .string()
         .min(1)
-        .describe('Full detail of what needs to be done — enough to complete the task without further context.'),
+        .describe('Complete explanation of the work required to finish the task.'),
       activeForm: z
         .string()
         .optional()
-        .describe('Present-continuous label shown in the UI while the task is in_progress. E.g. "Fixing auth bug", "Running tests".'),
+        .describe('Present-continuous label shown in the UI while the task is in progress. Example: "Fixing auth bug".'),
     }),
     execute: async ({ subject, description, activeForm }) => {
       const task: TaskItem = {
@@ -93,8 +100,10 @@ Create all tasks upfront so the user sees the full plan before work begins.`,
         ...(activeForm?.trim() ? { activeForm: activeForm.trim() } : {}),
         status: 'pending',
       }
+
       tasks.push(task)
       notify()
+
       return `Task #${task.id} created: ${task.subject}`
     },
   })
@@ -102,11 +111,15 @@ Create all tasks upfront so the user sees the full plan before work begins.`,
   // ── update_task ─────────────────────────────────────────────────────────────
 
   const update_task = tool({
-    description: `Update an existing task's status, content, or delete it.
+    description: `Update one existing task by its task ID.
 
-Always call list_tasks first if you are unsure of current state.
-Set status to "in_progress" when starting work on a task, "completed" when done.
-Use "deleted" to permanently remove a task — this cannot be undone.`,
+Always mark the status of the task correctly.
+Set status to "in_progress" immediately before starting work on the task.
+Set status to "completed" immediately after the task is fully done.
+Use "deleted" only when the task is no longer needed.
+Call list_tasks first if you are unsure of task IDs or current status.
+Update subject, description, or activeForm only when the task details have changed.
+Return the result of the update.`,
     inputSchema: z.object({
       taskId: z
         .string()
@@ -114,7 +127,7 @@ Use "deleted" to permanently remove a task — this cannot be undone.`,
       status: z
         .enum(['pending', 'in_progress', 'completed', 'deleted'])
         .optional()
-        .describe('"deleted" permanently removes the task. All other values update its status.'),
+        .describe('New task status. Use "deleted" to permanently remove the task.'),
       subject: z
         .string()
         .min(1)
@@ -133,6 +146,7 @@ Use "deleted" to permanently remove a task — this cannot be undone.`,
     }),
     execute: async ({ taskId, status, subject, description, activeForm }) => {
       const task = findById(taskId)
+
       if (!task)
         return `Task #${taskId} not found`
 
@@ -148,18 +162,22 @@ Use "deleted" to permanently remove a task — this cannot be undone.`,
         task.status = status
         updated.push('status')
       }
+
       if (subject !== undefined && subject.trim() !== task.subject) {
         task.subject = subject.trim()
         updated.push('subject')
       }
+
       if (description !== undefined && description.trim() !== task.description) {
         task.description = description.trim()
         updated.push('description')
       }
+
       // activeForm: empty string intentionally clears it
       if (activeForm !== undefined) {
         const trimmed = activeForm.trim()
         const next = trimmed || undefined
+
         if (next !== task.activeForm) {
           if (next === undefined) {
             delete task.activeForm
@@ -167,11 +185,13 @@ Use "deleted" to permanently remove a task — this cannot be undone.`,
           else {
             task.activeForm = next
           }
+
           updated.push('activeForm')
         }
       }
 
       notify()
+
       return updated.length === 0
         ? `Task #${taskId}: no changes`
         : `Updated task #${taskId}: ${updated.join(', ')}`
@@ -181,13 +201,16 @@ Use "deleted" to permanently remove a task — this cannot be undone.`,
   // ── list_tasks ──────────────────────────────────────────────────────────────
 
   const list_tasks = tool({
-    description: `List all current tasks with their IDs and status.
+    description: `List all current tasks with their IDs and statuses.
 
-Call this before updating tasks to confirm current state. Cheap — no filesystem access.`,
+Always call this before updating tasks if you are unsure of the current task list.
+Use this to keep task state accurate and avoid duplicate, stale, or orphaned tasks.
+This operation is cheap and does not access the filesystem.`,
     inputSchema: z.object({}),
     execute: async () => {
       if (tasks.length === 0)
         return 'No tasks'
+
       return tasks.map(t => `#${t.id} [${t.status}] ${t.subject}`).join('\n')
     },
   })
@@ -195,7 +218,10 @@ Call this before updating tasks to confirm current state. Cheap — no filesyste
   // ── get_task ────────────────────────────────────────────────────────────────
 
   const get_task = tool({
-    description: 'Retrieve full details of a single task including its description and activeForm.',
+    description: `Retrieve the full details of one task by its task ID.
+
+Use this when you need the complete description, activeForm, or current status of a specific task.
+Do not use this to list all tasks; use list_tasks for that purpose.`,
     inputSchema: z.object({
       taskId: z
         .string()
@@ -203,6 +229,7 @@ Call this before updating tasks to confirm current state. Cheap — no filesyste
     }),
     execute: async ({ taskId }) => {
       const task = findById(taskId)
+
       if (!task)
         return `Task #${taskId} not found`
 
@@ -211,8 +238,10 @@ Call this before updating tasks to confirm current state. Cheap — no filesyste
         `Status: ${task.status}`,
         `Description: ${task.description}`,
       ]
+
       if (task.activeForm)
         lines.push(`Active form: ${task.activeForm}`)
+
       return lines.join('\n')
     },
   })
@@ -225,7 +254,13 @@ Call this before updating tasks to confirm current state. Cheap — no filesyste
     notify()
   }
 
-  return { create_task, update_task, list_tasks, get_task, reset }
+  return {
+    create_task,
+    update_task,
+    list_tasks,
+    get_task,
+    reset,
+  }
 }
 
 // ── types ─────────────────────────────────────────────────────────────────────
@@ -246,12 +281,17 @@ export function taskToolDisplayLabel(
 
     case 'update_task': {
       const id = String(args.taskId ?? '?')
-      if (args.status === 'deleted')
+      const status = typeof args.status === 'string' ? args.status : undefined
+
+      if (status === 'deleted')
         return `Deleted task #${id}`
-      if (args.status === 'completed')
+
+      if (status === 'completed')
         return `Completed task #${id}`
-      if (args.status === 'in_progress')
+
+      if (status === 'in_progress')
         return `Started task #${id}`
+
       return `Updated task #${id}`
     }
 

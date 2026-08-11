@@ -484,6 +484,17 @@ export async function dbDeleteConversation(id: string): Promise<void> {
   await d.execute('DELETE FROM conversations WHERE id = ?', [id])
 }
 
+export async function dbDeleteConversationsByWorkspace(workspacePath: string): Promise<void> {
+  if (!workspacePath)
+    throw new Error('dbDeleteConversationsByWorkspace: workspacePath is required')
+  const d = await getDb()
+  // ON DELETE CASCADE removes messages and checkpoints automatically
+  await d.execute(
+    'DELETE FROM conversations WHERE workspace_path = ?',
+    [workspacePath],
+  )
+}
+
 export async function dbListConversations(
   limit = 50,
   offset = 0,

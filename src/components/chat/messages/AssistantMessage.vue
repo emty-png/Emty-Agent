@@ -18,8 +18,6 @@ const props = defineProps<{
 
 const isStreaming = computed(() => props.agentStatus ? isStreamingStatus(props.agentStatus) : false)
 
-// ── Zero-Allocation Word Counter ──────────────────────────────────────────────
-
 function countWords(text: string): number {
   let count = 0
   let isWord = false
@@ -37,8 +35,6 @@ function countWords(text: string): number {
   }
   return count
 }
-
-// ── Pre-computing Layout & Streaming States ───────────────────────────────────
 
 interface ProcessedGroup {
   type: 'text' | 'reasoning' | 'tools'
@@ -235,8 +231,6 @@ const fileEditEvents = computed(() => {
   )
 })
 
-// ── View States & Timeouts ────────────────────────────────────────────────────
-
 const openBlocks = reactive<Record<string, boolean>>({})
 
 const streamStart = ref<number | null>(isStreaming.value ? Date.now() : null)
@@ -314,8 +308,6 @@ function copyThinking(key: string, text: string) {
   catch {}
 }
 
-// ── Footer: copy last text, time, model ──────────────────────────────────
-
 const lastTextContent = computed(() => {
   const allGroups = [...layout.value.rest, ...layout.value.work]
   for (let i = allGroups.length - 1; i >= 0; i--) {
@@ -376,7 +368,6 @@ const finishedTime = computed(() => {
       @toggle="isWorkCollapsed = !isWorkCollapsed"
     />
 
-    <!-- ── 2. Rest Block ── -->
     <template v-for="group in layout.rest" :key="group.key">
       <div v-if="group.type === 'tools'" class="flex w-full flex-col gap-2.5">
         <ToolCallBlock v-for="event in group.events" :key="event.id" :event="event" />
@@ -402,7 +393,6 @@ const finishedTime = computed(() => {
 
     <FileEditChips v-if="!isStreaming && fileEditEvents.length > 0" :events="fileEditEvents" />
 
-    <!-- Footer: copy + time + model (hover reveal) -->
     <div v-if="!isStreaming" class="mr-1 flex items-center gap-1.5 opacity-0 transition-opacity duration-[150ms] group-hover:opacity-100">
       <button
         class="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border border-transparent bg-transparent text-(--color-text-tertiary) transition-colors duration-[120ms] hover:border-(--color-border-mid) hover:bg-(--color-state-hover) hover:text-(--color-text-secondary)"

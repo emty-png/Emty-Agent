@@ -49,6 +49,26 @@ function strVal(value: unknown): string {
 const fileChips = computed<FileChip[]>(() => {
   const chipMap = new Map<string, FileChip>()
 
+  function accumulate(filePath: string, added: number, removed: number, diff: string) {
+    const existing = chipMap.get(filePath)
+    if (existing) {
+      existing.added += added
+      existing.removed += removed
+      if (diff)
+        existing.diff = existing.diff ? `${existing.diff}\n${diff}` : diff
+    }
+    else {
+      chipMap.set(filePath, {
+        filePath,
+        fileName: basename(filePath),
+        dirPrefix: dirPart(filePath),
+        added,
+        removed,
+        diff,
+      })
+    }
+  }
+
   for (const event of props.events) {
     if (event.toolName !== 'edit_files' && event.toolName !== 'write_file')
       continue
@@ -63,14 +83,7 @@ const fileChips = computed<FileChip[]>(() => {
       const filePath = strVal(result.file)
       if (!filePath)
         continue
-      chipMap.set(filePath, {
-        filePath,
-        fileName: basename(filePath),
-        dirPrefix: dirPart(filePath),
-        added: numVal(result.added),
-        removed: numVal(result.removed),
-        diff: strVal(result.diff),
-      })
+      accumulate(filePath, numVal(result.added), numVal(result.removed), strVal(result.diff))
     }
     else if (event.toolName === 'edit_files') {
       const files = Array.isArray(result.files) ? result.files : []
@@ -81,14 +94,7 @@ const fileChips = computed<FileChip[]>(() => {
         const filePath = strVal(record.file)
         if (!filePath || record.status !== 'success')
           continue
-        chipMap.set(filePath, {
-          filePath,
-          fileName: basename(filePath),
-          dirPrefix: dirPart(filePath),
-          added: numVal(record.added),
-          removed: numVal(record.removed),
-          diff: strVal(record.diff),
-        })
+        accumulate(filePath, numVal(record.added), numVal(record.removed), strVal(record.diff))
       }
     }
   }

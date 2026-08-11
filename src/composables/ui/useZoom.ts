@@ -8,9 +8,9 @@ const STORAGE_KEY = 'app-zoom'
 function getSavedZoom(): number {
   try {
     const v = Number(localStorage.getItem(STORAGE_KEY))
-    return Number.isFinite(v) ? v : 1
+    return Number.isFinite(v) ? v : 0.9
   }
-  catch { return 1 }
+  catch { return 0.9 }
 }
 
 function persist(level: number) {

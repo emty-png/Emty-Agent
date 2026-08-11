@@ -24,7 +24,6 @@ const emit = defineEmits<{
 const chat = useChatStore()
 const checkpointStore = useCheckpointStore()
 
-// We need the activeTab to get checkpoints
 const activeCheckpoints = computed(() => {
   return checkpointStore.getCheckpoints(chat.activeTab.id)
 })
@@ -60,7 +59,6 @@ const displayMessages = computed(() => {
 
 const isStreaming = computed(() => isStreamingStatus(props.agentStatus))
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const sessionDividerClasses = 'flex items-center gap-0 w-full py-0.5 select-none opacity-45 transition-opacity duration-200 ease-[ease] hover:opacity-100'
 const sessionDividerLineClasses = 'flex-1 h-px border-t border-dashed border-(--color-border-mid) opacity-50'
 const sessionDividerLabelClasses = 'flex items-center gap-[5px] px-2.5 text-(--color-text-dim) shrink-0'

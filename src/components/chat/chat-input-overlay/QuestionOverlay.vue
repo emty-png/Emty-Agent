@@ -1,26 +1,4 @@
 <script setup lang="ts">
-/**
- * QuestionOverlay.vue
- *
- * Renders the ask_questions UI above the chat input.
- * Reads pendingBatch directly from the questions module — no props needed.
- *
- * Step machine:
- *   • The user is shown one question at a time.
- *   • Options are clickable buttons; pressing one immediately advances.
- *   • The final option is a free-text input. The user types then presses Enter to confirm.
- *   • Esc or the Skip button marks the current question as "skipped" and advances.
- *   • The < and > arrows allow navigating back and forth between questions.
- *   • The × button in the header dismisses all remaining questions as "skipped".
- *   • After the last question, submitAnswers() resolves the tool Promise.
- *
- * Keyboard navigation:
- *   ↑ / ↓ — move between options (wraps)
- *   Enter  — confirm selection; if on free-text row, focus the input first,
- *             then Enter in the input submits the text
- *   Esc    — skip current question and advance
- */
-
 import { ChevronLeft, ChevronRight, Pencil, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
@@ -28,22 +6,15 @@ import { useChatStore } from '@/stores/chat'
 const chat = useChatStore()
 const pendingBatch = computed(() => chat.activeTab.pendingQuestions)
 
-// ── local step machine state ──────────────────────────────────────────────────
-
-/** Index of the question currently being displayed (0-based). */
+// Index of the question currently being displayed (0-based).
 const step = ref(0)
 
 /** Collected answers, one slot per question. null = not yet answered. */
 const localAnswers = ref<Array<string | null>>([])
 
-/**
- * Which row the keyboard cursor is on.
- *   0 to N-1 = preset options
- *   N = free-text row
- */
+// 0..N-1 = preset option rows, N = free-text row
 const selectedIdx = ref(0)
 
-/** Contents of the free-text input on the current step. */
 const freeText = ref('')
 
 const freeTextRef = ref<HTMLInputElement | null>(null)
@@ -51,18 +22,13 @@ const freeTextRef = ref<HTMLInputElement | null>(null)
 /** Prevents double-advancing when the user clicks/presses rapidly. */
 const advancing = ref(false)
 
-// ── derived ───────────────────────────────────────────────────────────────────
-
 const totalSteps = computed(() => pendingBatch.value?.questions.length ?? 0)
 
 const currentQuestion = computed(
   () => pendingBatch.value?.questions[step.value] ?? null,
 )
 
-/** The index reserved for the free-text input */
 const maxIdx = computed(() => currentQuestion.value?.options.length ?? 0)
-
-// ── reset on new batch ────────────────────────────────────────────────────────
 
 watch(
   pendingBatch,
@@ -77,8 +43,6 @@ watch(
   },
   { immediate: true },
 )
-
-// ── step machine ──────────────────────────────────────────────────────────────
 
 async function advance(answer: string | null): Promise<void> {
   if (advancing.value || !pendingBatch.value)
@@ -137,8 +101,6 @@ function dismiss(): void {
   chat.dismissQuestions(chat.activeId)
 }
 
-// ── free-text focus helper ────────────────────────────────────────────────────
-
 async function focusFreeText(): Promise<void> {
   await nextTick()
   freeTextRef.value?.focus()
@@ -148,8 +110,6 @@ function onFreeRowClick(): void {
   selectedIdx.value = maxIdx.value
   focusFreeText()
 }
-
-// ── keyboard navigation ───────────────────────────────────────────────────────
 
 function onGlobalKeydown(e: KeyboardEvent): void {
   if (!pendingBatch.value)
@@ -198,7 +158,6 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const rootClasses = 'w-full mb-2 bg-(--color-bg-card) border border-(--color-border-bright) rounded-(--radius-lg) flex flex-col overflow-hidden'
 
 const headerClasses = 'flex items-center justify-between gap-2.5 px-4 pt-4 pb-3'
@@ -256,7 +215,6 @@ const freeInputClasses = computed(() => {
 
 const skipBtnClasses = 'h-6 px-3 border border-(--color-border-mid) rounded-(--radius-sm) bg-transparent text-(--color-text-primary) text-[11px] font-medium font-[inherit] cursor-pointer shrink-0 transition-all duration-150 ease-[ease] hover:bg-(--color-state-hover) hover:border-(--color-border-bright)'
 
-// ── Transition bindings ─────────────────────────────────────────────────────
 const textTransitions = {
   enterActiveClass: 'transition-opacity duration-[140ms] ease-[ease]',
   leaveActiveClass: 'transition-opacity duration-[90ms] ease-[ease] absolute',
@@ -280,10 +238,8 @@ const stepTransitions = {
     aria-modal="false"
     aria-label="Agent question"
   >
-    <!-- ── Header bar ──────────────────────────────────────────────── -->
     <div :class="headerClasses">
       <div :class="headerMainClasses">
-        <!-- Question text — fades between steps -->
         <Transition v-bind="textTransitions" mode="out-in">
           <p :key="step" :class="questionTextClasses">
             {{ currentQuestion.question }}
@@ -292,7 +248,6 @@ const stepTransitions = {
       </div>
 
       <div :class="headerEndClasses">
-        <!-- Pagination (multi-step only) -->
         <div
           v-if="totalSteps > 1"
           :class="paginationClasses"

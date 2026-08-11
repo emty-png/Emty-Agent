@@ -17,7 +17,6 @@ const emit = defineEmits<{
   close: []
 }>()
 
-// ── auto-scroll selected item into view ───────────────────────────────────────
 const listRef = ref<HTMLElement | null>(null)
 
 watchEffect(() => {
@@ -26,7 +25,6 @@ watchEffect(() => {
   child?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
 })
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const overlayClasses = 'w-full max-h-[320px] bg-(--color-bg-card) border border-(--color-border-bright) rounded-(--radius-lg) mb-2 flex flex-col overflow-hidden'
 
 const headerClasses = 'flex items-center gap-2 pl-[14px] pr-3 py-2.5 border-b border-(--color-border-mid) shrink-0'

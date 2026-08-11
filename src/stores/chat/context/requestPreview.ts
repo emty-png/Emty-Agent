@@ -10,7 +10,7 @@ import { resolveTabWorkspacePath } from '@/stores/chat/utils/workspace'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
 import { getEffectiveDisabledSkillIds, getEffectiveMcpServers } from '@/utils/perTabOverrides'
-import { filterDisabledTools } from '@/utils/tools/catalog'
+import { buildToolCatalogGroups, filterDisabledTools } from '@/utils/tools/catalog'
 import { buildMcpAliasedTools } from '@/utils/tools/mcpAliases'
 
 export type EstimatorProviderConfig = {
@@ -150,6 +150,15 @@ export async function buildChatRequestPreview(options: {
   const turnCount = tab.messages.filter(m => m.role === 'user').length
   const memoryNudge = buildMemoryNudge(turnCount)
 
+  const disabledToolIds = settings.getToolDisabledIds('build')
+  const disabledSet = new Set(disabledToolIds)
+  const toolCatalogGroups = buildToolCatalogGroups(effectiveMcpServers)
+    .map(group => ({
+      ...group,
+      tools: group.tools.filter(tool => !disabledSet.has(tool.id)),
+    }))
+    .filter(group => group.tools.length > 0)
+
   const promptBuild = await buildAgentSystemPrompt({
     basePrompt: buildSystemPrompt(workspacePath, 'build', osInfo, settings.agent.gitCoAuthor),
     projectPath: workspacePath,
@@ -161,6 +170,7 @@ export async function buildChatRequestPreview(options: {
     memoryContext,
     memoryNudge,
     recoveryContext,
+    toolCatalogGroups,
   })
 
   cacheRuntime.promptFingerprint = promptBuild.promptFingerprint
@@ -207,7 +217,7 @@ export async function buildChatRequestPreview(options: {
         projectPath: workspacePath,
         memoryEnabled: settings.memory.enabled,
         mcpServers: effectiveMcpServers,
-        disabledToolIds: settings.disabledToolIds,
+        disabledToolIds: settings.getToolDisabledIds(tab.mode === 'design' ? 'design' : 'build'),
         readRegistry,
         ...(osInfo?.shell ? { shell: osInfo.shell } : {}),
         coAuthor: settings.agent.gitCoAuthor,

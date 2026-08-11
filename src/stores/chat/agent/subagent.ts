@@ -17,7 +17,7 @@ import {
   buildContextCachingProviderOptions,
   extractUsageStats,
 } from '@/utils/contextCaching'
-import { filterDisabledTools } from '@/utils/tools/catalog'
+import { buildToolCatalogGroups, filterDisabledTools } from '@/utils/tools/catalog'
 import { createMcpTools } from '@/utils/tools/mcp'
 import { wrapToolSetWithPermissions } from '@/utils/tools/permissions'
 import { SequentialToolQueue, wrapToolSetSequentially } from '@/utils/tools/sequential'
@@ -91,7 +91,7 @@ interface SettingsSnapshot {
     }
     gitCoAuthor: boolean
   }
-  disabledToolIds: string[]
+  getToolDisabledIds: (mode?: 'build' | 'design') => string[]
   disabledSkillIds: string[]
   mcpServers?: Array<{
     id: string
@@ -201,23 +201,23 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   const fsTools: Record<string, unknown> = effectiveProjectPath
     ? filterDisabledTools(
         createFilesystemTools(effectiveProjectPath, undefined, readRegistry),
-        settings.disabledToolIds,
+        settings.getToolDisabledIds('build'),
       )
     : {}
   const webTools = filterDisabledTools(
     createWebTools() as Record<string, unknown>,
-    settings.disabledToolIds,
+    settings.getToolDisabledIds('build'),
   )
   const shellTools: Record<string, unknown> = effectiveProjectPath
     ? filterDisabledTools(
         createShellTools(effectiveProjectPath, osInfo?.shell, settings.agent.gitCoAuthor) as Record<string, unknown>,
-        settings.disabledToolIds,
+        settings.getToolDisabledIds('build'),
       )
     : {}
 
   const browserTools = filterDisabledTools(
     createBrowserTools(subTab.id) as Record<string, unknown>,
-    settings.disabledToolIds,
+    settings.getToolDisabledIds('build'),
   )
 
   let tools: Record<string, unknown> = { ...browserTools }
@@ -350,11 +350,20 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   }
   const mcpTools = filterDisabledTools(
     await createMcpTools(settings.mcpServers ?? []),
-    settings.disabledToolIds,
+    settings.getToolDisabledIds('build'),
   )
-  const skillTools = filterDisabledTools(createSkillTools(effectiveProjectPath), settings.disabledToolIds)
-  const memoryTools = filterDisabledTools(createMemoryTools(settings.memory.enabled, workspace) as Record<string, unknown>, settings.disabledToolIds)
-  const mergedTools = filterDisabledTools({ ...tools, ...skillTools, ...mcpTools, ...memoryTools }, settings.disabledToolIds)
+  const skillTools = filterDisabledTools(createSkillTools(effectiveProjectPath), settings.getToolDisabledIds('build'))
+  const memoryTools = filterDisabledTools(createMemoryTools(settings.memory.enabled, workspace) as Record<string, unknown>, settings.getToolDisabledIds('build'))
+  const mergedTools = filterDisabledTools({ ...tools, ...skillTools, ...mcpTools, ...memoryTools }, settings.getToolDisabledIds('build'))
+
+  const disabledToolIds = settings.getToolDisabledIds('build')
+  const disabledSet = new Set(disabledToolIds)
+  const toolCatalogGroups = buildToolCatalogGroups((settings.mcpServers ?? []) as import('@/stores/settings/types').McpServerConfig[])
+    .map(group => ({
+      ...group,
+      tools: group.tools.filter(tool => !disabledSet.has(tool.id)),
+    }))
+    .filter(group => group.tools.length > 0)
   const permissionWrappedTools = Object.keys(mergedTools).length > 0
     ? wrapToolSetWithPermissions(mergedTools as ToolSet, {
         tabId: subTab.id,
@@ -380,6 +389,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     supportsToolCalls: Object.keys(mergedTools).length > 0,
     workspaceContext: buildWorkspacePromptContext(workspace),
     memoryContext: await buildMemoryPromptContext(settings.memory, workspace),
+    toolCatalogGroups,
   })
 
   cacheRuntime.promptFingerprint = promptBuild.promptFingerprint

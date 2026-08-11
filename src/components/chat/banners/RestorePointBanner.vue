@@ -25,7 +25,6 @@ function requestRestore(_id: string) {
 
   if (_confirmTimer)
     clearTimeout(_confirmTimer)
-  // Auto-dismiss confirmation after 4 seconds
   _confirmTimer = setTimeout(() => { confirming.value = false }, 4000)
 }
 
@@ -37,7 +36,7 @@ async function confirmRestore(id: string) {
 
   if (_restoreTimer)
     clearTimeout(_restoreTimer)
-  // Reset state after a short delay (parent will handle actual restoration)
+  // Brief delay before resetting so the UI can show confirmation; parent handles actual restore.
   _restoreTimer = setTimeout(() => {
     restoring.value = false
     confirming.value = false
@@ -58,7 +57,6 @@ onBeforeUnmount(() => {
     clearTimeout(_restoreTimer)
 })
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const rootClasses = computed(() => {
   const base = 'flex items-center gap-0 w-full min-w-0 py-0.5 select-none transition-opacity duration-200 ease-[ease] hover:opacity-100'
   if (props.disabled)
@@ -106,12 +104,8 @@ const restoreConfirmNoClasses = 'flex items-center h-[22px] px-2 border border-t
 
     <div :class="restoreLineClasses" />
 
-    <!--
-      Replaced Vue <Transition> with pure CSS.
-      This prevents the component from blocking Vue's unmount lifecycle during tab switches.
-    -->
+    <!-- Pure CSS (not Vue <Transition>) to avoid blocking unmount lifecycle during tab switches. -->
     <div :class="restoreWrapperClasses">
-      <!-- Default state: subtle Restore button -->
       <div :class="getActionsClasses(confirming)">
         <button
           :class="restoreBtnClasses"
@@ -124,7 +118,6 @@ const restoreConfirmNoClasses = 'flex items-center h-[22px] px-2 border border-t
         </button>
       </div>
 
-      <!-- Confirmation state -->
       <div :class="getConfirmClasses(!confirming)">
         <span :class="restoreConfirmTextClasses">Restore files &amp; remove messages after this point?</span>
         <button

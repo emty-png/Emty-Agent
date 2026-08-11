@@ -595,7 +595,7 @@ const bottomBtnClass = 'inline-flex items-center gap-[5px] py-[5px] px-[12px] ro
     </Teleport>
 
     <Teleport to="body">
-      <div v-if="showWorktreePopover" class="fixed inset-0 z-[10010]" @click="showWorktreePopover = false" />
+      <div v-if="showWorktreePopover" role="dialog" aria-modal="true" class="fixed inset-0 z-[10010]" @click="showWorktreePopover = false" />
       <Transition
         enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-bottom"
         enter-from-class="opacity-0 [transform:translateY(8px)_scale(0.96)]"

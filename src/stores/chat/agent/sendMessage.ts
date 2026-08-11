@@ -601,7 +601,7 @@ export function createSendMessage(
           coAuthor: settings.agent.gitCoAuthor,
           memoryEnabled: settings.memory.enabled,
           mcpServers: effectiveMcpServers,
-          disabledToolIds: settings.disabledToolIds,
+          disabledToolIds: settings.getToolDisabledIds(mode === 'design' ? 'design' : 'build'),
           snapshotCallback,
           questionCallback,
           todoCallback,

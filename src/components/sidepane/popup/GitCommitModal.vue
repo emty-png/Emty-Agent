@@ -51,7 +51,7 @@ async function submit() {
       leave-to-class="opacity-0 [&_.commit-modal]:scale-[0.96] [&_.commit-modal]:translate-y-1"
     >
       <div v-if="open" class="fixed inset-0 z-[99999] bg-[color-mix(in_srgb,var(--color-bg-base)_65%,transparent)] flex items-center justify-center p-6" @click.self="close">
-        <div class="commit-modal bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-xl) w-full max-w-[480px] flex flex-col shadow-[0_24px_64px_rgba(0,0,0,0.5),0_4px_16px_rgba(0,0,0,0.3)] overflow-hidden [transition:transform_150ms_cubic-bezier(0.16,1,0.3,1)]">
+        <div role="dialog" aria-modal="true" aria-label="Git Commit" class="commit-modal bg-(--color-bg-surface) border border-(--color-border-mid) rounded-(--radius-xl) w-full max-w-[480px] flex flex-col shadow-[0_24px_64px_rgba(0,0,0,0.5),0_4px_16px_rgba(0,0,0,0.3)] overflow-hidden [transition:transform_150ms_cubic-bezier(0.16,1,0.3,1)]">
           <!-- Header -->
           <div class="flex flex-col gap-1.5 py-3.5 px-5 border-b border-(--color-border-subtle)">
             <div class="flex items-center gap-2.5">

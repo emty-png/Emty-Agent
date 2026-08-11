@@ -54,7 +54,7 @@ function handleKeydown(e: KeyboardEvent) {
     class="fixed inset-0 z-[2000] flex items-start justify-center pt-[20vh]"
     @click.self="emit('close')"
   >
-    <div class="w-[320px] rounded-(--radius-lg) border border-(--color-border-mid) bg-(--color-bg-surface) p-[14px] shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)]">
+    <div role="dialog" aria-modal="true" aria-label="Create file or folder" class="w-[320px] rounded-(--radius-lg) border border-(--color-border-mid) bg-(--color-bg-surface) p-[14px] shadow-[0_12px_32px_rgba(0,0,0,0.45),0_2px_8px_rgba(0,0,0,0.3)]">
       <!-- header -->
       <div class="mb-[12px] flex items-center justify-between">
         <div class="flex flex-col gap-[2px]">

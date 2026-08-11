@@ -70,10 +70,7 @@ const zoomPercent = computed(() => activePage.value?.zoomPercent ?? 100)
 const canZoomOut = computed(() => zoomPercent.value > 25)
 const canZoomIn = computed(() => zoomPercent.value < 200)
 
-/**
- * Internal lifecycle errors (surface unmounting during tab switches etc.)
- * must never be shown to the user — they're transient and auto-resolve.
- */
+// Transient lifecycle errors (e.g. surface unmounting during tab switches) — not user-facing.
 const INTERNAL_ERROR_PATTERNS = [
   'Browser surface unmounted',
   'Timed out waiting for browser surface',
@@ -88,7 +85,6 @@ const displayError = computed(() => {
   return err
 })
 
-// Auto-dismiss error banner after 6 s
 let errorDismissTimer: ReturnType<typeof setTimeout> | null = null
 watch(displayError, val => {
   if (errorDismissTimer)
@@ -101,10 +97,6 @@ watch(displayError, val => {
   }
 })
 
-/**
- * Safely generate a Google Favicon URL.
- * Falls back to null for internal/empty pages.
- */
 function getFaviconUrl(url: string | undefined): string | null {
   if (!url || url.startsWith('about:') || url.startsWith('chrome:')) {
     return null
@@ -118,15 +110,11 @@ function getFaviconUrl(url: string | undefined): string | null {
   }
 }
 
-/**
- * Parses user input into a valid URL or search query.
- */
 function parseUrlOrSearch(input: string): string {
   const trimmed = input.trim()
   if (!trimmed)
     return ''
 
-  // Valid protocol already provided
   if (/^https?:\/\//i.test(trimmed)) {
     return trimmed
   }
@@ -158,10 +146,7 @@ function updateAddressInput() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Overlay detection
-// Selectors for modals / dialogs / drawers that cover the native surface.
-// ---------------------------------------------------------------------------
+// Selectors for overlays that cover the native webview and require hiding it.
 const OVERLAY_SELECTORS = [
   '[role="dialog"]',
   '[aria-modal="true"]',
@@ -176,9 +161,6 @@ function hasOverlayCoveringBrowser(): boolean {
   return !!document.querySelector(OVERLAY_SELECTORS)
 }
 
-// ---------------------------------------------------------------------------
-// Core sync — memoized native viewbox syncing
-// ---------------------------------------------------------------------------
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 let lastSyncKey: string | null = null
 
@@ -226,7 +208,6 @@ function syncNow() {
     return
   }
 
-  // ── Debounced show path ──────────────────────────────────────────────
   syncTimer = setTimeout(async () => {
     syncTimer = null
     await nextTick()
@@ -274,9 +255,6 @@ function syncNow() {
   }, 30)
 }
 
-// ---------------------------------------------------------------------------
-// Navigation handlers
-// ---------------------------------------------------------------------------
 async function submitAddress() {
   if (!addressInput.value.trim())
     return
@@ -457,9 +435,6 @@ function onDocumentKeydown(event: KeyboardEvent) {
   syncNow()
 }
 
-// ---------------------------------------------------------------------------
-// Observers & lifecycle
-// ---------------------------------------------------------------------------
 let resizeObserver: ResizeObserver | null = null
 let mutationObserver: MutationObserver | null = null
 let intersectionObserver: IntersectionObserver | null = null
@@ -574,7 +549,6 @@ watch(
   },
 )
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const rootClasses = 'flex flex-col h-full min-w-0 bg-[var(--color-bg-base,#000000)] text-[var(--color-text-primary,#f2f2f2)] font-sans'
 
 const tabsWrapperClasses = 'flex items-end gap-[2px] h-[36px] px-2 bg-[var(--color-bg-surface,#0a0a0a)] shadow-[inset_0_-1px_0_var(--color-border-subtle,#1a1a1a)] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
@@ -681,7 +655,6 @@ const loadingTransitions = {
 
 <template>
   <div ref="rootRef" :class="rootClasses">
-    <!-- Tab Strip -->
     <div :class="tabsWrapperClasses" role="tablist">
       <button
         v-for="page in pages"
@@ -731,7 +704,6 @@ const loadingTransitions = {
       </button>
     </div>
 
-    <!-- Navigation & Address Bar -->
     <div :class="toolbarClasses">
       <button :class="toolbarBtnClasses" :disabled="!canGoBack" title="Click to go back" aria-label="Back" @click="goBack">
         <ChevronLeft :size="16" :stroke-width="2.25" />
@@ -769,7 +741,6 @@ const loadingTransitions = {
         <MessageSquarePlus :size="14" :stroke-width="2.25" />
       </button>
 
-      <!-- ── Menu Wrapper & Popover ────────────────────────────────────────────── -->
       <div :class="menuWrapClasses">
         <button
           :class="menuBtnClasses"
@@ -854,7 +825,6 @@ const loadingTransitions = {
       </div>
     </div>
 
-    <!-- Webview Stage -->
     <div :class="stageClasses">
       <div v-if="!activePage || !activePage.url" :class="emptyWrapClasses">
         <div :class="emptyMarkClasses">
@@ -880,7 +850,6 @@ const loadingTransitions = {
         </div>
       </Transition>
 
-      <!-- User-visible errors only (internal lifecycle errors are filtered out) -->
       <div v-if="displayError" :class="errorWrapClasses">
         <AlertTriangle :size="14" :stroke-width="2" :class="errorIconClasses" />
         <span>{{ displayError }}</span>

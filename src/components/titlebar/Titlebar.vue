@@ -3,7 +3,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Copy, Menu, Minus, Square, WifiOff, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useSettingsStore } from '@/stores/settings'
 import { useSidebarStore } from '@/stores/sidebar'
+import BetaCloseDialog from './BetaCloseDialog.vue'
 import Sidebar from '../sidebar/Sidebar.vue'
 
 interface Props {
@@ -19,6 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const sidebar = useSidebarStore()
+const settings = useSettingsStore()
 const { collapsed: sidebarCollapsed } = storeToRefs(sidebar)
 
 const isOnline = ref(navigator.onLine)
@@ -153,11 +156,25 @@ async function toggleMaximize() {
     await appWindow.maximize()
   }
 }
+const showBetaDialog = ref(false)
+
 async function close() {
+  if (!settings.dismissedBetaCloseNotice) {
+    showBetaDialog.value = true
+    return
+  }
   await appWindow.close()
 }
 
-// Reusable tailwind string constants
+async function onBetaDialogClose() {
+  showBetaDialog.value = false
+  await appWindow.close()
+}
+
+function onBetaDialogDismiss() {
+  showBetaDialog.value = false
+}
+
 const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-none bg-transparent text-[var(--color-text-secondary)] cursor-default [-webkit-app-region:no-drag] transition-colors duration-[120ms] ease-in-out hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] active:bg-[var(--color-bg-elevated)]'
 </script>
 
@@ -204,7 +221,7 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
     </div>
 
     <div class="flex items-stretch flex-none h-[29px] ml-auto [-webkit-app-region:no-drag]">
-      <div class="w-[1px] h-3 self-center bg-[var(--color-border-mid)] shrink-0" aria-hidden="true" />
+
 
       <button :class="ctrlBtnClass" aria-label="Minimize" @click.stop="minimize">
         <Minus :size="15" :stroke-width="1.8" />
@@ -247,4 +264,10 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
       </div>
     </Transition>
   </Teleport>
+
+  <BetaCloseDialog
+    v-if="showBetaDialog"
+    @close="onBetaDialogClose"
+    @dismiss="onBetaDialogDismiss"
+  />
 </template>

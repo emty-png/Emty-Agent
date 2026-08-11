@@ -1,20 +1,4 @@
 <script setup lang="ts">
-/**
- * MarkdownMessage.vue
- *
- * Production-grade markdown renderer for AI responses:
- *  - Shiki syntax-highlighted code blocks (ember-dark theme)
- *  - SVG icon copy button with two-state (idle/copied) feedback
- *  - Per-block word-wrap toggle button
- *  - Inline: bold/italic (* and _ syntax), strikethrough, code, links
- *  - Block: headings, lists (with GFM task-list checkboxes), blockquotes,
- *    tables, HR
- *  - Streaming-safe: open fences render as plain <pre> with blinking cursor
- *  - Race-condition-safe pipeline: version counter prevents stale commits
- *  - Per-instance state: safe to mount any number of instances simultaneously
- *  - Zero memory leaks: codeStore cleared before every render pass
- */
-
 import { onUnmounted, ref, watch } from 'vue'
 import { getHighlighter } from '@/utils/highlighter'
 
@@ -24,39 +8,16 @@ const props = defineProps<{
   streaming?: boolean
 }>()
 
-// ── inline SVG icons (v-html context — no Vue components) ─────────────────────
-
 const ICON_CLIPBOARD = /* html */'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>'
 const ICON_CHECK = /* html */'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>'
 
-// ── rendered output ───────────────────────────────────────────────────────────
-
 const html = ref('')
 
-// ── per-instance state ────────────────────────────────────────────────────────
-
-/**
- * Maps code-block IDs → raw source string for the copy handler.
- * Cleared at the top of every render so it never grows unboundedly
- * across streaming updates and old IDs cannot linger.
- */
 const codeStore = new Map<string, string>()
 
-/**
- * Monotonic ID counter, reset to 0 before each render pass so IDs
- * are stable (cb-1, cb-2 …) across re-renders of the same content.
- */
 let blockSeq = 0
 
-/**
- * Render generation counter. Incremented on every scheduled render.
- * An async render only commits its HTML if the version it captured at
- * launch still matches — preventing a slow Shiki call from overwriting
- * a newer, faster one.
- */
 let renderVersion = 0
-
-// ── HTML escaping ─────────────────────────────────────────────────────────────
 
 function escHtml(s: string): string {
   return s
@@ -65,8 +26,6 @@ function escHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 }
-
-// ── inline renderer ───────────────────────────────────────────────────────────
 
 function renderInline(raw: string): string {
   // Split on inline-code spans first so we never apply formatting inside them.
@@ -101,8 +60,6 @@ function renderInline(raw: string): string {
   }).join('')
 }
 
-// ── block types ───────────────────────────────────────────────────────────────
-
 interface CodeBlock { type: 'code'; lang: string; code: string; closed: boolean; id: string }
 interface HeadingBlock { type: 'heading'; level: number; text: string }
 interface ParagraphBlock { type: 'paragraph'; lines: string[] }
@@ -117,8 +74,6 @@ type Block
     | UlBlock | OlBlock | BlockquoteBlock
     | TableBlock | HrBlock
 
-// ── tokeniser ─────────────────────────────────────────────────────────────────
-
 function tokenise(content: string): Block[] {
   const blocks: Block[] = []
   const lines = content.split('\n')
@@ -127,7 +82,6 @@ function tokenise(content: string): Block[] {
   while (i < lines.length) {
     const line = lines[i]!
 
-    // ── fenced code block ──────────────────────────────────────────────────────
     const fenceMatch = line.match(/^```(\w*)/)
     if (fenceMatch) {
       const lang = fenceMatch[1] || 'plaintext'
@@ -147,21 +101,18 @@ function tokenise(content: string): Block[] {
       continue
     }
 
-    // ── ATX heading ───────────────────────────────────────────────────────────
     const hm = line.match(/^(#{1,6})\s+(.+)/)
     if (hm) {
       blocks.push({ type: 'heading', level: hm[1]!.length, text: hm[2]! })
       i++; continue
     }
 
-    // ── horizontal rule ───────────────────────────────────────────────────────
     if (/^(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
       blocks.push({ type: 'hr' })
       i++
       continue
     }
 
-    // ── blockquote ────────────────────────────────────────────────────────────
     if (line.startsWith('> ') || line === '>') {
       const qLines: string[] = []
       while (i < lines.length && (lines[i]!.startsWith('> ') || lines[i] === '>')) {
@@ -172,7 +123,6 @@ function tokenise(content: string): Block[] {
       continue
     }
 
-    // ── unordered list (supports GFM task items) ──────────────────────────────
     if (/^[-*+]\s/.test(line)) {
       const items: string[] = []
       while (i < lines.length && /^[-*+]\s/.test(lines[i]!)) {
@@ -186,7 +136,6 @@ function tokenise(content: string): Block[] {
       blocks.push({ type: 'ul', items }); continue
     }
 
-    // ── ordered list ──────────────────────────────────────────────────────────
     if (/^\d+\.\s/.test(line)) {
       const items: string[] = []
       while (i < lines.length && /^\d+\.\s/.test(lines[i]!)) {
@@ -200,7 +149,6 @@ function tokenise(content: string): Block[] {
       blocks.push({ type: 'ol', items }); continue
     }
 
-    // ── pipe table ────────────────────────────────────────────────────────────
     if (line.includes('|') && /^[\s|:-]+$/.test(lines[i + 1] ?? '')) {
       const tLines: string[] = []
       while (i < lines.length && lines[i]!.includes('|')) {
@@ -215,13 +163,11 @@ function tokenise(content: string): Block[] {
       }
     }
 
-    // ── blank line ────────────────────────────────────────────────────────────
     if (line.trim() === '') {
       i++
       continue
     }
 
-    // ── paragraph ─────────────────────────────────────────────────────────────
     const paraLines: string[] = []
     while (i < lines.length) {
       const l = lines[i]!
@@ -242,13 +188,6 @@ function tokenise(content: string): Block[] {
   return blocks
 }
 
-// ── block → HTML ──────────────────────────────────────────────────────────────
-
-/**
- * Unified block-to-HTML renderer.
- * Returns a plain string for non-code blocks, or a Promise for code blocks
- * that need async Shiki highlighting.
- */
 function renderBlock(block: Block): string | Promise<string> {
   switch (block.type) {
     case 'heading': {
@@ -408,9 +347,6 @@ async function renderContent(content: string, version: number, streaming: boolea
     return
   }
 
-  // ── Streaming: incremental render ─────────────────────────────────────────
-
-  // Find how far we can extend the stable prefix.
   const newBoundary = findStableBoundary(content)
 
   if (newBoundary > stableBoundary) {
@@ -477,16 +413,11 @@ function scheduleRender(): void {
   const version = ++renderVersion
   const streaming = props.streaming ?? false
 
-  // Maximum smoothness: No artificial debouncing.
-  // Vue automatically batches these calls via microtasks when the ref changes,
-  // making it instantaneously smooth (super smooth word-by-word streaming).
   renderContent(props.content, version, streaming)
 }
 
 watch(() => props.content, scheduleRender, { immediate: true })
 
-// Force a clean final render when streaming finishes.
-// Reset the incremental cache so the full re-render starts from scratch.
 watch(() => props.streaming, streaming => {
   if (!streaming) {
     if (timer)
@@ -507,12 +438,9 @@ onUnmounted(() => {
   resetStableCache()
 })
 
-// ── event delegation (copy + word-wrap) ──────────────────────────────────────
-
 function handleClick(e: MouseEvent): void {
   const target = e.target as Element
 
-  // ── copy button ──
   const copyBtn = target.closest<HTMLElement>('[data-code-id]')
   if (copyBtn) {
     const code = codeStore.get(copyBtn.dataset.codeId!)
@@ -527,17 +455,10 @@ function handleClick(e: MouseEvent): void {
 </script>
 
 <template>
-  <!--
-    v-html is intentional and safe here:
-    • Content is produced by the AI model, not by arbitrary user HTML input.
-    • All text that originates from block parsing is passed through escHtml().
-    • Links have target="_blank" rel="noopener noreferrer".
-  -->
   <div class="text-[13.5px] leading-[1.65] text-[var(--color-text-primary)] break-words [word-break:break-word] [&_svg:not(.md-btn_svg)]:block [&_svg:not(.md-btn_svg)]:max-w-full [&_svg:not(.md-btn_svg)]:h-auto [&_svg:not(.md-btn_svg)]:max-h-[480px]" @click.capture="handleClick" v-html="html" />
 </template>
 
 <style>
-/* Unscoped global style block to ensure keyframes are available to arbitrary Tailwind values */
 @keyframes md-blink {
   0%,
   100% {

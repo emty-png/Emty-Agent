@@ -309,15 +309,17 @@ export function createEditFilesTool(
   lockManager: FileLockManager,
 ) {
   return tool({
-    description: `Apply one or more search-and-replace edits to existing files. Edits are applied sequentially per file; if any edit fails, all edits for that file are rolled back (no partial writes).
+    description: `Apply one or more search-and-replace edits to existing files. Edits for each file are applied in order; if one fails, all edits for that file are rolled back.
 
-You MUST read a file with read_files before editing it.
+Always call read_files and wait for its result before editing a file. Calling read and edit in parallel on the same file path is not allowed. Reading one file while editing a different file is fine.
+
+Prefer this tool over write_file for modifying existing files.
 
 Rules:
-- old_string must exactly match text in the file. If not found, a quote-normalized fallback will attempt to match regardless of curly vs straight quotes.
-- If old_string matches multiple locations and replace_all is false, the edit fails - include more surrounding context to uniquely identify the target.
-- Use replace_all to replace every occurrence of old_string.
-- To create a new file from scratch, use old_string: "" with the file that does not exist yet.`,
+- old_string must exactly match the target text, including whitespace and indentation.
+- old_string must be unique within the file. If it matches multiple locations, expand it to include more context.
+- Set replace_all: true to replace every occurrence intentionally.
+- To create a new file, use old_string: "" on a path that does not exist yet.`,
 
     inputSchema: z.object({
       edits: z
@@ -325,22 +327,22 @@ Rules:
           z.object({
             file_path: z
               .string()
-              .describe('The path to the file to edit. Can be absolute or relative to the project root.'),
+              .describe('Path of the file to edit (absolute or relative to the project root). Must have been read with read_files before this call.'),
             old_string: z
               .string()
-              .describe('The exact string to find and replace. Must be unique in the file unless replace_all is true.'),
+              .describe('Exact text to find and replace. Must match character-for-character including whitespace. Include enough context to make it unique in the file. Empty string only when creating a new file.'),
             new_string: z
               .string()
-              .describe('The string to replace old_string with.'),
+              .describe('Text to replace old_string with. Pass an empty string to delete old_string.'),
             replace_all: z
               .boolean()
               .optional()
               .default(false)
-              .describe('If true, replace all occurrences of old_string. Default: false.'),
+              .describe('If true, replaces every occurrence of old_string. If false (default) and old_string appears more than once, the edit is rejected — make old_string more specific instead.'),
           }),
         )
         .min(1)
-        .describe('A list of edit operations to apply.'),
+        .describe('List of edit operations. Multiple edits on the same file are applied in order.'),
     }),
 
     execute: async ({ edits }) => {

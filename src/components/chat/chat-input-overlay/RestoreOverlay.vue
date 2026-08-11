@@ -40,7 +40,6 @@ const modes: { value: RestoreMode; label: string; desc: string }[] = [
   { value: 'files', label: 'Files', desc: 'Revert files only' },
 ]
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const overlayClasses = 'w-full max-h-80 bg-(--color-bg-card) border border-(--color-border-bright) rounded-(--radius-lg) mb-2 flex flex-col overflow-hidden'
 
 const headerClasses = 'flex items-center gap-2.5 pl-[14px] pr-3 py-2.5 border-b border-(--color-border-mid) shrink-0'
@@ -129,7 +128,6 @@ const confirmBtnClasses = 'ml-auto h-[26px] px-3 border border-[color-mix(in_srg
 
 <template>
   <div :class="overlayClasses" role="region" aria-label="Restore points">
-    <!-- ── Header ────────────────────────────────────────────────────── -->
     <div :class="headerClasses">
       <span :class="headerTitleClasses">
         <History :size="12" :stroke-width="2" />
@@ -142,18 +140,15 @@ const confirmBtnClasses = 'ml-auto h-[26px] px-3 border border-[color-mix(in_srg
       </button>
     </div>
 
-    <!-- ── Loading ───────────────────────────────────────────────────── -->
     <div v-if="loading" :class="stateClasses">
       <Loader2 :size="14" :stroke-width="2" class="shrink-0 text-(--color-text-tertiary) animate-spin mr-2" />
       <span :class="stateTextClasses">Loading checkpoints…</span>
     </div>
 
-    <!-- ── Empty state ───────────────────────────────────────────────── -->
     <div v-else-if="checkpoints.length === 0" :class="stateClasses">
       <span :class="stateTextClasses">No checkpoints yet. They're created before each message.</span>
     </div>
 
-    <!-- ── Checkpoint list ───────────────────────────────────────────── -->
     <div v-else :class="listClasses" role="list">
       <div
         v-for="cp in checkpoints"
@@ -161,7 +156,6 @@ const confirmBtnClasses = 'ml-auto h-[26px] px-3 border border-[color-mix(in_srg
         :class="getCheckpointClasses(cp.id, expandedId === cp.id)"
         role="listitem"
       >
-        <!-- Card header -->
         <div :class="cpHeaderClasses" @click="emit('toggle', cp.id)">
           <ChevronDown
             :size="12"
@@ -172,7 +166,6 @@ const confirmBtnClasses = 'ml-auto h-[26px] px-3 border border-[color-mix(in_srg
           <span :class="cpTimeClasses">{{ formatRelativeTime(cp.timestamp) }}</span>
         </div>
 
-        <!-- Expanded body -->
         <Transition
           enter-active-class="transition-[opacity,transform] duration-150 ease-out"
           leave-active-class="transition-[opacity,transform] duration-100 ease-in"
@@ -182,13 +175,11 @@ const confirmBtnClasses = 'ml-auto h-[26px] px-3 border border-[color-mix(in_srg
           leave-to-class="opacity-0 -translate-y-1"
         >
           <div v-if="expandedId === cp.id" :class="expandBodyClasses">
-            <!-- Diff loading -->
             <div v-if="loadingDiffs" class="flex items-center justify-center py-3 gap-2">
               <Loader2 :size="12" :stroke-width="2" class="text-(--color-text-tertiary) animate-spin" />
               <span :class="stateTextClasses">Loading file changes…</span>
             </div>
 
-            <!-- File diffs -->
             <div v-else-if="fileDiffs.length > 0" class="flex flex-col gap-1.5">
               <div v-for="fd in fileDiffs" :key="fd.absolutePath" :class="fileCardClasses">
                 <div :class="fileHeaderClasses">
@@ -215,12 +206,10 @@ const confirmBtnClasses = 'ml-auto h-[26px] px-3 border border-[color-mix(in_srg
               </div>
             </div>
 
-            <!-- No files changed -->
             <div v-else :class="noFilesClasses">
               No file changes in this checkpoint
             </div>
 
-            <!-- Actions row for this checkpoint -->
             <div class="flex items-center gap-2 mt-2">
               <button :class="cpRestoreBtnClasses" @click="emit('restore', cp.id)">
                 Restore this point
@@ -231,7 +220,6 @@ const confirmBtnClasses = 'ml-auto h-[26px] px-3 border border-[color-mix(in_srg
       </div>
     </div>
 
-    <!-- ── Footer: mode selector + cancel ────────────────────────────── -->
     <div v-if="checkpoints.length > 0" :class="footerClasses">
       <span :class="modeLabelClasses">Mode:</span>
       <div :class="modeSelectorClasses">

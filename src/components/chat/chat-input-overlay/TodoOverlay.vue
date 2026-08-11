@@ -1,11 +1,4 @@
 <script setup lang="ts">
-/**
- * TodoOverlay.vue
- *
- * Renders the agent's live task list above the chat input shell.
- * Reads the active tab's todos directly from the chat store — no props needed.
- */
-
 import { CheckCircle2, ChevronDown, Circle } from 'lucide-vue-next'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
@@ -17,10 +10,7 @@ const doneCount = computed(() => todos.value.filter(t => t.status === 'completed
 const totalCount = computed(() => todos.value.length)
 const allDone = computed(() => totalCount.value > 0 && doneCount.value === totalCount.value)
 
-/**
- * Index of the active item for auto-scroll purposes.
- * Prefers the first in_progress task; falls back to the first pending task.
- */
+// Prefers in_progress; falls back to first pending.
 const activeIdx = computed(() => {
   const inProgress = todos.value.findIndex(t => t.status === 'in_progress')
   if (inProgress !== -1)
@@ -50,7 +40,6 @@ watch(activeIdx, async newIdx => {
   }
 })
 
-// ── Tailwind Class Extractions ──────────────────────────────────────────────
 const rootClasses = computed(() => [
   'todo-overlay w-[calc(100%-24px)] mx-auto mb-2.5 bg-(--color-bg-card) border border-(--color-border-bright) rounded-(--radius-lg) flex flex-col overflow-hidden transition-[border-color,box-shadow] duration-120 ease-out',
   isCollapsed.value ? 'todo-overlay--collapsed' : '',
@@ -110,7 +99,6 @@ function getTextClasses(status: string) {
 
 const activeFormClasses = 'text-[11.5px] font-[inherit] leading-[1.3] text-(--color-accent) opacity-80 truncate todo-active-form'
 
-// ── Transition bindings ─────────────────────────────────────────────────────
 const bodyTransitions = {
   enterActiveClass: 'transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)]',
   leaveActiveClass: 'transition-[opacity,transform] duration-100 ease',
@@ -140,7 +128,6 @@ const iconTransitions = {
     role="region"
     aria-label="Task progress"
   >
-    <!-- ── Header ────────────────────────────────────────────────────── -->
     <button
       :class="headerClasses"
       :aria-expanded="!isCollapsed"
@@ -167,7 +154,6 @@ const iconTransitions = {
       </div>
     </button>
 
-    <!-- ── Body (collapsible & scrollable) ────────────────────────────── -->
     <Transition v-bind="bodyTransitions">
       <div
         v-if="!isCollapsed"
@@ -183,7 +169,6 @@ const iconTransitions = {
             role="listitem"
             :aria-label="`${item.status === 'completed' ? 'Complete' : item.status === 'in_progress' ? 'In progress' : 'Pending'}: ${item.subject}`"
           >
-            <!-- Status icon -->
             <Transition v-bind="iconTransitions" mode="out-in">
               <CheckCircle2
                 v-if="item.status === 'completed'"
@@ -209,7 +194,6 @@ const iconTransitions = {
               />
             </Transition>
 
-            <!-- Subject + optional activeForm subtitle -->
             <span :class="textGroupClasses">
               <span :class="getTextClasses(item.status)">{{ item.subject }}</span>
               <span

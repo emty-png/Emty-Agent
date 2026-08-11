@@ -1,3 +1,4 @@
+import type { ToolCatalogGroup } from '@/utils/tools/catalog'
 import type { SelectedSkill, SkillDefinition, SkillMetadata } from '@/utils/skills'
 import { getEnabledSkills, loadSkillDefinition, selectRelevantSkills, trimSkillContent } from '@/utils/skills'
 
@@ -17,6 +18,7 @@ export interface AgentPromptBuilderOptions {
   memoryContext?: string
   memoryNudge?: string
   recoveryContext?: string
+  toolCatalogGroups?: ToolCatalogGroup[]
 }
 
 export interface LoadedContextFile {
@@ -50,6 +52,7 @@ export async function buildAgentSystemPrompt(
     memoryContext,
     memoryNudge,
     recoveryContext,
+    toolCatalogGroups,
   } = options
 
   const [contextFiles, enabledSkills] = await Promise.all([
@@ -73,6 +76,7 @@ export async function buildAgentSystemPrompt(
     ...(memoryContext ? { memoryContext } : {}),
     ...(memoryNudge ? { memoryNudge } : {}),
     ...(recoveryContext ? { recoveryContext } : {}),
+    ...(toolCatalogGroups && toolCatalogGroups.length > 0 ? { toolCatalogGroups } : {}),
   })
 
   return {
@@ -90,6 +94,7 @@ export function composeAgentPrompt(options: {
   memoryContext?: string
   memoryNudge?: string
   recoveryContext?: string
+  toolCatalogGroups?: ToolCatalogGroup[]
   contextFiles: LoadedContextFile[]
   availableSkills: SkillMetadata[]
   preloadedSkills: Array<SelectedSkill & { definition: SkillDefinition }>
@@ -101,6 +106,7 @@ export function composeAgentPrompt(options: {
     memoryContext,
     memoryNudge,
     recoveryContext,
+    toolCatalogGroups,
     contextFiles,
     availableSkills,
     preloadedSkills,
@@ -119,6 +125,9 @@ export function composeAgentPrompt(options: {
 
   if (recoveryContext?.trim())
     sections.push(recoveryContext.trim())
+
+  if (toolCatalogGroups && toolCatalogGroups.length > 0)
+    sections.push(buildToolCatalogSection(toolCatalogGroups))
 
   if (contextFiles.length > 0) {
     sections.push(`## Auto-Loaded Project Context
@@ -153,6 +162,21 @@ ${trimSkillContent(definition.content)}`)
   }
 
   return sections.join('\n\n')
+}
+
+function buildToolCatalogSection(groups: ToolCatalogGroup[]): string {
+  const lines = [
+    '## Available Tools',
+    '',
+  ]
+
+  for (const group of groups) {
+    lines.push(`### ${group.label}`)
+    for (const tool of group.tools)
+      lines.push(`- \`${tool.label}\` — ${tool.description}`)
+  }
+
+  return lines.join('\n')
 }
 
 function buildSkillCatalogSection(skills: SkillMetadata[], supportsToolCalls: boolean): string {

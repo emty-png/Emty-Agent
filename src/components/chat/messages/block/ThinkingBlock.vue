@@ -97,11 +97,6 @@ const label = computed(() => {
 </template>
 
 <style>
-/*
-  Unscoped global style block to ensure keyframes are available to
-  arbitrary Tailwind animation values. Unused classes (.matrix-sweep)
-  from the original were removed.
-*/
 @keyframes dot-bounce {
   0%,
   100% {

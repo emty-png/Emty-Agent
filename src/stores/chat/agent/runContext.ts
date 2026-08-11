@@ -1,5 +1,6 @@
 import type { LanguageModel, ModelMessage, SystemModelMessage } from 'ai'
 import type { ChatTab } from '@/stores/chat/core/types'
+import type { McpServerConfig } from '@/stores/settings/types'
 import type { ProviderCredentials, StreamChatFinishEvent } from '@/utils/ai'
 import type { WorkspaceSnapshot } from '@/utils/worktrees'
 
@@ -29,6 +30,8 @@ export interface SettingsForContext {
   memory: { enabled: boolean }
   agent: { permissionMode: 'ask' | 'auto' | 'yolo'; gitCoAuthor: boolean; subagents?: { isolation: 'inherit' | 'worktree' }; defaultModelUid?: string | null }
   disabledSkillIds: string[]
+  mcpServers: McpServerConfig[]
+  getToolDisabledIds: (mode?: 'build' | 'design') => string[]
 }
 
 export interface AgentRunContext {
@@ -74,6 +77,7 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
   const [
     { buildLanguageModel, buildProviderOptions, buildSystemPrompt, mergeProviderOptions },
     { buildAgentSystemPrompt },
+    { buildToolCatalogGroups },
     { applyMentionContextToMessages, buildCachedSystemPrompt, buildContextCachingProviderOptions },
     { inspectWorkspace, buildWorkspacePromptContext },
     { buildMemoryPromptContext, buildMemoryNudge },
@@ -86,6 +90,7 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
   ] = await Promise.all([
     import('@/utils/ai'),
     import('@/utils/agentContext'),
+    import('@/utils/tools/catalog'),
     import('@/utils/contextCaching'),
     import('@/utils/worktrees'),
     import('@/utils/memory'),
@@ -131,6 +136,16 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
   const turnCount = tab.messages.filter(m => m.role === 'user').length
   const memoryNudge = buildMemoryNudge(turnCount)
 
+  const toolMode = tab.mode === 'design' ? 'design' : 'build'
+  const disabledToolIds = settings.getToolDisabledIds(toolMode)
+  const disabledSet = new Set(disabledToolIds)
+  const toolCatalogGroups = buildToolCatalogGroups(settings.mcpServers)
+    .map(group => ({
+      ...group,
+      tools: group.tools.filter(tool => !disabledSet.has(tool.id)),
+    }))
+    .filter(group => group.tools.length > 0)
+
   const promptBuildResult = await buildAgentSystemPrompt({
     basePrompt: buildSystemPrompt(effectiveProjectPath, tab.mode || 'build', osInfo as import('@/utils/os').OsInfo | undefined, settings.agent.gitCoAuthor),
     projectPath: effectiveProjectPath,
@@ -143,6 +158,7 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
     memoryContext,
     memoryNudge,
     recoveryContext,
+    toolCatalogGroups,
   })
 
   cacheRuntime.promptFingerprint = promptBuildResult.promptFingerprint

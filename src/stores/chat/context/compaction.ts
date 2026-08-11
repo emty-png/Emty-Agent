@@ -147,6 +147,21 @@ function estimateTokens(text: string): number {
   }
 }
 
+function estimateFullMessageTokens(message: Message): number {
+  let tokens = estimateTokens(message.content || '')
+  if (message.mentionContext)
+    tokens += estimateTokens(message.mentionContext)
+  if (message.attachments?.length)
+    tokens += message.attachments.length * 100
+  if (message.toolEvents?.length) {
+    for (const te of message.toolEvents) {
+      if (te.result)
+        tokens += estimateTokens(typeof te.result === 'string' ? te.result : JSON.stringify(te.result))
+    }
+  }
+  return tokens
+}
+
 // Phase 2: Determine Boundaries
 function calculateCompactionBoundaries(messages: Message[], budgetTokens: number): { head: Message[]; toCompact: Message[]; tail: Message[] } {
   const realMessages = messages.filter(m => m.content !== SESSION_COMPACTED_DIVIDER && m.content !== SESSION_COMPACTING_DIVIDER && m.content !== BG_TASK_COMPLETED_DIVIDER)
@@ -167,7 +182,7 @@ function calculateCompactionBoundaries(messages: Message[], budgetTokens: number
   let i = remaining.length - 1
 
   while (i >= 0) {
-    const msgTokens = estimateTokens(renderMessageForCompaction(remaining[i]!))
+    const msgTokens = estimateFullMessageTokens(remaining[i]!)
     if (currentTokens + msgTokens > budgetTokens) {
       break
     }
@@ -293,7 +308,7 @@ export async function compactConversationSession(options: {
   focusTopic?: string
   onPersist: (payload: { deletedMessageIds: string[]; insertedMessages: Message[] }) => Promise<void>
 }): Promise<CompactionSummaryResult> {
-  const budgetTokens = (options.tab.estimator.estimate?.contextLimit ?? 20000) * 0.2
+  const budgetTokens = (options.tab.estimator.estimate?.inputTokens ?? 20000) * 0.2
   const { head, toCompact, tail } = calculateCompactionBoundaries(options.tab.messages, budgetTokens)
 
   if (toCompact.length === 0)

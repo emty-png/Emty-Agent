@@ -14,8 +14,6 @@ const props = defineProps<{
 
 const chat = useChatStore()
 
-// ── shell tool timer ──────────────────────────────────────────────────────────
-
 const SHELL_TOOLS = new Set(['run_command', 'git_command'])
 const isShellTool = computed(() => SHELL_TOOLS.has(props.event.toolName ?? ''))
 const isRunning = computed(() => props.event.status === 'running')
@@ -53,8 +51,6 @@ onUnmounted(() => {
     window.clearInterval(timerId)
 })
 
-// ── shell tool exit badge ─────────────────────────────────────────────────────
-
 const shellResult = computed(() => {
   const r = props.event.result
   if (r && typeof r === 'object' && !Array.isArray(r))
@@ -81,15 +77,6 @@ const exitLabel = computed(() => {
   return duration || ''
 })
 
-// ── label segmentation ────────────────────────────────────────────────────────
-
-/**
- * Token kinds the label can contain:
- *   plain      — unstyled text, inherits parent gradient
- *   range      — "#0–499" line-range annotation (dimmed)
- *   diff-add   — "+22"  diff addition count (green)
- *   diff-remove — "-5"  diff removal count (red)
- */
 type SegmentKind = 'plain' | 'range' | 'diff-add' | 'diff-remove'
 
 interface LabelSegment {
@@ -150,8 +137,6 @@ const labelSegments = computed<LabelSegment[]>(() => {
 const hasAnnotations = computed(() =>
   labelSegments.value.some(s => s.kind !== 'plain'),
 )
-
-// ── sub-agent badge ───────────────────────────────────────────────────────────
 
 const isSubAgent = computed(() => props.event.toolName === 'spawn_subagent')
 
@@ -282,7 +267,6 @@ async function openSubAgentTab() {
     :title="isSubAgent ? 'Click to view sub-agent history' : undefined"
     @click="isSubAgent ? openSubAgentTab() : undefined"
   >
-    <!-- Running shell tool: spinner + "Running" -->
     <template v-if="isShellTool && isRunning">
       <Loader2 :size="10" class="inline-block text-[var(--color-accent-text)]" />
       <span v-if="executionStartedAt !== null" class="ml-1 text-[11px] font-medium text-[var(--color-accent-text)] opacity-70">
@@ -290,7 +274,6 @@ async function openSubAgentTab() {
       </span>
       <span v-else class="ml-1 text-[11px] font-medium text-[var(--color-accent-text)] opacity-70">Waiting</span>
     </template>
-    <!-- Completed shell tool: show exit code + duration -->
     <span
       v-else-if="isShellTool && !isRunning"
       class="text-[11px] font-medium tabular-nums tracking-[0.02em] leading-[1.6]"

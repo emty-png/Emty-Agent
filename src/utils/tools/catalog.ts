@@ -10,6 +10,9 @@ export type BuiltinToolGroupId
     | 'filesystem'
     | 'shell'
     | 'image'
+    | 'design-scaffold'
+    | 'design-files'
+    | 'design-build'
 
 export type ToolGroupId = BuiltinToolGroupId | `mcp:${string}`
 
@@ -133,6 +136,33 @@ const BUILTIN_GROUPS: BuiltinGroupDefinition[] = [
     description: 'Generate images from text descriptions using AI models.',
     tools: [
       { id: 'create_image', label: 'create_image', description: 'Generate images from a text prompt using configured image generation provider.' },
+    ],
+  },
+  {
+    id: 'design-scaffold',
+    label: 'Scaffold',
+    description: 'Create new design projects from templates.',
+    tools: [
+      { id: 'scaffold_project', label: 'scaffold_project', description: 'Scaffold a new Vite-based design project.' },
+    ],
+  },
+  {
+    id: 'design-files',
+    label: 'Files',
+    description: 'Create and edit files within a design project.',
+    tools: [
+      { id: 'create_design_files', label: 'create_design_files', description: 'Create new files in the active design project.' },
+      { id: 'edit_design_files', label: 'edit_design_files', description: 'Edit existing files in the active design project.' },
+    ],
+  },
+  {
+    id: 'design-build',
+    label: 'Build & Preview',
+    description: 'Build the design project and manage the preview dev server.',
+    tools: [
+      { id: 'build_project', label: 'build_project', description: 'Build the active design project.' },
+      { id: 'start_preview', label: 'start_preview', description: 'Start the Vite preview dev server for the active design project.' },
+      { id: 'stop_preview', label: 'stop_preview', description: 'Stop the running preview dev server.' },
     ],
   },
 ]
