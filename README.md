@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/LICENSE-APACHE--2.0-D22128?style=flat-square" alt="License: Apache 2.0"></a>
-  <a href="https://discord.gg/your-invite-code"><img src="https://img.shields.io/badge/DISCORD-JOIN%20US-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/4FvmaywDv"><img src="https://img.shields.io/badge/DISCORD-JOIN%20US-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord"></a>
   <img src="https://img.shields.io/badge/BUILT%20BY-EMTY-8A2BE2?style=flat-square" alt="Built by Emty">
   <img src="https://img.shields.io/badge/STATUS-BETA-F5A623?style=flat-square" alt="Status: Beta">
 </p>
