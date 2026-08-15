@@ -666,7 +666,10 @@ const sendBtnClasses = computed(() => {
         </div>
       </div>
 
-      <div class="relative w-full flex">
+      <div
+        class="relative w-full flex"
+        style="mask-image: linear-gradient(to bottom, transparent, black 12px); -webkit-mask-image: linear-gradient(to bottom, transparent, black 12px);"
+      >
         <div ref="backdropRef" :class="backdropClasses" aria-hidden="true">
           <span v-if="!text" class="text-(--color-text-tertiary)">
             {{ 'Ask anything\u2026 (@ to link files)' }}
