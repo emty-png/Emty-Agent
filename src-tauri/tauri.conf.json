@@ -45,6 +45,12 @@
   "plugins": {
     "shell": {
       "open": false
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc1MUM5OTU3MjkyQUVDMEYKUldRUDdDb3BWNWtjZFJ2S0hzbzF4YTFZTVJrc3VMbG1wMTlNREhLM1JGZVRyUFV4VHVEZkdMQmUK",
+      "endpoints": [
+        "https://github.com/emty-png/Emty-Agent/releases/latest/download/latest.json"
+      ]
     }
   }
 }

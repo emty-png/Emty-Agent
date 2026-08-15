@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { Volume2, VolumeX } from 'lucide-vue-next'
+import { relaunch } from '@tauri-apps/plugin-process'
+import { check } from '@tauri-apps/plugin-updater'
+import { RefreshCw, Volume2, VolumeX } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
+import { ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
@@ -12,6 +15,42 @@ function testCompletion() {
 
 function testError() {
   import('@/utils/sounds').then(({ playErrorSound }) => playErrorSound(sound.value.volume)).catch(() => {})
+}
+
+const isCheckingUpdate = ref(false)
+const updateStatus = ref('')
+const hasUpdate = ref(false)
+
+async function checkForUpdate() {
+  if (isCheckingUpdate.value)
+    return
+  isCheckingUpdate.value = true
+  updateStatus.value = 'Checking for updates...'
+
+  try {
+    const update = await check()
+    if (update) {
+      hasUpdate.value = true
+      updateStatus.value = `Update ${update.version} available. Downloading...`
+      await update.downloadAndInstall(event => {
+        if (event.event === 'Finished') {
+          updateStatus.value = 'Download finished. Restarting...'
+        }
+      })
+      await relaunch()
+    }
+    else {
+      updateStatus.value = 'You are on the latest version.'
+      hasUpdate.value = false
+    }
+  }
+  catch (error) {
+    updateStatus.value = 'Error checking for updates'
+    console.error(error)
+  }
+  finally {
+    isCheckingUpdate.value = false
+  }
 }
 </script>
 
@@ -108,6 +147,35 @@ function testError() {
               aria-label="Sound effect volume"
             >
             <span class="range-value">{{ sound.volume }}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Update Card -->
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <h3 class="settings-card-title">
+          Updates
+        </h3>
+      </div>
+      <div class="settings-list">
+        <div class="settings-item">
+          <div class="settings-item-content">
+            <span class="settings-item-label">Check for Updates</span>
+            <span class="settings-item-desc">{{ updateStatus || 'Check for new versions of the app manually' }}</span>
+          </div>
+          <div class="toggle-row">
+            <button
+              class="ghost-btn"
+              type="button"
+              :disabled="isCheckingUpdate || hasUpdate"
+              title="Check for updates"
+              @click.prevent="checkForUpdate"
+            >
+              <RefreshCw v-if="!hasUpdate" :size="12" :class="{ 'animate-spin': isCheckingUpdate }" />
+              <span>{{ isCheckingUpdate ? 'Checking...' : (hasUpdate ? 'Downloading...' : 'Check') }}</span>
+            </button>
           </div>
         </div>
       </div>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { relaunch } from '@tauri-apps/plugin-process'
+import { check } from '@tauri-apps/plugin-updater'
 import { onMounted, ref, watch } from 'vue'
 import FatalErrorScreen from './components/app/FatalErrorScreen.vue'
 import ZoomIndicator from './components/app/ZoomIndicator.vue'
@@ -59,6 +61,18 @@ onMounted(async () => {
       title: 'Unable to start Emty Agent',
       context: 'Database initialisation failed during startup.',
     })
+  }
+
+  // Check for updates in the background
+  try {
+    const update = await check()
+    if (update) {
+      await update.downloadAndInstall()
+      await relaunch()
+    }
+  }
+  catch (error) {
+    console.error('Failed to check for updates on startup:', error)
   }
 })
 
