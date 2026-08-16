@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { open } from '@tauri-apps/plugin-dialog'
-import { ChevronDown, FolderOpen, FolderPlus, FolderX } from 'lucide-vue-next'
+import { ChevronDown, FolderOpen, FolderPlus } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useProjectStore } from '@/stores/project'
 
@@ -27,11 +27,6 @@ function closePicker() {
 
 function selectProject(path: string) {
   project.setProject(path)
-  closePicker()
-}
-
-function clearProject() {
-  project.clearProject()
   closePicker()
 }
 
@@ -139,14 +134,6 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
             </button>
           </template>
 
-          <div class="h-px bg-(--color-border-mid) mx-1 my-0.5" />
-          <button
-            :class="itemClasses(false, 'danger')"
-            @click="clearProject"
-          >
-            <FolderX :size="13" :stroke-width="1.8" class="shrink-0" />
-            <span>No Project</span>
-          </button>
         </div>
       </Transition>
     </div>
