@@ -8,6 +8,8 @@ defineProps<{ compact?: boolean }>()
 
 const project = useProjectStore()
 
+// forgive me
+
 const pickerOpen = ref(false)
 const picking = ref(false)
 
@@ -133,7 +135,6 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
               <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{{ path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() }}</span>
             </button>
           </template>
-
         </div>
       </Transition>
     </div>
