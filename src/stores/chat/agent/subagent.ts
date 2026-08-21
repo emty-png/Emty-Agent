@@ -31,7 +31,7 @@ export interface SubAgentStreamParams {
   // Core AI functions passed in to avoid circular dependencies
   buildLanguageModel: (creds: ProviderCredentials, modelId: string) => LanguageModel
   streamChat: (opts: StreamChatOptions) => Promise<void>
-  buildSubAgentSystemPrompt: (p: SubAgentPersonality, path: string | null, osInfo?: OsInfo) => string
+  buildSubAgentSystemPrompt: (p: SubAgentPersonality, path: string | null, osInfo?: OsInfo, promptOverrides?: Record<string, string>) => string
   settings: SettingsSnapshot
   project: ProjectSnapshot
   osInfo: OsInfo | undefined
@@ -103,6 +103,8 @@ interface SettingsSnapshot {
     envText: string
   }>
   compatibleProviders?: ProviderSnapshot[]
+  toolDescriptionOverrides: Record<string, string>
+  promptOverrides: Record<string, string>
 }
 
 interface ProjectSnapshot {
@@ -356,6 +358,10 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   const memoryTools = filterDisabledTools(createMemoryTools(settings.memory.enabled, workspace) as Record<string, unknown>, settings.getToolDisabledIds('build'))
   const mergedTools = filterDisabledTools({ ...tools, ...skillTools, ...mcpTools, ...memoryTools }, settings.getToolDisabledIds('build'))
 
+  // Apply tool description overrides
+  const { applyDescriptionOverrides } = await import('@/utils/tools/toolDescriptions')
+  const toolsWithOverrides = applyDescriptionOverrides(mergedTools as Record<string, { description?: string }>, settings.toolDescriptionOverrides)
+
   const disabledToolIds = settings.getToolDisabledIds('build')
   const disabledSet = new Set(disabledToolIds)
   const toolCatalogGroups = buildToolCatalogGroups((settings.mcpServers ?? []) as import('@/stores/settings/types').McpServerConfig[])
@@ -364,8 +370,8 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       tools: group.tools.filter(tool => !disabledSet.has(tool.id)),
     }))
     .filter(group => group.tools.length > 0)
-  const permissionWrappedTools = Object.keys(mergedTools).length > 0
-    ? wrapToolSetWithPermissions(mergedTools as ToolSet, {
+  const permissionWrappedTools = Object.keys(toolsWithOverrides).length > 0
+    ? wrapToolSetWithPermissions(toolsWithOverrides as ToolSet, {
         tabId: subTab.id,
         workspacePath: effectiveProjectPath,
         projectName: effectiveProjectPath ? effectiveProjectPath.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? null : null,
@@ -381,7 +387,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     : undefined
 
   const promptBuild = await buildAgentSystemPrompt({
-    basePrompt: buildSubAgentSystemPrompt(personality, effectiveProjectPath, osInfo),
+    basePrompt: buildSubAgentSystemPrompt(personality, effectiveProjectPath, osInfo, settings.promptOverrides),
     projectPath: effectiveProjectPath,
     requestText: mission,
     autoContext: settings.autoContext,

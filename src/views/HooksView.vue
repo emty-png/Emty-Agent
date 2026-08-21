@@ -25,14 +25,15 @@ const saveError = ref<string | null>(null)
 // ── sidebar ──────────────────────────────────────────────────────────────────
 const picking = ref(false)
 
-// ── reusable class strings ───────────────────────────────────────────────────
-const panelHeaderBtnClass = 'grid place-items-center w-5 h-5 border-none rounded-[var(--radius-sm)] bg-transparent text-[var(--color-text-tertiary)] cursor-pointer transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)]'
-
-const actionBtnClass = 'grid place-items-center w-6 h-6 border-none rounded-[var(--radius-sm)] bg-transparent text-[var(--color-text-tertiary)] cursor-pointer transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)]'
-
 const tabBtnBaseClass = 'px-[14px] py-1.5 text-xs font-medium font-[inherit] border-0 border-b-2 border-solid bg-transparent cursor-pointer transition-[color,border-color] duration-[120ms] ease-[ease] rounded-[var(--radius-sm)_var(--radius-sm)_0_0] hover:text-[var(--color-text-secondary)]'
 
 const createConfigBtnClass = 'inline-flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-accent-dim)] bg-[var(--color-accent-muted)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent-bright)] transition-colors hover:bg-[var(--color-accent-muted-plus)] hover:border-[var(--color-accent)]'
+
+const panelHeaderBtnClass = 'inline-flex items-center justify-center w-5 h-5 border-none rounded-[var(--radius-sm)] bg-transparent text-[var(--color-text-tertiary)] cursor-pointer transition-[background,color] duration-[120ms] ease-[ease]'
+
+const actionBtnClass = 'inline-flex items-center justify-center w-6 h-6 border-none rounded-[var(--radius-sm)] bg-transparent text-[var(--color-text-tertiary)] cursor-pointer transition-[background,color] duration-[120ms] ease-[ease]'
+
+const sidebarItemClass = 'group flex items-center gap-1.5 h-[30px] pl-3 pr-2.5 mx-1 cursor-pointer rounded-[var(--radius-md)] text-[12.5px] font-[inherit] transition-[background,color] duration-[120ms] ease-[ease] whitespace-nowrap overflow-hidden text-ellipsis select-none text-left w-[calc(100%-8px)]'
 
 // ── load hooks config + raw JSON ──────────────────────────────────────────────
 onMounted(() => {
@@ -173,7 +174,7 @@ function breadcrumb(path: string): string[] {
 <template>
   <div
     ref="containerRef"
-    class="flex flex-1 h-full overflow-hidden"
+    class="flex flex-1 h-full overflow-hidden bg-[var(--color-bg-base)]"
     :class="dragging ? 'cursor-col-resize select-none [-webkit-user-select:none]' : ''"
   >
     <!-- ── left: project sidebar ─────────────────────────────────────── -->
@@ -189,7 +190,7 @@ function breadcrumb(path: string): string[] {
           title="Add project"
           @click="addProject"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
         </button>
       </div>
       <div class="flex-1 overflow-y-auto py-1 [scrollbar-width:thin] [scrollbar-color:var(--color-border-mid)_transparent]">
@@ -205,10 +206,9 @@ function breadcrumb(path: string): string[] {
         <button
           v-for="path in project.openProjects"
           :key="path"
-          class="group flex items-center gap-1.5 h-[30px] pl-3 pr-2.5 mx-1 cursor-pointer border border-solid rounded-[var(--radius-md)] text-[12.5px] font-[inherit] transition-[background,border-color,color] duration-100 ease-[ease] whitespace-nowrap overflow-hidden text-ellipsis select-none text-left w-[calc(100%-8px)]"
-          :class="project.projectPath === path
-            ? 'bg-[var(--color-accent-muted-plus)] border-[var(--color-accent-dim)] text-[var(--color-text-primary)]'
-            : 'bg-transparent border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]'"
+          :class="[sidebarItemClass, project.projectPath === path
+            ? 'bg-[var(--color-accent-muted)] text-[var(--color-accent-text)] hover:bg-[var(--color-accent-muted)]'
+            : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-primary)]']"
           @click="selectProject(path)"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-[var(--color-text-tertiary)]"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" /></svg>
@@ -384,23 +384,23 @@ function breadcrumb(path: string): string[] {
                   title="Refresh"
                   @click="loadRawConfig"
                 >
-                  <RefreshCw :size="11" :stroke-width="1.8" />
+                  <RefreshCw :size="12" :stroke-width="1.8" />
                 </button>
                 <button
-                  :class="[actionBtnClass, !saving ? 'text-[var(--color-accent-text)]' : '']"
+                  :class="[actionBtnClass, saving ? 'opacity-50 pointer-events-none' : '']"
                   title="Save (Ctrl+S)"
                   :disabled="saving"
                   @click="saveConfig"
                 >
-                  <RefreshCw v-if="saving" :size="11" class="animate-spin" />
-                  <Save v-else :size="11" :stroke-width="1.8" />
+                  <RefreshCw v-if="saving" :size="12" :stroke-width="1.8" class="animate-spin" />
+                  <Save v-else :size="12" :stroke-width="1.8" />
                 </button>
                 <button
                   :class="actionBtnClass"
                   title="Open in system editor"
                   @click="openConfigFile"
                 >
-                  <ExternalLink :size="11" :stroke-width="1.8" />
+                  <ExternalLink :size="12" :stroke-width="1.8" />
                 </button>
               </div>
             </div>
@@ -422,3 +422,15 @@ function breadcrumb(path: string): string[] {
     </div>
   </div>
 </template>
+
+<style scoped>
+.panel-header-btn:hover {
+  background: var(--color-state-hover);
+  color: var(--color-text-secondary);
+}
+
+.action-btn:hover {
+  background: var(--color-state-hover);
+  color: var(--color-text-secondary);
+}
+</style>

@@ -188,6 +188,10 @@ const MIGRATIONS: string[] = [
 
   // v13 — bg task notification flag on messages
   'ALTER TABLE messages ADD COLUMN is_bg_notification INTEGER NOT NULL DEFAULT 0',
+
+  // v14 — pinned conversations
+  'ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0',
+  'CREATE INDEX IF NOT EXISTS idx_conv_pinned ON conversations (is_pinned, updated_at DESC)',
 ]
 
 // ── column existence helper ───────────────────────────────────────────────────
@@ -255,6 +259,7 @@ async function migrate(instance: Database): Promise<void> {
     { name: 'is_subagent', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'is_design_tab', definition: 'INTEGER NOT NULL DEFAULT 0' },
     { name: 'designs', definition: 'TEXT DEFAULT NULL' },
+    { name: 'is_pinned', definition: 'INTEGER NOT NULL DEFAULT 0' },
   ])
 
   await ensureColumns(instance, 'memories', [
@@ -293,6 +298,7 @@ export interface ConversationRow {
   is_subagent?: number
   is_design_tab?: number
   designs?: string | null
+  is_pinned?: number
 }
 
 export interface MessageRow {
@@ -504,6 +510,27 @@ export async function dbListConversations(
     'SELECT * FROM conversations WHERE is_subagent = 0 ORDER BY updated_at DESC LIMIT ? OFFSET ?',
     [Math.max(1, limit), Math.max(0, offset)],
   )
+}
+
+export async function dbListPinnedConversations(): Promise<ConversationRow[]> {
+  const d = await getDb()
+  return d.select<ConversationRow[]>(
+    'SELECT * FROM conversations WHERE is_subagent = 0 AND is_pinned = 1 ORDER BY updated_at DESC',
+  )
+}
+
+export async function dbPinConversation(id: string): Promise<void> {
+  if (!id)
+    throw new Error('dbPinConversation: id is required')
+  const d = await getDb()
+  await d.execute('UPDATE conversations SET is_pinned = 1 WHERE id = ?', [id])
+}
+
+export async function dbUnpinConversation(id: string): Promise<void> {
+  if (!id)
+    throw new Error('dbUnpinConversation: id is required')
+  const d = await getDb()
+  await d.execute('UPDATE conversations SET is_pinned = 0 WHERE id = ?', [id])
 }
 
 export async function dbGetConversation(id: string): Promise<ConversationRow | undefined> {
@@ -1157,7 +1184,7 @@ export async function dbListConversationsByWorkspace(
   const d = await getDb()
   return d.select<ConversationRow[]>(
     `SELECT * FROM conversations
-     WHERE workspace_path = ? AND is_subagent = 0
+     WHERE workspace_path = ? AND is_subagent = 0 AND (is_pinned IS NULL OR is_pinned = 0)
      ORDER BY updated_at DESC
      LIMIT ?`,
     [workspacePath, Math.max(1, limit)],
@@ -1170,7 +1197,7 @@ export async function dbListConversationsByWorkspaceAll(
   const d = await getDb()
   return d.select<ConversationRow[]>(
     `SELECT * FROM conversations
-     WHERE workspace_path = ? AND is_subagent = 0
+     WHERE workspace_path = ? AND is_subagent = 0 AND (is_pinned IS NULL OR is_pinned = 0)
      ORDER BY updated_at DESC`,
     [workspacePath],
   )
@@ -1182,7 +1209,7 @@ export async function dbCountConversationsByWorkspace(
   const d = await getDb()
   const rows = await d.select<Array<{ cnt: number }>>(
     `SELECT COUNT(*) AS cnt FROM conversations
-     WHERE workspace_path = ? AND is_subagent = 0`,
+     WHERE workspace_path = ? AND is_subagent = 0 AND (is_pinned IS NULL OR is_pinned = 0)`,
     [workspacePath],
   )
   return rows[0]?.cnt ?? 0

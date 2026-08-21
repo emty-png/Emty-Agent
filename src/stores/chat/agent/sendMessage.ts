@@ -602,6 +602,7 @@ export function createSendMessage(
           memoryEnabled: settings.memory.enabled,
           mcpServers: effectiveMcpServers,
           disabledToolIds: settings.getToolDisabledIds(mode === 'design' ? 'design' : 'build'),
+          toolDescriptionOverrides: settings.toolDescriptionOverrides,
           snapshotCallback,
           questionCallback,
           todoCallback,
@@ -784,7 +785,7 @@ export function createSendMessage(
       })
       // ── Completion sound (parent agent only, not aborted) ──────────────────
       if (!tab.subAgent && settings.sound.completionEnabled) {
-        import('@/utils/sounds').then(({ playCompletionSound }) => playCompletionSound(settings.sound.volume)).catch(() => {})
+        import('@/utils/sounds').then(({ playCompletionSound }) => playCompletionSound(settings.sound.volume, settings.sound.completionCustomData ?? undefined)).catch(() => {})
       }
       // ── In-loop compaction ────────────────────────────────────────────────
       if (shouldCompactSession(tab, settings.agent.sessionCompaction?.thresholdPercent ?? 90)) {
@@ -867,7 +868,7 @@ export function createSendMessage(
       })
       // ── Error sound ────────────────────────────────────────────────────────
       if (settings.sound.errorEnabled) {
-        import('@/utils/sounds').then(({ playErrorSound }) => playErrorSound(settings.sound.volume)).catch(() => {})
+        import('@/utils/sounds').then(({ playErrorSound }) => playErrorSound(settings.sound.volume, settings.sound.errorCustomData ?? undefined)).catch(() => {})
       }
     }
 

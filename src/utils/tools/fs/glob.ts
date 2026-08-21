@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
 import { safePath } from './allowedPaths'
 
 // ---------------------------------------------------------------------------
@@ -18,12 +19,7 @@ interface GlobResult {
 
 export function createGlobTool(projectPath: string) {
   return tool({
-    description: `Find files and directories by glob pattern. Respects .gitignore by default.
-
-Use when you need to locate files without knowing their exact path.
-Supports *, **, ?, {a,b}, [abc] patterns.
-Results are sorted: directories first, then files, both alphabetically.
-Hidden dotfiles and gitignored files are excluded by default.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.glob,
     inputSchema: z.object({
       pattern: z
         .string()

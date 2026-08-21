@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
 import { safePath } from './allowedPaths'
 
 // ---------------------------------------------------------------------------
@@ -18,14 +19,7 @@ interface GrepResult {
 
 export function createGrepTool(projectPath: string) {
   return tool({
-    description: `Search file contents with a text or regex pattern. Respects .gitignore by default.
-
-- Literal search by default — pass regex: true for regex syntax
-- Case-sensitive by default — pass case_sensitive: false for case-insensitive
-- Filter by file name pattern with glob (e.g. "*.ts", "src/**/*.js")
-- Use files_only: true to get just file paths without match content
-- Add context lines around matches with context_lines (0-5, default 1)
-- For cross-line patterns use multiline: true`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.grep,
     inputSchema: z.object({
       pattern: z
         .string()

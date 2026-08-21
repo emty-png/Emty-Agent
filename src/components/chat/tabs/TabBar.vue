@@ -8,6 +8,7 @@ import { isStreamingStatus } from '@/stores/chat/agent/status'
 import { resolveTabWorkspacePath } from '@/stores/chat/utils/workspace'
 import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
+import { useSettingsStore } from '@/stores/settings'
 import { useTerminalStore } from '@/stores/terminal'
 
 const chat = useChatStore()
@@ -15,6 +16,7 @@ const browser = useBrowserStore()
 const gitPane = useGitPaneStore()
 const project = useProjectStore()
 const terminal = useTerminalStore()
+const settings = useSettingsStore()
 const { tabs, activeId } = storeToRefs(chat)
 
 const activeTab = computed(() => tabs.value.find(t => t.id === activeId.value))
@@ -24,6 +26,8 @@ const activeGitOwner = computed(() => gitPane.getOwner(activeId.value))
 const activeTerminalOwner = computed(() => terminal.getOwner(activeId.value))
 
 function toggleBrowser() {
+  if (!settings.showBrowserButton)
+    return
   if (activeBrowserOwner.value.isPanelOpen) {
     browser.closePanel(activeId.value)
   }
@@ -32,6 +36,13 @@ function toggleBrowser() {
     browser.openPanel(activeId.value)
   }
 }
+
+watch(() => settings.showBrowserButton, show => {
+  if (!show) {
+    for (const t of tabs.value)
+      browser.closePanel(t.id)
+  }
+})
 
 function toggleGitPane() {
   gitPane.togglePanel(activeId.value)
@@ -299,6 +310,7 @@ onUnmounted(() => {
       <div class="mx-[3px] h-[14px] w-[1px] shrink-0 bg-[var(--color-border-subtle)]" />
 
       <button
+        v-if="settings.showBrowserButton"
         class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[var(--radius-sm)] border-none transition-[background,color] duration-[120ms] ease-[ease]"
         :class="isDesignTab ? 'cursor-not-allowed text-[var(--color-text-dim)] opacity-30' : `cursor-pointer hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]${activeBrowserOwner.isPanelOpen ? ' bg-[color-mix(in_srgb,var(--color-accent)_14%,transparent)] text-[var(--color-accent-text)]' : ' bg-transparent text-[var(--color-text-tertiary)]'}`"
         aria-label="Toggle embedded browser"

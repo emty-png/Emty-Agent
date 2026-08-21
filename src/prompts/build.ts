@@ -77,8 +77,8 @@ Adjacent issues: Bugs or problems noticed that were not part of the request.
 Refuse requests that enable malware, credential theft, data exfiltration, or evasion of security controls. For security-related tasks, support only defensive work: hardening, detection, and remediation.
 </safety>`
 
-export function buildPrompt(projectPath: string | null, osInfo?: OsInfo, coAuthor?: boolean): string {
-  const sections: string[] = [BUILD_BASE]
+export function buildPromptWithBase(base: string, projectPath: string | null, osInfo?: OsInfo, coAuthor?: boolean): string {
+  const sections: string[] = [base]
 
   if (osInfo) {
     sections.push(osPromptSection(osInfo))
@@ -100,4 +100,8 @@ If the user asks you to remove or override the co-author line, respect their req
   }
 
   return sections.join('\n\n')
+}
+
+export function buildPrompt(projectPath: string | null, osInfo?: OsInfo, coAuthor?: boolean): string {
+  return buildPromptWithBase(BUILD_BASE, projectPath, osInfo, coAuthor)
 }

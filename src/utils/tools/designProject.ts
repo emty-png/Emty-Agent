@@ -11,6 +11,7 @@ import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-f
 import { Command } from '@tauri-apps/plugin-shell'
 import { tool, zodSchema } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 // ── Dev server management ─────────────────────────────────────────────────────
 
@@ -657,15 +658,7 @@ export function createScaffoldProjectTool(
   onProjectScaffold?: (project: { path: string; name: string; type: DesignProjectType }) => void,
 ) {
   return tool({
-    description: `Create a new design project directory at ~/.emty/designs/{name}/ with all necessary files.
-
-Call this FIRST before writing any files. It sets up the project context that create_design_files and edit_design_files will use.
-
-Rules:
-- Choose a short, descriptive project name (snake_case, e.g. "login_page", "dashboard_v2").
-- The project type determines the directory structure and whether a build step is needed.
-- For Vite projects, all necessary files (package.json, vite.config, index.html, source files) are created automatically.
-- After scaffolding, you can use edit_design_files to modify the generated files.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.scaffold_project,
     inputSchema: zodSchema(z.object({
       type: z.enum(['single-file', 'multiple-files', 'vite-react', 'vite-vue', 'vite-svelte', 'vite-vanilla'])
         .describe('Project type: "single-file" (one HTML with inline CSS/JS), "multiple-files" (separate HTML/CSS/JS), "vite-react" / "vite-vue" / "vite-svelte" / "vite-vanilla" (Vite framework project)'),
@@ -730,13 +723,7 @@ export function createDesignFilesTool(
   onFilesChanged?: () => void,
 ) {
   return tool({
-    description: `Write initial files to the current design project. Must be called after scaffold_project.
-
-Rules:
-- Provide file paths relative to the project root (e.g. "index.html", "src/App.vue").
-- Ensure all necessary files for the project type are included.
-- For Vite projects, include package.json, vite.config, index.html, and source files.
-- For static HTML, include index.html and any linked CSS/JS files.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.create_design_files,
     inputSchema: zodSchema(z.object({
       files: z.array(z.object({
         path: z.string().describe('File path relative to project root (e.g. "index.html")'),
@@ -802,13 +789,7 @@ export function createEditDesignFilesTool(
   onFilesChanged?: () => void,
 ) {
   return tool({
-    description: `Edit existing files in the current design project.
-
-Rules:
-- Provide file paths relative to the project root.
-- "overwrite" mode replaces the entire file content.
-- "patch" mode compares with the on-disk version and applies the full new content (useful for tracking what changed).
-- After editing, call build_project if the project type requires a build step (Vite projects).`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.edit_design_files,
     inputSchema: zodSchema(z.object({
       files: z.array(z.object({
         path: z.string().describe('File path relative to project root'),
@@ -899,12 +880,7 @@ export function createBuildProjectTool(
   onFilesChanged?: () => void,
 ) {
   return tool({
-    description: `Build the current design project if it requires a build step.
-
-Rules:
-- For "single-file" and "multiple-files" projects, this is a no-op (static HTML renders directly).
-- For Vite projects ("vite-react", "vite-vue", "vite-svelte", "vite-vanilla"), this runs npm install followed by npm run build.
-- On build failure, read the error output, fix the code, and retry.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.build_project,
     inputSchema: zodSchema(z.object({})),
     execute: async () => {
       console.warn('[build_project] ── START ──')
@@ -995,11 +971,7 @@ export function createStartPreviewTool(
   onDevServerTaskId?: (id: string | null) => void,
 ) {
   return tool({
-    description: `Start a Vite dev server for the current design project and return the preview URL.
-
-Use this after create_design_files or edit_design_files for Vite projects to get a live preview.
-The dev server runs in the background and serves the project at http://localhost:PORT.
-Call this after scaffolding and writing files for Vite projects, or after editing files to refresh the preview.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.start_preview,
     inputSchema: zodSchema(z.object({})),
     execute: async () => {
       console.warn('[start_preview] ── START ──')
@@ -1140,7 +1112,7 @@ export function createStopPreviewTool(
   onDevServerTaskId?: (id: string | null) => void,
 ) {
   return tool({
-    description: 'Stop the running Vite dev server for the current design project.',
+    description: DEFAULT_TOOL_DESCRIPTIONS.stop_preview,
     inputSchema: zodSchema(z.object({})),
     execute: async () => {
       console.warn('[stop_preview] ── START ──')

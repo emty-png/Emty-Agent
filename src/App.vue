@@ -16,11 +16,12 @@ import { useSettingsStore } from './stores/settings'
 import { captureFatalError, fatalError } from './utils/errors'
 import { ALL_PROVIDERS, warmIconCache } from './utils/modelsdev'
 import ChatView from './views/Chatview.vue'
+import DeveloperView from './views/DeveloperView.vue'
 import HistoryView from './views/HistoryView.vue'
 import HooksView from './views/HooksView.vue'
 import ProjectView from './views/ProjectView.vue'
 
-type ViewType = 'chat' | 'history' | 'projects' | 'hooks'
+type ViewType = 'chat' | 'history' | 'projects' | 'hooks' | 'developer'
 
 const activeView = ref<ViewType>('chat')
 const settingsOpen = ref(false)
@@ -116,6 +117,7 @@ function reloadApp() {
         />
         <ProjectView v-if="activeView === 'projects'" style="flex: 1" />
         <HooksView v-if="activeView === 'hooks'" style="flex: 1" />
+        <DeveloperView v-if="activeView === 'developer'" style="flex: 1" />
       </div>
 
       <SettingsModal

@@ -7,13 +7,16 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   Settings,
+  Terminal,
   Trash2,
+  Workflow,
   X,
-  Zap,
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   dbCountConversationsByWorkspace,
   dbListConversationsByWorkspace,
@@ -23,9 +26,10 @@ import {
 import { useChatStore } from '@/stores/chat'
 import { useHistoryStore } from '@/stores/history'
 import { useProjectStore } from '@/stores/project'
+import { useSettingsStore } from '@/stores/settings'
 import { useSidebarStore } from '@/stores/sidebar'
 
-type ViewId = 'chat' | 'history' | 'projects' | 'hooks'
+type ViewId = 'chat' | 'history' | 'projects' | 'hooks' | 'developer'
 
 interface NavItem {
   id: ViewId
@@ -54,6 +58,8 @@ const emit = defineEmits<{
 
 const sidebar = useSidebarStore()
 const { collapsed } = storeToRefs(sidebar)
+const settingsStore = useSettingsStore()
+const { developerMode, showLifecycleHooks } = storeToRefs(settingsStore)
 
 // No activeView means the chat view hasn't handed off control yet — default to it.
 const activeView = computed<ViewId>(() => props.activeView ?? 'chat')
@@ -61,18 +67,25 @@ const activeView = computed<ViewId>(() => props.activeView ?? 'chat')
 // Slightly smaller icons in the compact flyout popup than in the docked panel.
 const iconSize = computed(() => (props.flyout ? 14 : 16))
 
-const navItems: NavItem[] = [
-  { id: 'chat', label: 'Conversation', icon: MessageSquareText },
-  { id: 'history', label: 'Conversation History', icon: History },
-  { id: 'projects', label: 'Project Viewer', icon: FolderOpen },
-  { id: 'hooks', label: 'Lifecycle Hooks', icon: Zap },
-]
+const navItems = computed<NavItem[]>(() => {
+  const items: NavItem[] = [
+    { id: 'chat', label: 'Conversation', icon: MessageSquareText },
+    { id: 'history', label: 'Conversation History', icon: History },
+    { id: 'projects', label: 'Project Viewer', icon: FolderOpen },
+  ]
+  if (showLifecycleHooks.value)
+    items.push({ id: 'hooks', label: 'Lifecycle Hooks', icon: Workflow })
+  if (developerMode.value)
+    items.push({ id: 'developer', label: 'Developer Mode', icon: Terminal })
+  return items
+})
 
 // ── projects section ─────────────────────────────────────────────────────────
 const PROJECT_CHAT_LIMIT = 5
 const projects = ref<ProjectItem[]>([])
 const collapsedProjects = ref(new Set<string>())
 const history = useHistoryStore()
+const { pinnedConversations } = storeToRefs(history)
 const chat = useChatStore()
 const projectStore = useProjectStore()
 
@@ -99,11 +112,17 @@ async function loadProjects() {
     const latest = await dbListProjectsWithLatestChat(50)
     const byPath = new Map<string, ProjectItem>()
 
-    for (const p of latest) {
+    const projectPromises = latest.map(async p => {
       const [conversations, totalCount] = await Promise.all([
         dbListConversationsByWorkspace(p.workspace_path, PROJECT_CHAT_LIMIT),
         dbCountConversationsByWorkspace(p.workspace_path),
       ])
+      return { p, conversations, totalCount }
+    })
+
+    const results = await Promise.all(projectPromises)
+
+    for (const { p, conversations, totalCount } of results) {
       byPath.set(p.workspace_path, {
         workspace_path: p.workspace_path,
         project_name: p.project_name,
@@ -187,12 +206,15 @@ async function showAllConversations(project: ProjectItem) {
   project.conversations = allConversations
 }
 
-onMounted(loadProjects)
+// Kick off data loading immediately during setup (before mount) for instant perceived performance
+loadProjects()
+history.loadPinned()
 
-// refresh projects when conversations change (new chat created, renamed, deleted)
+// refresh projects when conversations change (new chat created, renamed, deleted, pinned, unpinned)
 watch(
-  () => history.conversations.length,
+  () => [history.conversations.length, history.pinnedConversations.length],
   () => loadProjects(),
+  { deep: true },
 )
 
 // ── context menu ──────────────────────────────────────────────────────────────
@@ -275,6 +297,29 @@ watch(confirmDeleteId, val => {
   else emit('contextMenuClose')
 })
 
+// ── pin / unpin ───────────────────────────────────────────────────────────────
+function isPinned(id: string): boolean {
+  return pinnedConversations.value.some(c => c.id === id)
+}
+
+async function togglePin(id: string) {
+  closeMenu()
+  if (isPinned(id)) {
+    await history.unpin(id)
+  }
+  else {
+    await history.pin(id)
+  }
+}
+
+// ── all conversations lookup (normal + pinned) ────────────────────────────────
+function findConvById(id: string): ConversationRow | undefined {
+  return (
+    projects.value.flatMap(p => p.conversations).find(c => c.id === id)
+    ?? pinnedConversations.value.find(c => c.id === id)
+  )
+}
+
 // ── computed classes ──────────────────────────────────────────────────────────
 
 const WIDTH_TRANSITION
@@ -318,7 +363,7 @@ const dividerClasses = computed(() => {
 })
 
 const bottomSectionClasses = computed(() =>
-  props.flyout ? 'pt-1.5 px-1.5 pb-2' : 'pt-2 px-2 pb-2.5',
+  props.flyout ? 'pt-1.5 px-1.5 pb-3' : 'pt-2 px-2 pb-3',
 )
 
 function btnClasses(isActive: boolean) {
@@ -340,7 +385,7 @@ function btnClasses(isActive: boolean) {
 
 function labelClasses(_isActive: boolean) {
   const size = props.flyout ? 'text-[12.5px]' : 'text-[13px]'
-  return `${size} font-normal tracking-[0.01em] leading-[1.2] whitespace-nowrap overflow-hidden text-ellipsis`
+  return `${size} font-normal tracking-[0.01em] leading-[1.4] whitespace-nowrap overflow-hidden text-ellipsis min-w-0 flex-1 text-left`
 }
 </script>
 
@@ -361,6 +406,47 @@ function labelClasses(_isActive: boolean) {
           </button>
         </li>
       </ul>
+
+      <!-- ── pinned conversations section ────────────────────────────── -->
+      <template v-if="pinnedConversations.length > 0">
+        <div :class="dividerClasses" />
+        <div class="px-2 pt-1.5 pb-1">
+          <span class="text-[10px] font-semibold tracking-[0.1em] uppercase text-(--color-text-dim) select-none">Pinned Conversations</span>
+        </div>
+        <div v-for="conv in pinnedConversations" :key="conv.id">
+          <!-- rename input -->
+          <div v-if="renamingId === conv.id" class="flex items-center w-full h-[26px] pl-[8px] pr-2">
+            <input
+              ref="renameInputRef"
+              v-model="renameValue"
+              class="sidebar-rename-input"
+              @keydown.enter="commitRename(conv.id)"
+              @keydown.escape="cancelRename"
+              @blur="commitRename(conv.id)"
+              @click.stop
+            >
+          </div>
+          <!-- normal row -->
+          <div v-else class="sidebar-conv-row">
+            <button
+              type="button"
+              class="sidebar-conv-item sidebar-pinned-item"
+              :class="{ 'sidebar-conv-item--active': chat.tabs.some(t => t.conversationId === conv.id) }"
+              @click="openConversation(conv)"
+            >
+              <Pin :size="10" :stroke-width="2" class="shrink-0 text-(--color-text-dim) rotate-45" />
+              <span class="text-[11.5px] whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0">{{ conv.title }}</span>
+            </button>
+            <span class="sidebar-conv-time">{{ relativeTime(conv.updated_at) }}</span>
+            <button
+              class="sidebar-conv-menu"
+              @click.stop="openMenu($event, conv.id)"
+            >
+              <MoreHorizontal :size="12" :stroke-width="1.8" />
+            </button>
+          </div>
+        </div>
+      </template>
 
       <!-- ── projects section ────────────────────────────────────────────── -->
       <template v-if="projects.length > 0">
@@ -468,9 +554,14 @@ function labelClasses(_isActive: boolean) {
       :style="{ top: `${menuPos.y}px`, left: `${menuPos.x}px` }"
       @click.stop
     >
-      <button class="ctx-item" @click="startRename(projects.flatMap(p => p.conversations).find(c => c.id === menuOpen)!)">
+      <button class="ctx-item" @click="startRename(findConvById(menuOpen!)!)">
         <Pencil :size="13" :stroke-width="1.8" />
         Rename
+      </button>
+      <button class="ctx-item" @click="togglePin(menuOpen!)">
+        <PinOff v-if="isPinned(menuOpen!)" :size="13" :stroke-width="1.8" />
+        <Pin v-else :size="13" :stroke-width="1.8" />
+        {{ isPinned(menuOpen!) ? 'Unpin' : 'Pin' }}
       </button>
       <div class="ctx-divider" />
       <button class="ctx-item ctx-item--danger" @click="startDelete(menuOpen!)">
@@ -634,6 +725,10 @@ function labelClasses(_isActive: boolean) {
   color: var(--color-text-dim);
 }
 
+.sidebar-pinned-item {
+  padding-left: 8px;
+  gap: 6px;
+}
 .sidebar-conv-time {
   position: absolute;
   right: 24px;

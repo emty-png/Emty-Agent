@@ -106,6 +106,9 @@ export const useSettingsStore = defineStore(
     })
     const voiceDictionary = ref<VoiceDictionaryEntry[]>([])
     const voiceSnippets = ref<VoiceSnippet[]>([])
+    const showSttMic = ref(true)
+    const showBrowserButton = ref(true)
+    const showLifecycleHooks = ref(true)
 
     // Defensive: persisted state from older versions may have undefined fields
     watch(voiceProcessing, v => {
@@ -120,6 +123,18 @@ export const useSettingsStore = defineStore(
       if (!v)
         voiceSnippets.value = []
     }, { immediate: true })
+    watch(showSttMic, v => {
+      if (v == null)
+        showSttMic.value = true
+    }, { immediate: true })
+    watch(showBrowserButton, v => {
+      if (v == null)
+        showBrowserButton.value = true
+    }, { immediate: true })
+    watch(showLifecycleHooks, v => {
+      if (v == null)
+        showLifecycleHooks.value = true
+    }, { immediate: true })
 
     const compatibleProviders = ref<CompatibleProvider[]>([])
     const mcpServers = ref<McpServerConfig[]>([])
@@ -131,7 +146,40 @@ export const useSettingsStore = defineStore(
     })
     const autoContext = ref<AutoContextConfig>({ enabled: true })
     const memory = ref<MemoryConfig>({ enabled: true })
-    const sound = ref<SoundConfig>({ completionEnabled: true, errorEnabled: true, volume: 80 })
+    const sound = ref<SoundConfig>({
+      completionEnabled: true,
+      errorEnabled: true,
+      volume: 80,
+      completionCustomData: null,
+      completionCustomName: null,
+      errorCustomData: null,
+      errorCustomName: null,
+    })
+
+    watch(sound, v => {
+      if (!v)
+        return
+      let mutated = false
+      if (v.completionCustomData === undefined) {
+        v.completionCustomData = null
+        mutated = true
+      }
+      if (v.completionCustomName === undefined) {
+        v.completionCustomName = null
+        mutated = true
+      }
+      if (v.errorCustomData === undefined) {
+        v.errorCustomData = null
+        mutated = true
+      }
+      if (v.errorCustomName === undefined) {
+        v.errorCustomName = null
+        mutated = true
+      }
+      if (mutated)
+        sound.value = { ...v }
+    }, { immediate: true })
+    const developerMode = ref(false)
     const agent = ref<AgentConfig>({
       permissionMode: 'ask',
       subagents: {
@@ -164,6 +212,21 @@ export const useSettingsStore = defineStore(
       catch { /* ignore parse errors */ }
     })
     const disabledSkillIds = ref<string[]>([])
+
+    // ── tool description & prompt overrides ─────────────────────────────────
+    const toolDescriptionOverrides = ref<Record<string, string>>({})
+    const promptOverrides = ref<Record<string, string>>({})
+
+    watch(toolDescriptionOverrides, v => {
+      if (!v)
+        toolDescriptionOverrides.value = {}
+    }, { immediate: true })
+
+    watch(promptOverrides, v => {
+      if (!v)
+        promptOverrides.value = {}
+    }, { immediate: true })
+
     const globalSkills = ref<SkillMetadata[]>([])
     const projectSkills = ref<SkillMetadata[]>([])
     const projectSkillsStatus = ref<ConnectionStatus>('idle')
@@ -259,6 +322,36 @@ export const useSettingsStore = defineStore(
 
     function getToolDisabledIds(mode: 'build' | 'design' = 'build'): string[] {
       return toolDisabledIds.value[mode]
+    }
+
+    // ── tool description overrides ───────────────────────────────────────────
+    function setToolDescriptionOverride(toolId: string, description: string): void {
+      toolDescriptionOverrides.value = { ...toolDescriptionOverrides.value, [toolId]: description }
+    }
+
+    function resetToolDescriptionOverride(toolId: string): void {
+      const next = { ...toolDescriptionOverrides.value }
+      delete next[toolId]
+      toolDescriptionOverrides.value = next
+    }
+
+    function resetAllToolDescriptions(): void {
+      toolDescriptionOverrides.value = {}
+    }
+
+    // ── prompt overrides ─────────────────────────────────────────────────────
+    function setPromptOverride(promptId: string, content: string): void {
+      promptOverrides.value = { ...promptOverrides.value, [promptId]: content }
+    }
+
+    function resetPromptOverride(promptId: string): void {
+      const next = { ...promptOverrides.value }
+      delete next[promptId]
+      promptOverrides.value = next
+    }
+
+    function resetAllPrompts(): void {
+      promptOverrides.value = {}
     }
 
     async function refreshProjectSkills(projectPath: string | null): Promise<void> {
@@ -1229,16 +1322,28 @@ export const useSettingsStore = defineStore(
       voiceProcessing,
       voiceDictionary,
       voiceSnippets,
+      showSttMic,
+      showBrowserButton,
+      showLifecycleHooks,
       contextCaching,
       autoContext,
       memory,
       sound,
+      developerMode,
       agent,
       completedOnboarding,
       completeOnboarding,
       dismissedBetaCloseNotice,
       toolDisabledIds,
       getToolDisabledIds,
+      toolDescriptionOverrides,
+      setToolDescriptionOverride,
+      resetToolDescriptionOverride,
+      resetAllToolDescriptions,
+      promptOverrides,
+      setPromptOverride,
+      resetPromptOverride,
+      resetAllPrompts,
       disabledSkillIds,
       globalSkills,
       projectSkills,
@@ -1297,13 +1402,20 @@ export const useSettingsStore = defineStore(
         'voiceProcessing',
         'voiceDictionary',
         'voiceSnippets',
+        'showSttMic',
+        'showBrowserButton',
+        'showLifecycleHooks',
+        'sound',
         'contextCaching',
         'autoContext',
         'memory',
+        'developerMode',
         'agent',
         'completedOnboarding',
         'dismissedBetaCloseNotice',
         'toolDisabledIds',
+        'toolDescriptionOverrides',
+        'promptOverrides',
         'disabledSkillIds',
         'compatibleProviders',
         'mcpServers',

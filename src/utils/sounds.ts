@@ -1,5 +1,6 @@
-// ── Sound effects (Web Audio API synthesis) ───────────────────────────────────
-// All sounds are synthesised on the fly — no audio files required.
+// ── Sound effects (Web Audio API synthesis + custom uploads) ───────────────
+// Default sounds are synthesised on the fly — no audio files required.
+// Users may upload custom sounds which are played via HTMLAudioElement.
 // Sounds are intentionally subtle and professional.
 
 let _ctx: AudioContext | null = null
@@ -19,11 +20,33 @@ function toGain(volume: number): number {
   return (clamped / 100) * 0.6 // cap at 0.6 to avoid being too loud
 }
 
+function toAudioVolume(volume: number): number {
+  const clamped = Math.max(0, Math.min(100, volume))
+  return clamped / 100
+}
+
+function tryPlayCustom(dataUrl: string | null | undefined, volume: number): boolean {
+  if (!dataUrl)
+    return false
+  try {
+    const audio = new Audio(dataUrl)
+    audio.volume = toAudioVolume(volume)
+    // Play returns a promise; ignore rejection (e.g. autoplay policy)
+    void audio.play().catch(() => {})
+    return true
+  }
+  catch {
+    return false
+  }
+}
+
 // ── Completion sound ─────────────────────────────────────────────────────────
 // A two-note ascending chime (E5 → G#5) with a soft attack and decay.
 // Duration ~0.55 s. Feels like a gentle, pleasant notification.
 
-export function playCompletionSound(volume: number): void {
+export function playCompletionSound(volume: number, customDataUrl?: string | null): void {
+  if (tryPlayCustom(customDataUrl ?? null, volume))
+    return
   try {
     const ctx = getCtx()
     const gain = toGain(volume)
@@ -66,7 +89,9 @@ export function playCompletionSound(volume: number): void {
 // A short descending two-tone (A4 → E4) with a harder attack.
 // Duration ~0.45 s. Clearly signals "something went wrong" without being harsh.
 
-export function playErrorSound(volume: number): void {
+export function playErrorSound(volume: number, customDataUrl?: string | null): void {
+  if (tryPlayCustom(customDataUrl ?? null, volume))
+    return
   try {
     const ctx = getCtx()
     const gain = toGain(volume)

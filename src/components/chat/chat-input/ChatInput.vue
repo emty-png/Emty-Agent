@@ -113,6 +113,8 @@ const dictationContext = computed<DictationContext>(() => {
 })
 
 async function startVoiceRecording() {
+  if (!settings.showSttMic)
+    return
   voiceError.value = null
   voiceTranscribing.value = false
   streamingTranscript.value = ''
@@ -208,6 +210,8 @@ const voiceStarting = ref(false)
 let pendingStop = false
 
 async function onPushToTalkDown(e: KeyboardEvent) {
+  if (!settings.showSttMic)
+    return
   if (e.code !== 'Space' || !e.ctrlKey)
     return
   if (pushToTalkHeld.value || voiceOverlayOpen.value || voiceTranscribing.value || isStreaming.value)
@@ -716,6 +720,7 @@ const sendBtnClasses = computed(() => {
         </button>
 
         <button
+          v-if="settings.showSttMic"
           :class="micBtnClasses"
           aria-label="Voice input"
           :disabled="isStreaming || voiceTranscribing"

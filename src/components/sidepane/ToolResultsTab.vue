@@ -404,51 +404,53 @@ watch(
           </div>
 
           <div v-if="item.kind === 'diff' && item.parsedDiff" class="max-h-[420px] overflow-auto font-[ui-monospace,'SF_Mono','Cascadia_Code','Fira_Code',monospace] text-[11.5px] leading-[1.55] [scrollbar-width:thin] [scrollbar-color:var(--color-border-bright)_transparent]">
-            <div v-for="(file, fi) in item.parsedDiff" :key="fi" class="first:border-t-0 border-t border-[color-mix(in_srgb,var(--color-border-subtle)_60%,transparent)]">
-              <div v-if="file.to || file.from" class="flex items-center gap-1.5 py-1.5 px-3 bg-[color-mix(in_srgb,var(--color-bg-surface)_60%,transparent)] border-b border-[color-mix(in_srgb,var(--color-border-subtle)_50%,transparent)]">
-                <span class="text-[11px] font-semibold text-[var(--color-text-secondary)] font-[ui-monospace,'SF_Mono','Cascadia_Code','Fira_Code',monospace]">{{ file.to || file.from }}</span>
-              </div>
-              <div v-for="(hunk, hi) in file.hunks" :key="hi">
-                <div class="py-1 px-3 text-[10.5px] text-[var(--color-text-dim)] bg-[color-mix(in_srgb,var(--color-bg-surface)_40%,transparent)] border-b border-[color-mix(in_srgb,var(--color-border-subtle)_30%,transparent)] select-none">
-                  {{ hunk.header }}
+            <div class="min-w-full w-max">
+              <div v-for="(file, fi) in item.parsedDiff" :key="fi" class="first:border-t-0 border-t border-[color-mix(in_srgb,var(--color-border-subtle)_60%,transparent)]">
+                <div v-if="file.to || file.from" class="flex items-center gap-1.5 py-1.5 px-3 bg-[color-mix(in_srgb,var(--color-bg-surface)_60%,transparent)] border-b border-[color-mix(in_srgb,var(--color-border-subtle)_50%,transparent)]">
+                  <span class="text-[11px] font-semibold text-[var(--color-text-secondary)] font-[ui-monospace,'SF_Mono','Cascadia_Code','Fira_Code',monospace]">{{ file.to || file.from }}</span>
                 </div>
-                <div
-                  v-for="(line, li) in hunk.lines"
-                  :key="li"
-                  class="flex items-stretch min-w-max"
-                  :class="{
-                    'bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)]': line.type === 'add',
-                    'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]': line.type === 'del',
-                  }"
-                >
-                  <div
-                    class="flex w-[72px] shrink-0 border-r border-[color-mix(in_srgb,var(--color-border-subtle)_30%,transparent)]"
-                    :class="{
-                      'bg-[color-mix(in_srgb,var(--color-success)_8%,transparent)]': line.type === 'add',
-                      'bg-[color-mix(in_srgb,var(--color-danger)_8%,transparent)]': line.type === 'del',
-                    }"
-                  >
-                    <span class="w-[36px] text-right px-1.5 text-[var(--color-text-dim)] opacity-50 select-none text-[10.5px] leading-[inherit] shrink-0 flex items-center justify-end">{{ line.oldLine }}</span>
-                    <span class="w-[36px] text-right px-1.5 text-[var(--color-text-dim)] opacity-50 select-none text-[10.5px] leading-[inherit] shrink-0 flex items-center justify-end">{{ line.newLine }}</span>
+                <div v-for="(hunk, hi) in file.hunks" :key="hi">
+                  <div class="py-1 px-3 text-[10.5px] text-[var(--color-text-dim)] bg-[color-mix(in_srgb,var(--color-bg-surface)_40%,transparent)] border-b border-[color-mix(in_srgb,var(--color-border-subtle)_30%,transparent)] select-none">
+                    {{ hunk.header }}
                   </div>
                   <div
-                    class="w-[18px] shrink-0 text-center font-semibold text-[12px] select-none flex items-center justify-center"
+                    v-for="(line, li) in hunk.lines"
+                    :key="li"
+                    class="flex items-stretch w-full"
                     :class="{
-                      'text-[var(--color-success)]': line.type === 'add',
-                      'text-[var(--color-danger)]': line.type === 'del',
+                      'bg-[color-mix(in_srgb,var(--color-success)_12%,transparent)]': line.type === 'add',
+                      'bg-[color-mix(in_srgb,var(--color-danger)_12%,transparent)]': line.type === 'del',
                     }"
                   >
-                    {{ line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ' }}
-                  </div>
-                  <div
-                    class="px-3 whitespace-pre flex-1"
-                    :class="{
-                      'text-[color-mix(in_srgb,var(--color-success)_60%,var(--color-text-primary))]': line.type === 'add',
-                      'text-[color-mix(in_srgb,var(--color-danger)_60%,var(--color-text-primary))]': line.type === 'del',
-                      'text-[var(--color-text-dim)] opacity-70': line.type === 'ctx',
-                    }"
-                  >
-                    {{ line.text }}
+                    <div
+                      class="flex w-[72px] shrink-0 border-r border-[color-mix(in_srgb,var(--color-border-subtle)_30%,transparent)]"
+                      :class="{
+                        'bg-[color-mix(in_srgb,var(--color-success)_8%,transparent)]': line.type === 'add',
+                        'bg-[color-mix(in_srgb,var(--color-danger)_8%,transparent)]': line.type === 'del',
+                      }"
+                    >
+                      <span class="w-[36px] text-right px-1.5 text-[var(--color-text-dim)] opacity-50 select-none text-[10.5px] leading-[inherit] shrink-0 flex items-center justify-end">{{ line.oldLine }}</span>
+                      <span class="w-[36px] text-right px-1.5 text-[var(--color-text-dim)] opacity-50 select-none text-[10.5px] leading-[inherit] shrink-0 flex items-center justify-end">{{ line.newLine }}</span>
+                    </div>
+                    <div
+                      class="w-[18px] shrink-0 text-center font-semibold text-[12px] select-none flex items-center justify-center"
+                      :class="{
+                        'text-[var(--color-success)]': line.type === 'add',
+                        'text-[var(--color-danger)]': line.type === 'del',
+                      }"
+                    >
+                      {{ line.type === 'add' ? '+' : line.type === 'del' ? '−' : ' ' }}
+                    </div>
+                    <div
+                      class="px-3 whitespace-pre flex-1"
+                      :class="{
+                        'text-[color-mix(in_srgb,var(--color-success)_60%,var(--color-text-primary))]': line.type === 'add',
+                        'text-[color-mix(in_srgb,var(--color-danger)_60%,var(--color-text-primary))]': line.type === 'del',
+                        'text-[var(--color-text-dim)] opacity-70': line.type === 'ctx',
+                      }"
+                    >
+                      {{ line.text }}
+                    </div>
                   </div>
                 </div>
               </div>

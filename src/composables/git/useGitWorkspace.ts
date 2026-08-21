@@ -238,7 +238,7 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
       throw new CommitMessageValidationError('Please select an AI model in settings to autogenerate commit message.')
 
     const languageModel = resolveLanguageModel(settingsStore.activeModel, settingsStore, buildLanguageModel)
-    const prompt = buildCommitPrompt(diff, stat)
+    const prompt = buildCommitPrompt(diff, stat, settingsStore.promptOverrides?.['prompt-commit'])
     const generated = await generateText({ model: languageModel, prompt, system: prompt })
     return normalizeCommitMessage(generated.text)
   }

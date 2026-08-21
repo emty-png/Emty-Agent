@@ -1,12 +1,11 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { refreshManagedCommandTask } from './shell'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 export function createSleepTool() {
   return tool({
-    description: `Pause execution for a specified duration. Use when you need to wait — for example, after starting a background server, before checking if a service is ready, or to space out retry attempts.
-
-Do NOT use for long waits when you could poll with action: "status" instead. This tool blocks your execution for the full duration.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.sleep,
     inputSchema: z.object({
       durationMs: z.number().int().min(100).max(300_000).describe(
         'How long to sleep in milliseconds. Range: 100–300,000 (5 minutes max).',

@@ -8,6 +8,7 @@ import type { ImageGenProvider } from '@/stores/settings/types'
 import { tool } from 'ai'
 import { z } from 'zod'
 import { platformFetch } from '@/utils/platformFetch'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 const GENERATION_TIMEOUT_MS = 120_000
 
@@ -120,14 +121,7 @@ function promptToFilename(prompt: string, index: number): string {
 export function createImageGenTools() {
   return {
     create_image: tool({
-      description: `Generate images from a text description using AI image generation models.
-
-The agent provides a prompt describing the image to generate. Images are saved as PNG files in the project workspace.
-
-Optional parameters:
-- path: Directory or filename to save the image(s). If omitted, saves to the project root.
-- count: Number of images to generate (1-4, default 1).
-- size: Image dimensions as "WIDTHxHEIGHT" (e.g. "1024x1024"). Default varies by provider.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.create_image,
 
       inputSchema: z.object({
         prompt: z

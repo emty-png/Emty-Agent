@@ -10,13 +10,13 @@ import BetaCloseDialog from './BetaCloseDialog.vue'
 
 interface Props {
   title?: string
-  activeView?: 'chat' | 'history' | 'projects' | 'hooks'
+  activeView?: 'chat' | 'history' | 'projects' | 'hooks' | 'developer'
 }
 const props = withDefaults(defineProps<Props>(), {
   activeView: 'chat',
 })
 const emit = defineEmits<{
-  selectView: [view: 'chat' | 'history' | 'projects' | 'hooks']
+  selectView: [view: 'chat' | 'history' | 'projects' | 'hooks' | 'developer']
   openSettings: []
 }>()
 
@@ -77,7 +77,7 @@ async function openSidebarFlyout() {
   updateSidebarFlyoutPos()
 }
 
-function onSidebarSelectView(view: 'chat' | 'history' | 'projects' | 'hooks') {
+function onSidebarSelectView(view: 'chat' | 'history' | 'projects' | 'hooks' | 'developer') {
   emit('selectView', view)
   closeSidebarFlyoutNow()
 }

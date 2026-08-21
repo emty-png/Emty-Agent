@@ -1,6 +1,7 @@
 import { stat } from '@tauri-apps/plugin-fs'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
 import { hasBinaryExtension, isPathAllowed, resolveToAbsolutePath } from './allowedPaths'
 import {
   FileLockManager,
@@ -176,13 +177,7 @@ export function createReadFilesTool(
   lockManager: FileLockManager = new FileLockManager(),
 ) {
   return tool({
-    description: `Read one or more text files from the project. Returns content with 1-based line numbers in cat -n format.
-
-Always call read_files and wait for its result before calling edit_files or write_file on the same file. Calling read and write in parallel on the same file path is not allowed. Reading and writing different file paths in parallel is fine.
-
-If a file is truncated, use offset + limit to read subsequent pages. Read all pages before writing. Default limit: 300 lines, max: 2000.
-
-If the file content is unchanged since the last read, a deduplication stub is returned instead. Use forced: true to bypass this and always fetch fresh content from disk.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.read_files,
 
     inputSchema: z.object({
       file_paths: z

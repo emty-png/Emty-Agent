@@ -1,6 +1,7 @@
 import { readDir } from '@tauri-apps/plugin-fs'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
 import { safePath, shouldSkipEntry } from './shared'
 
 /** Simple glob-to-regex converter for ignore patterns. */
@@ -32,8 +33,7 @@ function formatListing(
 
 export function createListDirectoryTool(projectPath: string) {
   return tool({
-    description:
-      'Lists files and directories in a given path. The path parameter must be an absolute path, not a relative path. You can optionally provide an array of glob patterns to ignore with the ignore parameter. You should generally prefer the Glob and Grep tools, if you know which directories to search.',
+    description: DEFAULT_TOOL_DESCRIPTIONS.list_directory,
     inputSchema: z.object({
       path: z.string().describe('The absolute path to the directory to list (must be absolute, not relative)'),
       ignore: z.array(z.string()).optional().describe('List of glob patterns to ignore'),

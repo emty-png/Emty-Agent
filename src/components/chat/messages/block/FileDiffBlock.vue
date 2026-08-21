@@ -2,6 +2,7 @@
 import type { ToolEvent } from '@/stores/chat'
 import { computed, ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { useGitPaneStore } from '@/stores/gitPane'
 
 const props = defineProps<{
   events: ToolEvent[]
@@ -19,6 +20,7 @@ interface FileChip {
 const COLLAPSED_LIMIT = 6
 const showAll = ref(false)
 const chatStore = useChatStore()
+const gitPaneStore = useGitPaneStore()
 
 function basename(path: string): string {
   const parts = path.replace(/\\/g, '/').split('/')
@@ -112,6 +114,12 @@ const hasMore = computed(() => !showAll.value && fileChips.value.length > COLLAP
 
 function openDiff(chip: FileChip) {
   const tabId = chatStore.activeId
+  gitPaneStore.openDiffViewer(tabId, {
+    filePath: chip.filePath,
+    diff: chip.diff,
+    added: chip.added,
+    removed: chip.removed,
+  })
   window.dispatchEvent(new CustomEvent('emty:open-diff-viewer', {
     detail: {
       tabId,

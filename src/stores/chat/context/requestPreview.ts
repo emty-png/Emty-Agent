@@ -160,7 +160,7 @@ export async function buildChatRequestPreview(options: {
     .filter(group => group.tools.length > 0)
 
   const promptBuild = await buildAgentSystemPrompt({
-    basePrompt: buildSystemPrompt(workspacePath, 'build', osInfo, settings.agent.gitCoAuthor),
+    basePrompt: buildSystemPrompt(workspacePath, 'build', osInfo, settings.agent.gitCoAuthor, settings.promptOverrides),
     projectPath: workspacePath,
     requestText: text,
     autoContext: settings.autoContext,
@@ -218,6 +218,7 @@ export async function buildChatRequestPreview(options: {
         memoryEnabled: settings.memory.enabled,
         mcpServers: effectiveMcpServers,
         disabledToolIds: settings.getToolDisabledIds(tab.mode === 'design' ? 'design' : 'build'),
+        toolDescriptionOverrides: settings.toolDescriptionOverrides,
         readRegistry,
         ...(osInfo?.shell ? { shell: osInfo.shell } : {}),
         coAuthor: settings.agent.gitCoAuthor,
@@ -381,11 +382,12 @@ async function buildToolDefinitions(options: {
   memoryEnabled: boolean
   mcpServers: McpServerConfig[]
   disabledToolIds: string[]
+  toolDescriptionOverrides: Record<string, string>
   readRegistry?: Map<string, { hash: string; complete: boolean; mtimeMs: number | null; sizeBytes: number }>
   shell?: 'sh' | 'powershell'
   coAuthor?: boolean
 }): Promise<PromptToolDefinition[]> {
-  const { projectPath, memoryEnabled, mcpServers, disabledToolIds, readRegistry, shell, coAuthor } = options
+  const { projectPath, memoryEnabled, mcpServers, disabledToolIds, toolDescriptionOverrides, readRegistry, shell, coAuthor } = options
   const [
     { createFilesystemTools },
     { createQuestionsTool },
@@ -434,7 +436,7 @@ async function buildToolDefinitions(options: {
 
   const builtInTools = Object.entries(filterDisabledTools(toolSet, disabledToolIds)).map(([name, tool]) => ({
     name,
-    description: tool.description ?? '',
+    description: toolDescriptionOverrides[name] ?? (tool.description ?? ''),
     inputSchema: asSchema(tool.inputSchema).jsonSchema as JSONSchema7,
   }))
 

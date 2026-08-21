@@ -22,6 +22,7 @@
 
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -77,26 +78,7 @@ export type QuestionsCallback = (
 
 export function createQuestionsTool(onQuestions: QuestionsCallback) {
   return tool({
-    description: `Ask the user clarifying questions before proceeding with a complex or ambiguous task.
-
-WHEN TO USE:
-- Use ONLY when missing information will fundamentally change your implementation approach, architecture, or file structure.
-- Use when multiple valid architectural paths exist and you cannot confidently choose one without user preference.
-
-WHEN NOT TO USE:
-- NEVER use this if you can find the answer by reading the codebase, checking configuration files, or reading documentation.
-- NEVER use this for trivial decisions, styling choices, or standard best practices. Make a reasonable professional assumption instead.
-- NEVER ask yes/no questions where the answer is obvious.
-
-EXECUTION RULES:
-1. Batch ALL related questions into a SINGLE tool call. The maximum is 5 questions per batch. Do not call this tool multiple times for the same task.
-2. Provide 2 to 4 highly distinct, mutually exclusive options for each question. Order them from most recommended to least recommended.
-3. The UI automatically appends a free-text "Other" option, so do not include "Other" or "Custom" in your options array.
-4. Use the "dependsOn" field to conditionally show follow-up questions based on a prior answer. This keeps the UI clean and relevant.
-
-AFTER RECEIVING ANSWERS:
-- Treat "skipped" or "skipped (condition not met)" as "no preference — use your best professional judgment".
-- Once you receive the answers, acknowledge them briefly and immediately proceed with the task. Do not ask more questions.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.ask_questions,
     inputSchema: z.object({
       questions: z
         .array(

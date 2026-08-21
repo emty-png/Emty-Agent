@@ -3,13 +3,16 @@ import type { ToolSet } from '@/utils/ai'
 import { createMemoryTools } from '@/utils/tools/memory'
 import { createQuestionsTool } from '@/utils/tools/questions'
 import { createSleepTool } from '@/utils/tools/sleep'
+import { applyDescriptionOverrides } from '@/utils/tools/toolDescriptions'
 import { createWebTools } from '@/utils/tools/web'
 
 export async function chatProfile(ctx: ToolRegistryContext): Promise<ToolSet> {
-  return {
+  const tools: ToolSet = {
     ask_questions: createQuestionsTool(ctx.questionCallback ?? (() => {})),
     sleep: createSleepTool(),
     ...createMemoryTools(ctx.memoryEnabled, ctx.workspaceMeta),
     ...createWebTools(),
   }
+
+  return applyDescriptionOverrides(tools, ctx.toolDescriptionOverrides)
 }

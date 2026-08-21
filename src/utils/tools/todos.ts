@@ -19,6 +19,7 @@
 
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -70,13 +71,7 @@ export function createTaskTools(
   // ── create_task ─────────────────────────────────────────────────────────────
 
   const create_task = tool({
-    description: `Create a new task and add it to the task list.
-
-Always create tasks to track progress for multi-step or non-trivial work.
-Create all expected tasks before starting execution so the user sees the full plan.
-Use a clear imperative subject and a complete description.
-Do not create tasks for trivial single-step actions.
-Return the new task ID.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.create_task,
     inputSchema: z.object({
       subject: z
         .string()
@@ -111,15 +106,7 @@ Return the new task ID.`,
   // ── update_task ─────────────────────────────────────────────────────────────
 
   const update_task = tool({
-    description: `Update one existing task by its task ID.
-
-Always mark the status of the task correctly.
-Set status to "in_progress" immediately before starting work on the task.
-Set status to "completed" immediately after the task is fully done.
-Use "deleted" only when the task is no longer needed.
-Call list_tasks first if you are unsure of task IDs or current status.
-Update subject, description, or activeForm only when the task details have changed.
-Return the result of the update.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.update_task,
     inputSchema: z.object({
       taskId: z
         .string()
@@ -201,11 +188,7 @@ Return the result of the update.`,
   // ── list_tasks ──────────────────────────────────────────────────────────────
 
   const list_tasks = tool({
-    description: `List all current tasks with their IDs and statuses.
-
-Always call this before updating tasks if you are unsure of the current task list.
-Use this to keep task state accurate and avoid duplicate, stale, or orphaned tasks.
-This operation is cheap and does not access the filesystem.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.list_tasks,
     inputSchema: z.object({}),
     execute: async () => {
       if (tasks.length === 0)
@@ -218,10 +201,7 @@ This operation is cheap and does not access the filesystem.`,
   // ── get_task ────────────────────────────────────────────────────────────────
 
   const get_task = tool({
-    description: `Retrieve the full details of one task by its task ID.
-
-Use this when you need the complete description, activeForm, or current status of a specific task.
-Do not use this to list all tasks; use list_tasks for that purpose.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.get_task,
     inputSchema: z.object({
       taskId: z
         .string()

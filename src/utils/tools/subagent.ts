@@ -7,6 +7,7 @@
 import type { OsInfo } from '@/utils/os'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -80,8 +81,7 @@ function osSection(osInfo?: OsInfo): string {
   return `\n\n## Operating Environment\n- Platform: ${osInfo.displayName} ${osInfo.version} (${osInfo.arch})\n- Shell: ${isWin ? 'PowerShell' : 'sh (POSIX)'}\n- Path separator: ${isWin ? '\\' : '/'}`
 }
 
-export function explorerSystemPrompt(projectPath: string | null, osInfo?: OsInfo): string {
-  return `You are an Explorer sub-agent — a focused, read-only codebase investigator.
+export const EXPLORER_BASE = `You are an Explorer sub-agent — a focused, read-only codebase investigator.
 
 ## Role
 Explore and understand the codebase to answer the mission you have been given.
@@ -102,11 +102,14 @@ Conclude with a structured report:
 - **What you found** and where exactly (file + line when relevant)
 - **Relevant code excerpts** (inline, short — never dump entire files)
 - **Gaps or concerns** you noticed along the way
-- **Direct answer** to the mission question${projectSection(projectPath)}${osSection(osInfo)}`
+- **Direct answer** to the mission question`
+
+export function explorerSystemPrompt(projectPath: string | null, osInfo?: OsInfo, baseOverride?: string): string {
+  const base = baseOverride?.trim() || EXPLORER_BASE
+  return `${base}${projectSection(projectPath)}${osSection(osInfo)}`
 }
 
-export function researcherSystemPrompt(osInfo?: OsInfo): string {
-  return `You are a Researcher sub-agent — an expert at gathering and synthesising information from the web.
+export const RESEARCHER_BASE = `You are a Researcher sub-agent — an expert at gathering and synthesising information from the web.
 
 ## Role
 Research the mission topic thoroughly using web search and page fetching.
@@ -127,11 +130,14 @@ Produce a structured research report:
 - **Summary** (2–3 sentences)
 - **Key findings** with inline citations (URL in parentheses)
 - **Conflicting information** found across sources
-- **Gaps** — things you could not verify or find${osSection(osInfo)}`
+- **Gaps** — things you could not verify or find`
+
+export function researcherSystemPrompt(osInfo?: OsInfo, baseOverride?: string): string {
+  const base = baseOverride?.trim() || RESEARCHER_BASE
+  return `${base}${osSection(osInfo)}`
 }
 
-export function debuggerSystemPrompt(projectPath: string | null, osInfo?: OsInfo): string {
-  return `You are a Debugger sub-agent — an expert at tracing bugs to their root cause.
+export const DEBUGGER_BASE = `You are a Debugger sub-agent — an expert at tracing bugs to their root cause.
 
 ## Role
 Investigate the bug or issue described in your mission.
@@ -153,11 +159,14 @@ Conclude with a precise diagnosis:
 - **Why it fails** — the logical error in plain terms
 - **Reproduction path** — how the bug is triggered
 - **Recommended fix** — concrete and minimal
-- **Risk of the fix** — any edge cases or side effects${projectSection(projectPath)}${osSection(osInfo)}`
+- **Risk of the fix** — any edge cases or side effects`
+
+export function debuggerSystemPrompt(projectPath: string | null, osInfo?: OsInfo, baseOverride?: string): string {
+  const base = baseOverride?.trim() || DEBUGGER_BASE
+  return `${base}${projectSection(projectPath)}${osSection(osInfo)}`
 }
 
-export function generalSystemPrompt(projectPath: string | null, osInfo?: OsInfo): string {
-  return `You are a General-purpose sub-agent with full capabilities.
+export const GENERAL_BASE = `You are a General-purpose sub-agent with full capabilities.
 
 ## Role
 Complete the mission you have been given as efficiently and correctly as possible.
@@ -178,19 +187,25 @@ All work must be production-ready:
 - Predictable failure handling
 - No dead code or hidden side effects
 - Clear control flow
-- No leakage of secrets or sensitive data${projectSection(projectPath)}${osSection(osInfo)}`
+- No leakage of secrets or sensitive data`
+
+export function generalSystemPrompt(projectPath: string | null, osInfo?: OsInfo, baseOverride?: string): string {
+  const base = baseOverride?.trim() || GENERAL_BASE
+  return `${base}${projectSection(projectPath)}${osSection(osInfo)}`
 }
 
 export function buildSubAgentSystemPrompt(
   personality: SubAgentPersonality,
   projectPath: string | null,
   osInfo?: OsInfo,
+  promptOverrides?: Record<string, string>,
 ): string {
+  const override = promptOverrides?.[`prompt-subagent-${personality}`]
   switch (personality) {
-    case 'explorer': return explorerSystemPrompt(projectPath, osInfo)
-    case 'researcher': return researcherSystemPrompt(osInfo)
-    case 'debugger': return debuggerSystemPrompt(projectPath, osInfo)
-    case 'general': return generalSystemPrompt(projectPath, osInfo)
+    case 'explorer': return explorerSystemPrompt(projectPath, osInfo, override)
+    case 'researcher': return researcherSystemPrompt(osInfo, override)
+    case 'debugger': return debuggerSystemPrompt(projectPath, osInfo, override)
+    case 'general': return generalSystemPrompt(projectPath, osInfo, override)
   }
 }
 
@@ -216,45 +231,7 @@ export function createSpawnSubAgentTool(
   onAbortSubAgent: SubAgentAbortCallback,
 ) {
   return tool({
-    description: `\
-Spawn a focused sub-agent in its own tab to handle a specific part of the current task.
-The sub-agent runs with a fresh context, inherits the current model and project, and streams
-its work live in a dedicated tab the user can watch.
-
-This tool BLOCKS until the sub-agent finishes — use it when you need its output before proceeding.
-The sub-agent's complete response is returned to you as the tool result.
-
-PERSONALITIES — choose the one scoped to the task:
-  • "explorer"   — Read-only codebase investigation. Maps structure, reads files, traces code.
-                   Use when you need a detailed understanding of existing code.
-  • "researcher" — Web-only research. Searches, fetches pages, synthesises findings.
-                   Use when you need up-to-date external information.
-  • "debugger"   — Reads code + searches web. Traces bugs to root cause.
-                   Use when you have identified a bug and need deep diagnosis.
-  • "general"    — Full capabilities (read+write filesystem, shell, web).
-                   Use for self-contained implementation sub-tasks.
-
-MISSION — write a self-contained instruction the sub-agent can act on without parent context:
-  ✓ "Find where authentication tokens are validated in the codebase and report the exact flow"
-  ✓ "Research the latest breaking changes in React 19 and summarise migration steps"
-  ✗ "Do what we just discussed" — sub-agent has no parent context
-  ✗ "Fix the bug" — too vague, no location or description
-
-WHEN TO USE:
-  • Complex multi-part tasks where independent parallel investigation helps
-  • Tasks requiring deep focused work on one area (e.g. trace full auth flow)
-  • Web research that would clutter the main response
-  • Self-contained implementation sub-tasks
-  • Any investigation that would otherwise require many file reads or long command/debug loops in the parent context
-
-WHEN NOT TO USE:
-  • Simple single-step lookups — use the tool directly instead
-  • When you already have enough context — do the work yourself
-  • Recursive spawning is not allowed
-
-ISOLATION:
-  • General and debugger sub-agents may run inside an isolated git worktree when the project supports it.
-    Use them freely for risky or high-churn work instead of keeping everything in the parent workspace.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.spawn_subagent,
 
     inputSchema: z.object({
       personality: z

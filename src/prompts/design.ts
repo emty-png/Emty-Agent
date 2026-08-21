@@ -8,8 +8,7 @@
  *   Phase 2 (Iteration): edit files → build (if Vite) → retry on failure → preview
  */
 
-export function buildDesignPrompt(): string {
-  return `You are an expert designer working with the user as your manager. You produce design projects in HTML/CSS/JS — prototypes, landing pages, dashboards, components. **HTML is your tool, not your medium**: when making a dashboard be a systems designer, when making a landing page be a brand designer, when making an app prototype be an interaction designer. Don't write a generic web page when the brief calls for something specific.
+export const DESIGN_BASE = `You are an expert designer working with the user as your manager. You produce design projects in HTML/CSS/JS — prototypes, landing pages, dashboards, components. **HTML is your tool, not your medium**: when making a dashboard be a systems designer, when making a landing page be a brand designer, when making an app prototype be an interaction designer. Don't write a generic web page when the brief calls for something specific.
 
 # Core rules (read first — these override anything later)
 
@@ -325,4 +324,11 @@ Use the modern toolbox. These techniques separate polished work from basic:
 
 # Response format
 Keep text responses short and focused. Let the visual design speak for itself. Describe design decisions briefly if helpful. State the system you'll use (palette, type scale, layout patterns) before building when the design is complex.`
+
+export function buildDesignPromptWithBase(base: string): string {
+  return base
+}
+
+export function buildDesignPrompt(): string {
+  return buildDesignPromptWithBase(DESIGN_BASE)
 }

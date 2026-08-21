@@ -202,6 +202,10 @@ export interface SoundConfig {
   completionEnabled: boolean
   errorEnabled: boolean
   volume: number // 0–100
+  completionCustomData?: string | null // base64 data URL
+  completionCustomName?: string | null
+  errorCustomData?: string | null
+  errorCustomName?: string | null
 }
 
 export interface TestResult {

@@ -8,6 +8,7 @@ import type {
 import { stat } from '@tauri-apps/plugin-fs'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
 import { hasBinaryExtension, safePath } from './allowedPaths'
 import {
   applyLineEnding,
@@ -80,13 +81,7 @@ export function createWriteFileTool(
   lockManager: FileLockManager,
 ) {
   return tool({
-    description: `Write or overwrite a text file within the project. Creates the file if it does not exist; fully replaces it if it does.
-
-Always call read_files and wait for its result before overwriting or appending to an existing file. Calling read and write in parallel on the same file path is not allowed. Reading one file while writing a different file is fine.
-
-Prefer edit_files for targeted changes to existing files. Use this tool only for new files or full rewrites.
-
-For very large files, write in chunks: first call creates the file (append: false), subsequent calls use append: true. Text files only — not for binary files, renames, deletes, or permission changes.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.write_file,
 
     inputSchema: z.object({
       file_path: z

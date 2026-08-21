@@ -8,6 +8,7 @@ import type {
 import { stat } from '@tauri-apps/plugin-fs'
 import { tool } from 'ai'
 import { z } from 'zod'
+import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
 import { hasBinaryExtension, safePath } from './allowedPaths'
 import {
   applyLineEnding,
@@ -309,17 +310,7 @@ export function createEditFilesTool(
   lockManager: FileLockManager,
 ) {
   return tool({
-    description: `Apply one or more search-and-replace edits to existing files. Edits for each file are applied in order; if one fails, all edits for that file are rolled back.
-
-Always call read_files and wait for its result before editing a file. Calling read and edit in parallel on the same file path is not allowed. Reading one file while editing a different file is fine.
-
-Prefer this tool over write_file for modifying existing files.
-
-Rules:
-- old_string must exactly match the target text, including whitespace and indentation.
-- old_string must be unique within the file. If it matches multiple locations, expand it to include more context.
-- Set replace_all: true to replace every occurrence intentionally.
-- To create a new file, use old_string: "" on a path that does not exist yet.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.edit_files,
 
     inputSchema: z.object({
       edits: z

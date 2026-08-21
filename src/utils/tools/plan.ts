@@ -3,6 +3,7 @@ import { exists, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { tool } from 'ai'
 import { z } from 'zod'
 import { createUnifiedDiff, diffLineStats, ensureDir, normalizeLineEndings } from './fs/shared'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 export interface PlanCreatedEvent {
   filepath: string
@@ -53,11 +54,7 @@ export function createPlanTools(options: CreatePlanToolsOptions) {
 
   return {
     plan: tool({
-      description: [
-        'Write or replace a production-quality implementation plan for the user to review before modifying files.',
-        'The plan is saved to ~/.emty/plans/<conversation_id>/<planName>.md and the result includes a unified diff plus added/removed line counts.',
-        'Use concise but complete markdown with scope, constraints, affected files, implementation steps, validation, rollback or risk notes, and explicit acceptance criteria.',
-      ].join(' '),
+      description: DEFAULT_TOOL_DESCRIPTIONS.plan,
       inputSchema: z.object({
         planContent: z.string().min(1).describe('The complete markdown content of the plan. Include scope, approach, validation, risks, and acceptance criteria.'),
         planName: z.string().optional().describe('Optional markdown filename for the plan. Defaults to plan.md. Path separators are not allowed.'),

@@ -2,6 +2,7 @@ import type { WorkspaceSnapshot } from '@/utils/worktrees'
 import { tool } from 'ai'
 import { z } from 'zod'
 import { consolidateMemories, deleteAgentMemory, listAgentMemories, saveAgentMemory, updateAgentMemory } from '@/utils/memory'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 export function createMemoryTools(
   enabled: boolean,
@@ -12,20 +13,7 @@ export function createMemoryTools(
 
   return {
     remember_memory: tool({
-      description: `Save a durable memory that MUST persist across future chats and sessions.
-
-CRITICAL RULES:
-1. ALWAYS call list_memories first to ensure you are not creating a duplicate.
-2. NEVER store secrets, API keys, passwords, PII, or temporary debugging notes.
-3. ALWAYS provide a stable, descriptive key in slug format (e.g., "prefer-single-quotes", "db-schema-users").
-
-TWO KINDS OF MEMORY:
-- "preference": User-stated rules, habits, or workflow choices (e.g., "Always use pnpm", "Prefer functional components"). Usually "global" scope.
-- "note": Project facts, patterns, conventions, or architectural decisions discovered in the codebase (e.g., "Auth uses NextAuth", "Tests are in __tests__"). Usually "project" scope.
-
-SCOPES:
-- "global": Applies to all projects and workspaces for this user.
-- "project": Applies only to the current repository/workspace.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.remember_memory,
       inputSchema: z.object({
         scope: z.enum(['global', 'project']).describe('Where this memory should apply in future chats.'),
         kind: z.enum(['preference', 'note']).describe('preference = user-stated rules/habits. note = project facts you discovered.'),
@@ -62,11 +50,7 @@ SCOPES:
     }),
 
     update_memory: tool({
-      description: `Update an existing memory entry by its exact key.
-
-ALWAYS call list_memories first to retrieve the exact key and current content.
-Use this to refine, correct, or expand upon an existing memory without deleting and re-creating it.
-If the memory is completely obsolete, use forget_memory instead.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.update_memory,
       inputSchema: z.object({
         scope: z.enum(['global', 'project']).describe('Where this memory applies.'),
         key: z.string().min(3).max(40).describe('The exact stable key of the memory to update (from list_memories).'),
@@ -94,10 +78,7 @@ If the memory is completely obsolete, use forget_memory instead.`,
     }),
 
     forget_memory: tool({
-      description: `Permanently delete a previously saved memory by its exact key.
-
-ALWAYS call list_memories first to confirm the key exists and to ensure you are deleting the correct entry.
-Use this when a user explicitly retracts a preference, or when a project fact becomes completely obsolete and incorrect.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.forget_memory,
       inputSchema: z.object({
         scope: z.enum(['global', 'project']).describe('Where this memory applies.'),
         key: z.string().min(3).max(40).describe('The exact stable key of the memory to delete (from list_memories).'),
@@ -121,11 +102,7 @@ Use this when a user explicitly retracts a preference, or when a project fact be
     }),
 
     list_memories: tool({
-      description: `List all stored memories, grouped by scope and kind, along with storage budget status.
-
-ALWAYS call this tool BEFORE using remember_memory, update_memory, forget_memory, or consolidate_memories.
-You must verify existing entries to prevent duplicates and to obtain the exact keys required for updates or deletions.
-This operation is cheap and does not consume significant context.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.list_memories,
       inputSchema: z.object({
         scope: z.enum(['global', 'project', 'all']).default('all').describe('Which scope to list. "all" shows both.'),
         kind: z.enum(['preference', 'note', 'all']).default('all').describe('Which kind to list. "all" shows both.'),
@@ -169,11 +146,7 @@ This operation is cheap and does not consume significant context.`,
     }),
 
     consolidate_memories: tool({
-      description: `Merge and compress multiple memories of the same scope and kind into a single concise summary.
-
-WARNING: This operation DELETES all existing memories of the specified scope and kind, and replaces them with your summary.
-ONLY use this when list_memories shows the budget is near capacity (e.g., >80% full) or when there is massive redundancy.
-You MUST call list_memories first, read all the entries carefully, and ensure your summary captures ALL essential information without losing critical context.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.consolidate_memories,
       inputSchema: z.object({
         scope: z.enum(['global', 'project']).describe('Which scope to consolidate.'),
         kind: z.enum(['preference', 'note']).describe('Which kind to consolidate.'),

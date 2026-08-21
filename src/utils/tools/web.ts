@@ -6,6 +6,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { platformFetch } from '@/utils/platformFetch'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 const TAVILY_BASE = 'https://api.tavily.com'
 const MAX_SNIPPET_CHARS = 800
@@ -93,11 +94,7 @@ function buildSerperResults(data: unknown): SearchResult[] {
 
 export function createWebSearchTool() {
   return tool({
-    description: `Search the web for current information. Use for docs, package versions, changelogs, error messages, CVEs, or anything that may have changed since training.
-
-Batch up to 5 queries per call — group related searches rather than making separate calls.
-Returns per-result title, URL, snippet, and date.
-Don't search for things you already know. Use filesystem tools for file/directory lookups.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.web_search,
     inputSchema: z.object({
       queries: z
         .array(z.string().min(1))
@@ -298,9 +295,7 @@ Don't search for things you already know. Use filesystem tools for file/director
 
 export function createWebFetchTool() {
   return tool({
-    description: `Fetch and extract readable text from web pages via Jina Reader (no key required). Returns clean markdown — ads and navigation stripped.
-
-Batch up to 10 URLs per call; all fetched concurrently. Use to read a search result in full, fetch official docs, or inspect a GitHub issue, PR, or release page. Won't work for pages that require login.`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.web_fetch,
     inputSchema: z.object({
       urls: z
         .array(z.string().url())

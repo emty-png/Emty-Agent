@@ -8,7 +8,7 @@ import { useSettingsStore } from '@/stores/settings'
 const settingsStore = useSettingsStore()
 const chatStore = useChatStore()
 
-const { agent, contextCaching, autoContext, memory, enabledModels } = storeToRefs(settingsStore)
+const { agent, contextCaching, autoContext, memory, enabledModels, showBrowserButton, showLifecycleHooks } = storeToRefs(settingsStore)
 const { sessionToolApprovals } = storeToRefs(chatStore)
 
 type PermissionMode = 'ask' | 'auto' | 'yolo'
@@ -152,6 +152,47 @@ function clearSessionApprovals() {
             :aria-pressed="memory.enabled"
             @click="memory.enabled = !memory.enabled"
           ><span class="model-toggle-thumb" /></button>
+        </label>
+      </div>
+    </div>
+
+    <!-- Interface Card -->
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <h3 class="settings-card-title">
+          Interface
+        </h3>
+      </div>
+      <div class="settings-list">
+        <label class="settings-item">
+          <div class="settings-item-content">
+            <span class="settings-item-label">Show browser button</span>
+            <span class="settings-item-desc">Display the browser icon in the tab bar. Disable to hide it.</span>
+          </div>
+          <button
+            class="model-toggle"
+            :class="{ 'model-toggle--on': showBrowserButton }"
+            type="button"
+            :aria-pressed="showBrowserButton"
+            @click="showBrowserButton = !showBrowserButton"
+          >
+            <span class="model-toggle-thumb" />
+          </button>
+        </label>
+        <label class="settings-item">
+          <div class="settings-item-content">
+            <span class="settings-item-label">Show lifecycle hooks</span>
+            <span class="settings-item-desc">Display Lifecycle Hooks in the sidebar. Disable to hide it.</span>
+          </div>
+          <button
+            class="model-toggle"
+            :class="{ 'model-toggle--on': showLifecycleHooks }"
+            type="button"
+            :aria-pressed="showLifecycleHooks"
+            @click="showLifecycleHooks = !showLifecycleHooks"
+          >
+            <span class="model-toggle-thumb" />
+          </button>
         </label>
       </div>
     </div>

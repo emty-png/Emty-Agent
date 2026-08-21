@@ -12,6 +12,7 @@ import { createSkillTools } from '@/utils/tools/skills'
 import { createSleepTool } from '@/utils/tools/sleep'
 import { createSpawnSubAgentTool } from '@/utils/tools/subagent'
 import { createTaskTools } from '@/utils/tools/todos'
+import { applyDescriptionOverrides } from '@/utils/tools/toolDescriptions'
 import { createWebTools } from '@/utils/tools/web'
 
 export async function buildProfile(ctx: ToolRegistryContext): Promise<ToolSet> {
@@ -28,7 +29,7 @@ export async function buildProfile(ctx: ToolRegistryContext): Promise<ToolSet> {
   const rawTaskTools = createTaskTools(ctx.todoCallback ?? (() => {}), ctx.initialTasks)
   const { reset: _resetTasks, ...taskTools } = rawTaskTools
 
-  return {
+  const tools: ToolSet = {
     ...planTools,
     ask_questions: createQuestionsTool(ctx.questionCallback ?? (() => {})),
     ...taskTools,
@@ -50,4 +51,6 @@ export async function buildProfile(ctx: ToolRegistryContext): Promise<ToolSet> {
         }
       : {}),
   }
+
+  return applyDescriptionOverrides(tools, ctx.toolDescriptionOverrides)
 }

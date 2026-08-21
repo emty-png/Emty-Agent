@@ -5,8 +5,11 @@ import {
   dbDeleteConversation,
   dbDeleteConversationsByWorkspace,
   dbListConversations,
+  dbListPinnedConversations,
   dbLoadMessages,
+  dbPinConversation,
   dbSearchConversations,
+  dbUnpinConversation,
   dbUpdateConversationTitle,
 } from '@/db/database'
 import { useChatStore } from '@/stores/chat'
@@ -16,6 +19,7 @@ const PAGE_SIZE = 50
 
 export const useHistoryStore = defineStore('history', () => {
   const conversations = ref<ConversationRow[]>([])
+  const pinnedConversations = ref<ConversationRow[]>([])
   const searchQuery = ref('')
   const loading = ref(false)
   const hasMore = ref(true)
@@ -25,6 +29,10 @@ export const useHistoryStore = defineStore('history', () => {
   const isEmpty = computed(() => !loading.value && conversations.value.length === 0)
 
   // ── load / search ────────────────────────────────────────────────────────────
+  async function loadPinned(): Promise<void> {
+    pinnedConversations.value = await dbListPinnedConversations()
+  }
+
   async function load(reset = false): Promise<void> {
     if (loading.value)
       return
@@ -39,6 +47,7 @@ export const useHistoryStore = defineStore('history', () => {
 
       if (reset) {
         conversations.value = rows
+        await loadPinned()
       }
       else {
         // deduplicate by id in case of concurrent appends
@@ -70,11 +79,15 @@ export const useHistoryStore = defineStore('history', () => {
     const conv = conversations.value.find(c => c.id === id)
     if (conv)
       conv.title = trimmed
+    const pinnedConv = pinnedConversations.value.find(c => c.id === id)
+    if (pinnedConv)
+      pinnedConv.title = trimmed
   }
 
   async function remove(id: string): Promise<void> {
     await dbDeleteConversation(id)
     conversations.value = conversations.value.filter(c => c.id !== id)
+    pinnedConversations.value = pinnedConversations.value.filter(c => c.id !== id)
 
     // also close any open tab for this conversation
     const chat = useChatStore()
@@ -83,14 +96,36 @@ export const useHistoryStore = defineStore('history', () => {
       chat.closeTab(tab.id)
   }
 
+  async function pin(id: string): Promise<void> {
+    await dbPinConversation(id)
+    const conv = conversations.value.find(c => c.id === id)
+    if (conv) {
+      conv.is_pinned = 1
+    }
+    await loadPinned()
+  }
+
+  async function unpin(id: string): Promise<void> {
+    await dbUnpinConversation(id)
+    const conv = conversations.value.find(c => c.id === id)
+    if (conv) {
+      conv.is_pinned = 0
+    }
+    await loadPinned()
+  }
+
   async function removeByWorkspace(workspacePath: string): Promise<void> {
     // collect ids of conversations belonging to this workspace so we can close open tabs
-    const convIds = conversations.value
-      .filter(c => c.workspace_path === workspacePath)
-      .map(c => c.id)
+    const allConvs = [...conversations.value, ...pinnedConversations.value]
+    const convIds = Array.from(new Set(
+      allConvs
+        .filter(c => c.workspace_path === workspacePath)
+        .map(c => c.id),
+    ))
 
     await dbDeleteConversationsByWorkspace(workspacePath)
     conversations.value = conversations.value.filter(c => c.workspace_path !== workspacePath)
+    pinnedConversations.value = pinnedConversations.value.filter(c => c.workspace_path !== workspacePath)
 
     // close any open tabs for the deleted conversations
     const chat = useChatStore()
@@ -198,16 +233,20 @@ export const useHistoryStore = defineStore('history', () => {
 
   return {
     conversations,
+    pinnedConversations,
     searchQuery,
     loading,
     hasMore,
     error,
     isEmpty,
     load,
+    loadPinned,
     search,
     rename,
     remove,
     removeByWorkspace,
+    pin,
+    unpin,
     openInTab,
     prepend,
   }

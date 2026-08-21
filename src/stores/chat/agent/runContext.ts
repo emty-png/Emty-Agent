@@ -31,6 +31,7 @@ export interface SettingsForContext {
   agent: { permissionMode: 'ask' | 'auto' | 'yolo'; gitCoAuthor: boolean; subagents?: { isolation: 'inherit' | 'worktree' }; defaultModelUid?: string | null }
   disabledSkillIds: string[]
   mcpServers: McpServerConfig[]
+  promptOverrides: Record<string, string>
   getToolDisabledIds: (mode?: 'build' | 'design') => string[]
 }
 
@@ -147,7 +148,7 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
     .filter(group => group.tools.length > 0)
 
   const promptBuildResult = await buildAgentSystemPrompt({
-    basePrompt: buildSystemPrompt(effectiveProjectPath, tab.mode || 'build', osInfo as import('@/utils/os').OsInfo | undefined, settings.agent.gitCoAuthor),
+    basePrompt: buildSystemPrompt(effectiveProjectPath, tab.mode || 'build', osInfo as import('@/utils/os').OsInfo | undefined, settings.agent.gitCoAuthor, settings.promptOverrides),
     projectPath: effectiveProjectPath,
     requestText,
     autoContext: settings.autoContext,

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { ConversationRow } from '@/db/database'
-import { CheckSquare, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Square, Trash2, X } from 'lucide-vue-next'
+import { CheckSquare, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Square, Trash2, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useHistoryStore } from '@/stores/history'
 
 // ── open ──────────────────────────────────────────────────────────────────────
@@ -11,10 +11,10 @@ const emit = defineEmits<{
   (e: 'openChat'): void
 }>()
 const history = useHistoryStore()
-const { conversations, loading, hasMore, isEmpty, searchQuery } = storeToRefs(history)
+const { conversations, pinnedConversations, loading, hasMore, isEmpty, searchQuery } = storeToRefs(history)
 
 // ── load on mount ─────────────────────────────────────────────────────────────
-onMounted(() => history.load(true))
+history.load(true)
 
 // ── search ────────────────────────────────────────────────────────────────────
 let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -48,7 +48,11 @@ function toggleSelect(id: string) {
 }
 
 function selectAll() {
-  selectedIds.value = new Set(conversations.value.map(c => c.id))
+  selectedIds.value = new Set(
+    conversations.value
+      .filter(c => !isPinned(c.id))
+      .map(c => c.id),
+  )
 }
 
 function clearSelection() {
@@ -71,6 +75,21 @@ async function confirmBulkDeleteAction() {
 }
 
 // ── context menu ──────────────────────────────────────────────────────────────
+// ── pin / unpin ───────────────────────────────────────────────────────────────
+function isPinned(id: string): boolean {
+  return pinnedConversations.value.some(c => c.id === id)
+}
+
+async function togglePin(id: string) {
+  closeMenu()
+  if (isPinned(id)) {
+    await history.unpin(id)
+  }
+  else {
+    await history.pin(id)
+  }
+}
+
 const menuOpen = ref<string | null>(null)
 const menuPos = ref({ x: 0, y: 0 })
 
@@ -230,8 +249,13 @@ function relativeTime(ts: number): string {
 
           <!-- normal row -->
           <template v-else>
+            <!-- left slot: Pin icon OR Checkbox -->
+            <div v-if="isPinned(conv.id)" class="conv-pin-slot">
+              <Pin :size="14" :stroke-width="2.2" class="text-(--color-text-dim) rotate-45" />
+            </div>
             <!-- checkbox (visible on hover or when selecting) -->
             <button
+              v-else
               class="conv-checkbox"
               :class="{ 'conv-checkbox--checked': selectedIds.has(conv.id), 'conv-checkbox--visible': isSelecting }"
               @click.stop="toggleSelect(conv.id)"
@@ -280,6 +304,11 @@ function relativeTime(ts: number): string {
         <button class="ctx-item" @click="startRename(conversations.find(c => c.id === menuOpen)!)">
           <Pencil :size="13" :stroke-width="1.8" />
           Rename
+        </button>
+        <button class="ctx-item" @click="togglePin(menuOpen!)">
+          <PinOff v-if="isPinned(menuOpen!)" :size="13" :stroke-width="1.8" />
+          <Pin v-else :size="13" :stroke-width="1.8" />
+          {{ isPinned(menuOpen!) ? 'Unpin' : 'Pin' }}
         </button>
         <div class="ctx-divider" />
         <button class="ctx-item ctx-item--danger" @click="startDelete(menuOpen!)">
@@ -573,6 +602,15 @@ function relativeTime(ts: number): string {
 
 .conv-checkbox:hover {
   color: var(--color-text-secondary);
+}
+
+.conv-pin-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 /* show actions only on hover or when menu is open */

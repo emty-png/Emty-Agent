@@ -53,7 +53,6 @@ const gitPaneStore = useGitPaneStore()
 const gitPaneOwner = computed(() => gitPaneStore.getOwner(props.tabId))
 const workspace = useGitWorkspace(toRef(props, 'cwd'), props.tabId)
 
-// ── Tab bar state ────────────────────────────────────────────────────────
 const activePane = ref<PaneType | null>(null)
 const openedTabs = ref<PaneType[]>([])
 const showTabMenu = ref(false)
@@ -87,11 +86,6 @@ function closeTab(tab: PaneType, event: Event) {
     gitPaneStore.setClosedPanes(props.tabId, [...closedIds, tab])
 }
 
-/**
- * Keeps an auto-managed tab (tools/plan/tasks) open exactly while its
- * visibility source is true — unless the user explicitly closed it, in
- * which case we respect that choice and never force it back open.
- */
 function watchAutoTab(source: () => boolean, tab: PaneType) {
   watch(source, visible => {
     if (visible) {
@@ -108,7 +102,6 @@ function watchAutoTab(source: () => boolean, tab: PaneType) {
   }, { immediate: true })
 }
 
-// ── Pane visibility ──────────────────────────────────────────────────────
 const toolEventCount = computed(() =>
   props.messages.reduce((count, message) => count + (message.role === 'assistant' ? message.toolEvents?.length ?? 0 : 0), 0),
 )
@@ -125,8 +118,6 @@ watchAutoTab(() => showToolsTab.value, 'tools')
 watchAutoTab(() => showPlanTab.value, 'plan')
 watchAutoTab(() => showTasksTab.value, 'tasks')
 
-// The review tab is only ever auto-opened, never auto-closed (closing a
-// repo mid-session shouldn't yank the tab away from under the user).
 watch(() => workspace.isRepo.value, visible => {
   if (visible && !gitPaneOwner.value.closedPanes.includes('review') && !openedTabs.value.includes('review')) {
     openedTabs.value.push('review')
@@ -190,7 +181,14 @@ function handleOpenDiffViewer(e: Event) {
   activePane.value = 'diffViewer'
 }
 
-// ── Scroll arrows for the pane tab strip ─────────────────────────────────
+watch(() => gitPaneOwner.value.diffViewerData, data => {
+  if (data) {
+    if (!openedTabs.value.includes('diffViewer'))
+      openedTabs.value.push('diffViewer')
+    activePane.value = 'diffViewer'
+  }
+}, { immediate: true })
+
 const paneTabListRef = ref<HTMLElement | null>(null)
 const paneCanScrollLeft = ref(false)
 const paneCanScrollRight = ref(false)

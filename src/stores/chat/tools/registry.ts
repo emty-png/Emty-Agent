@@ -20,6 +20,7 @@ export interface ToolRegistryContext {
   memoryEnabled: boolean
   mcpServers: McpServerConfig[]
   disabledToolIds: string[]
+  toolDescriptionOverrides: Record<string, string>
 
   // Callbacks
   snapshotCallback?: (relPath: string, absPath: string, content?: string | null) => Promise<void>

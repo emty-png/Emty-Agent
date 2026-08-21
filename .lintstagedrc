@@ -1,4 +1,5 @@
 {
-  "src/**/*.{ts,vue}": "eslint",
-  "src/**/*.{css,json,md}": "prettier --write"
+  "src/**/*.{ts,vue}": "eslint --fix --no-cache",
+  "src/**/*.{css,json,md}": "prettier --write --ignore-unknown",
+  "*.{json,md}": "prettier --write --ignore-unknown"
 }

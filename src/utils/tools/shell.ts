@@ -16,6 +16,7 @@ import { tool } from 'ai'
 import { readonly, ref, shallowRef } from 'vue'
 import { z } from 'zod'
 import { safePath } from './fs/allowedPaths'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 const CO_AUTHOR_TRAILER = 'Co-authored-by: Emty Agent <289245867+emty-agent@users.noreply.github.com>'
 
@@ -1246,17 +1247,7 @@ export function createRunCommandTool(projectPath: string, runtimeEvents?: ShellT
     cwdRef = projectPath
 
   return tool({
-    description: `Run a shell command in the project directory.
-
-Use is_background: true for long-running processes (dev servers, watchers) — returns immediately.
-Large output (>500 lines) is automatically truncated (tail kept) and saved to a log file.
-Working directory persists across commands via the cwd parameter.
-
-Examples:
-- { command: "pnpm build" }
-- { command: "curl http://localhost:8000" }
-- { command: "pnpm dev", is_background: true }
-- { command: "ls", cwd: "src" }`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.run_command,
     inputSchema: runCommandInputSchema,
     execute: async (input, execOptions) => {
       const { abortSignal } = execOptions
@@ -1409,17 +1400,7 @@ export function createGitCommandTool(projectPath: string, coAuthor = false, runt
     : ''
 
   return tool({
-    description: `Production-grade git runner.
-
-For normal execution, omit action and pass command or commands.
-String commands are allowed, so "status --short" is valid.
-Use action: "status", "kill", or "list" to inspect or stop tracked tasks from either git_command or run_command.
-
-Examples:
-- { command: "status --short" }
-- { commands: ["status --short", "diff --stat"] }
-- { commands: [{ args: ["commit", "-m", "feat: add hero"] }] }
-- { action: "status", id: "cmd4" }${coAuthorNote}`,
+    description: DEFAULT_TOOL_DESCRIPTIONS.git_command + coAuthorNote,
     inputSchema: z.object({
       action: z.enum(['exec', 'status', 'kill', 'list']).optional().describe('Optional. Omit this for normal git execution.'),
       command: z.union([

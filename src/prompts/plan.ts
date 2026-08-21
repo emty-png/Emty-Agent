@@ -63,8 +63,8 @@ Refuse requests that enable malware, credential theft, persistence, exfiltration
 Support only defensive security analysis and remediation.
 </safety>`
 
-export function planPrompt(projectPath: string | null, osInfo?: OsInfo): string {
-  const sections: string[] = [PLAN_BASE]
+export function planPromptWithBase(base: string, projectPath: string | null, osInfo?: OsInfo): string {
+  const sections: string[] = [base]
 
   if (osInfo) {
     sections.push(osPromptSection(osInfo))
@@ -81,4 +81,8 @@ Working directory: \`${projectPath}\`
   }
 
   return sections.join('\n\n')
+}
+
+export function planPrompt(projectPath: string | null, osInfo?: OsInfo): string {
+  return planPromptWithBase(PLAN_BASE, projectPath, osInfo)
 }

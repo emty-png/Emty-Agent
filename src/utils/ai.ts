@@ -12,8 +12,9 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { APICallError, isLoopFinished, RetryError, streamText } from 'ai'
-import { buildPrompt } from '@/prompts/build'
+import { buildPrompt, buildPromptWithBase } from '@/prompts/build'
 import { buildDesignPrompt } from '@/prompts/design'
+import { planPrompt, planPromptWithBase } from '@/prompts/plan'
 import { platformFetch } from '@/utils/platformFetch'
 import { repairJson } from '@/utils/repairJson'
 
@@ -421,8 +422,21 @@ export function buildSystemPrompt(
   _mode: ChatMode = 'build',
   osInfo?: OsInfo,
   coAuthor?: boolean,
+  promptOverrides?: Record<string, string>,
 ): string {
-  if (_mode === 'design')
-    return buildDesignPrompt()
+  if (_mode === 'design') {
+    const override = promptOverrides?.['prompt-design']
+    return override ?? buildDesignPrompt()
+  }
+  if (_mode === 'plan') {
+    const planOverride = promptOverrides?.['prompt-plan']
+    return planOverride
+      ? planPromptWithBase(planOverride, projectPath, osInfo)
+      : planPrompt(projectPath, osInfo)
+  }
+  const buildOverride = promptOverrides?.['prompt-build']
+  if (buildOverride) {
+    return buildPromptWithBase(buildOverride, projectPath, osInfo, coAuthor)
+  }
   return buildPrompt(projectPath, osInfo, coAuthor)
 }

@@ -1,1 +1,136 @@
-npx lint-staged
+#!/usr/bin/env sh
+# ==============================================================================
+# Husky Pre-commit Hook — EmtyAgent (Production Grade)
+# ==============================================================================
+# Purpose:
+#   - Enforce code quality on staged files only (fast, no full scan)
+#   - Run ESLint (antfu) with --fix on TS/Vue (respects eslint.config.js)
+#   - Run Prettier on CSS/JSON/MD (+ root JSON/MD)
+#   - Auto-re-stage fixes via lint-staged (concurrent, auto-re-stage)
+#   - Block commit on unfixable errors with actionable messages
+#
+# Stack:
+#   - Vue 3 + TypeScript + Vite + Tailwind v4 + ESLint antfu + Prettier
+#   - pnpm workspace, Tauri 2 (src-tauri ignored by lint)
+#
+# Performance:
+#   - lint-staged runs only on `git diff --cached` (staged) files
+#   - Typical: ~8-15s on Windows (antfu 291 rules) / ~2-4s on Linux/macOS warm
+#   - Keep hooks <30s — do NOT run `vue-tsc --noEmit` / `vitest` here (move to CI)
+#   - Move typecheck + tests to pre-push or CI (see check.yml)
+#
+# Bypass (emergency only):
+#   git commit --no-verify -m "hotfix: ..."
+#   HUSKY=0 git commit -m "..."   (also LEFTHOOK=0 for compatibility)
+#
+# CI parity:
+#   Local hook = fast feedback
+#   CI (.github/workflows/check.yml) = authoritative: lint:fix → lint → typecheck
+#
+# Maintenance:
+#   - Edit lint rules: eslint.config.js
+#   - Edit format rules: .prettierrc / .prettierignore
+#   - Edit staged tasks: .lintstagedrc
+#   - Test hook: pnpm exec lint-staged --verbose  (dry run without commit)
+#   - Skip hook test: git commit --no-verify --allow-empty -m "test: hook"
+# ==============================================================================
+
+set -e
+
+# ── colors (disable if not a TTY / CI) ───────────────────────────────────────
+if [ -t 1 ]; then
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  CYAN='\033[0;36m'
+  DIM='\033[2m'
+  NC='\033[0m'
+else
+  RED=''; GREEN=''; YELLOW=''; CYAN=''; DIM=''; NC=''
+fi
+
+echo "${CYAN}▶ Pre-commit: lint-staged (ESLint + Prettier) — staged files only${NC}"
+
+# ── guard: node_modules exists ───────────────────────────────────────────────
+if [ ! -d "node_modules/.bin" ]; then
+  echo "${RED}✖ node_modules/.bin not found${NC}"
+  echo "${YELLOW}  Run: pnpm install${NC}"
+  exit 1
+fi
+
+# ── guard: lint-staged installed ─────────────────────────────────────────────
+if [ ! -f "node_modules/.bin/lint-staged" ]; then
+  if command -v pnpm >/dev/null 2>&1; then
+    if ! pnpm exec lint-staged --version >/dev/null 2>&1; then
+      echo "${RED}✖ lint-staged not found${NC}"
+      echo "${YELLOW}  Run: pnpm add -D lint-staged && pnpm install${NC}"
+      exit 1
+    fi
+  elif ! npx lint-staged --version >/dev/null 2>&1; then
+    echo "${RED}✖ lint-staged not found${NC}"
+    echo "${YELLOW}  Run: pnpm add -D lint-staged && pnpm install${NC}"
+    exit 1
+  fi
+fi
+
+# ── pick runner (direct node is fastest; pnpm/npx add 15-20s overhead) ──────
+if [ -f "node_modules/lint-staged/bin/lint-staged.js" ]; then
+  LINT_STAGED="node node_modules/lint-staged/bin/lint-staged.js"
+elif command -v pnpm >/dev/null 2>&1; then
+  LINT_STAGED="pnpm exec lint-staged"
+else
+  LINT_STAGED="npx lint-staged"
+fi
+
+# ── fast-exit if no relevant staged files ────────────────────────────────────
+STAGED_RELEVANT=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|vue|css|json|md)$' || true)
+if [ -z "$STAGED_RELEVANT" ]; then
+  echo "${DIM}  No staged TS/Vue/CSS/JSON/MD files — skipping${NC}"
+  echo "${GREEN}✔ Pre-commit: nothing to lint${NC}"
+  exit 0
+fi
+
+# ── timing ───────────────────────────────────────────────────────────────────
+if command -v date >/dev/null 2>&1; then
+  START=$(date +%s)
+else
+  START=0
+fi
+
+# ── run lint-staged ──────────────────────────────────────────────────────────
+# --verbose shows per-file tasks; concurrent (default true) for speed
+# globs are disjoint (ts/vue vs css/json/md) so parallel is safe
+echo "${DIM}  Staged files:${NC}"
+echo "$STAGED_RELEVANT" | sed 's/^/    • /'
+echo ""
+
+set +e
+$LINT_STAGED --verbose
+STATUS=$?
+set -e
+
+if [ $STATUS -ne 0 ]; then
+  echo ""
+  echo "${RED}✖ Pre-commit failed — commit blocked${NC}"
+  echo "${YELLOW}  Fixes:${NC}"
+  echo "${YELLOW}    • Auto-fixable: lint-staged already fixed & re-staged — review with 'git diff --cached' then re-commit${NC}"
+  echo "${YELLOW}    • Manual: fix ESLint errors (eslint.config.js: antfu + vue + ts + formatters)${NC}"
+  echo "${YELLOW}    • Manual: fix Prettier errors (.prettierrc / .prettierignore)${NC}"
+  echo "${YELLOW}    • Re-run: pnpm exec lint-staged --verbose  or  pnpm lint${NC}"
+  echo "${YELLOW}    • Bypass (not recommended): git commit --no-verify${NC}"
+  echo ""
+  echo "${DIM}  CI will also run: pnpm lint:fix → pnpm lint → pnpm typecheck (vue-tsc --noEmit)${NC}"
+  exit $STATUS
+fi
+
+# ── success ──────────────────────────────────────────────────────────────────
+if [ "$START" -ne 0 ] && command -v date >/dev/null 2>&1; then
+  END=$(date +%s)
+  DUR=$((END - START))
+  echo "${GREEN}✔ Pre-commit passed in ${DUR}s — fixes auto-re-staged${NC}"
+else
+  echo "${GREEN}✔ Pre-commit passed — fixes auto-re-staged${NC}"
+fi
+
+echo "${DIM}  Next: git commit will continue. CI enforces full check.${NC}"
+exit 0

@@ -1,0 +1,11 @@
+# Husky hooks must stay LF even on Windows (autocrlf)
+.husky/* text eol=lf
+.husky/pre-commit text eol=lf
+
+# Ensure LF for source files per AGENTS.md (endOfLine: lf)
+*.ts text eol=lf
+*.vue text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf

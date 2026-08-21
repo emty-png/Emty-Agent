@@ -15,6 +15,7 @@ import {
   browserScreenshot,
   browserSwitchPage,
 } from '@/utils/browser/controller'
+import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
 const targetFields = {
   selector: z.string().optional().describe('CSS selector for the target element.'),
@@ -43,13 +44,7 @@ function wrapExecute<TArgs, TResult>(
 export function createBrowserTools(ownerId: string) {
   return {
     browser_open: tool({
-      description: `\
-Open a URL inside the built-in Emty Agent browser for the current chat tab.
-This browser is embedded inside the app, not an external window, and is isolated per chat tab/browser tab.
-
-Use this when you need a real browser page the agent can later inspect or interact with.
-If the input is a plain domain like "vuejs.org", https:// is added automatically.
-If the input looks like a search query, it is opened as a DuckDuckGo search.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_open,
       inputSchema: z.object({
         url: z.string().min(1).describe('URL, domain, localhost address, or search query to open.'),
         newTab: z.boolean().optional().describe('Open in a new browser tab within this chat tab. Default: false.'),
@@ -58,9 +53,7 @@ If the input looks like a search query, it is opened as a DuckDuckGo search.`,
     }),
 
     browser_tabs: tool({
-      description: `\
-Manage the browser tabs that belong to the current chat tab.
-Use this to list open browser tabs, create a blank one, switch tabs, or close one.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_tabs,
       inputSchema: z.object({
         action: z.enum(['list', 'new', 'switch', 'close']),
         pageId: z.string().optional().describe('Browser page ID to switch to or close. Get this from action="list".'),
@@ -84,11 +77,7 @@ Use this to list open browser tabs, create a blank one, switch tabs, or close on
     }),
 
     browser_read: tool({
-      description: `\
-Read structured information from the currently active embedded browser page.
-Always call this after browser_open or browser_act to verify the page state before proceeding.
-Use mode="snapshot" first to understand the page layout before targeting specific elements.
-Use mode="element" only when you already know the selector or visible text of your target.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_read,
       inputSchema: z.object({
         mode: z.enum(['snapshot', 'element']),
         ...targetFields,
@@ -100,16 +89,7 @@ Use mode="element" only when you already know the selector or visible text of yo
     }),
 
     browser_act: tool({
-      description: `\
-Interact with the currently active embedded browser page.
-Supports clicking, typing, pressing a key, scrolling, and waiting for UI conditions.
-
-IMPORTANT: Always take a snapshot first (browser_read mode="snapshot") so you know what
-selectors and visible text are available. If an element is not found, re-read the page -
-the DOM may not have loaded yet. Prefer CSS selectors over text matching when stable.
-
-For press: use plain key names ("Enter", "Escape", "Tab", "ArrowDown") or modifier combos
-like "Ctrl+A", "Ctrl+C", "Meta+R". Modifier prefixes: Ctrl, Alt, Shift, Meta.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_act,
       inputSchema: z.object({
         action: z.enum(['click', 'type', 'press', 'scroll', 'wait']),
         ...targetFields,
@@ -147,11 +127,7 @@ like "Ctrl+A", "Ctrl+C", "Meta+R". Modifier prefixes: Ctrl, Alt, Shift, Meta.`,
     }),
 
     browser_history: tool({
-      description: `\
-Move backward or forward within the current browser tab's history, or reload the page.
-
-back/forward use the browser's native history stack, so they work for any in-page
-navigation (link clicks, form submits, JS pushState) - not only URLs opened via browser_open.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_history,
       inputSchema: z.object({
         action: z.enum(['back', 'forward', 'reload']),
       }),
@@ -168,31 +144,13 @@ navigation (link clicks, form submits, JS pushState) - not only URLs opened via 
     }),
 
     browser_screenshot: tool({
-      description: `\
-Capture a screenshot of the currently active browser page.
-Returns a base64-encoded PNG that you can analyse to understand the visual state of the page
-(layout, rendered content, CAPTCHA, login walls, etc.).
-When a project is open, the PNG is also saved to that project's root folder and the saved path is returned.
-
-Use this when browser_read does not give you enough context about the visual state.
-This is a best-effort in-page capture, so sites with strict rendering or security rules may return a degraded image or fail.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_screenshot,
       inputSchema: z.object({}),
       execute: wrapExecute(async () => browserScreenshot(ownerId)),
     }),
 
     browser_execute: tool({
-      description: `\
-Execute arbitrary JavaScript in the current browser page and return the result.
-
-Use this for operations that the standard browser_act / browser_read tools cannot express:
-reading computed DOM state, manipulating localStorage/sessionStorage, triggering custom events,
-extracting deeply nested data, or calling page-defined JS APIs.
-
-The script runs in the page's main frame. Promises are awaited automatically.
-The return value must be JSON-serialisable (objects, arrays, primitives). DOM nodes are not serialisable.
-
-Example: "return document.querySelectorAll('a').length" - returns number of links.
-Example: "return localStorage.getItem('token')" - reads a storage value.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_execute,
       inputSchema: z.object({
         script: z.string().min(1).describe(
           'JavaScript to execute. Use return to produce a value. '
@@ -203,15 +161,7 @@ Example: "return localStorage.getItem('token')" - reads a storage value.`,
     }),
 
     browser_cookies: tool({
-      description: `\
-Get, set, or delete cookies for the current browser page origin.
-
-- get: returns the cookies visible to page JavaScript for the active page URL.
-- set: creates or overwrites a cookie. domain is inferred from the active page when omitted.
-- delete: removes cookies matching a URL and optional name. Omit name to clear all cookies for that URL.
-
-Useful for injecting auth tokens, reading session state, or cleaning up between tests.
-Note: this does not expose HTTP-only cookies because the browser page itself cannot read them.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_cookies,
       inputSchema: z.object({
         action: z.enum(['get', 'set', 'delete']),
         url: z.string().optional().describe('URL filter for get/delete. Defaults to the active page URL.'),
@@ -233,10 +183,7 @@ Note: this does not expose HTTP-only cookies because the browser page itself can
     }),
 
     browser_logs: tool({
-      description: `\
-Retrieve and optionally clear the console logs of the currently active browser page.
-Intercepts console.log, console.warn, console.error, console.info, etc.
-Useful for debugging page errors or extracting logged information.`,
+      description: DEFAULT_TOOL_DESCRIPTIONS.browser_logs,
       inputSchema: z.object({
         clear: z.boolean().optional().describe('Clear the logs array after retrieving them. Default: true.'),
       }),

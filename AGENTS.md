@@ -6,15 +6,15 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 
 ## Tech stack
 
-| Layer       | Technology                                                                               |
-| ----------- | ---------------------------------------------------------------------------------------- |
-| Frontend    | Vue 3 (script setup), TypeScript, Vite, Pinia (persisted), Tailwind CSS v4, Lucide icons |
-| Backend     | Tauri 2 (Rust), SQLite via `tauri-plugin-sql`                                            |
-| AI SDK      | `ai` + provider SDKs (OpenAI, Anthropic, Google, OpenAI-compatible)                      |
-| Packages    | `zod`, `shiki`, `mermaid`, `devicon`, `gpt-tokenizer`                                    |
-| Testing     | Vitest, `vue-test-utils`, `happy-dom`                                                    |
-| Lint/Format | ESLint (`@antfu/eslint-config` + `eslint-plugin-format`), Prettier                       |
-| Hooks       | Husky pre-commit -> `lint-staged`                                                        |
+| Layer       | Technology                                                                                                        |
+| ----------- | ----------------------------------------------------------------------------------------------------------------- |
+| Frontend    | Vue 3 (script setup), TypeScript, Vite, Pinia (persisted), Tailwind CSS v4, Lucide icons                          |
+| Backend     | Tauri 2 (Rust), SQLite via `tauri-plugin-sql`                                                                     |
+| AI SDK      | `ai` + provider SDKs (OpenAI, Anthropic, Google, OpenAI-compatible)                                               |
+| Packages    | `zod`, `shiki`, `mermaid`, `devicon`, `gpt-tokenizer`                                                             |
+| Testing     | Vitest, `vue-test-utils`, `happy-dom`                                                                             |
+| Lint/Format | ESLint (`@antfu/eslint-config` + `eslint-plugin-format`), Prettier                                                |
+| Hooks       | Husky pre-commit → `lint-staged` (`eslint --fix` on `src/**/*.{ts,vue}`, `prettier --write` on `*.{css,json,md}`) |
 
 ---
 
@@ -29,14 +29,14 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 | `pnpm tauri build`   | Production build for current platform                            |
 | `pnpm typecheck`     | `vue-tsc --noEmit`                                               |
 | `pnpm lint`          | `eslint .` (also runs in CI)                                     |
-| `pnpm lint:fix`      | ESLint autofix (runs via pre-commit)                             |
+| `pnpm lint:fix`      | ESLint autofix                                                   |
 | `pnpm test`          | `vitest` (watch mode)                                            |
 | `pnpm test:run`      | `vitest run` (CI mode)                                           |
 | `pnpm test:coverage` | `vitest run --coverage` (provider `v8`)                          |
 
 > **CI order** (`check.yml`): `lint:fix` → `lint` → `typecheck` (no tests run in CI).
 > **Build workflow** (`build.yml`): multi-platform Tauri build (Ubuntu deps: `libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`, etc.).
-> Pre-commit hooks run `lint:fix` via `lint-staged` on staged `src/**/*.{ts,vue}`.
+> Pre-commit (`husky` + `lint-staged`, `.lintstagedrc`) runs `eslint --fix` on staged `src/**/*.{ts,vue}` and `prettier --write` on `*.{css,json,md}` — fast feedback, CI is authoritative.
 
 ---
 
@@ -101,7 +101,7 @@ A Tauri 2 desktop app (Rust backend + Vue 3 + TypeScript frontend). AI chat inte
 | Console         | `warn` (not error)                                                   |
 | Strict TS       | `exactOptionalPropertyTypes`, `noUnusedLocals`, `noUnusedParameters` |
 
-- Pre-commit (`lint-staged`) runs `eslint` on `src/**/*.{ts,vue}` and `prettier --write` on `src/**/*.{css,json,md}`.
+- Pre-commit (`husky` + `lint-staged`, `.lintstagedrc`) runs `eslint --fix --no-cache` on staged `src/**/*.{ts,vue}` and `prettier --write --ignore-unknown` on `*.{css,json,md}` (concurrent, auto-re-stage).
 - ESLint ignores: `dist`, `src-tauri`, `coverage`, `node_modules`, `*.d.ts`, `vite.config.*`.
 - Vue-specific rules enforced: `vue/block-order` (`script`, `template`, `style`), `vue/component-name-in-template-casing` (PascalCase), `vue/define-macros-order` (`defineOptions` → `defineProps` → `defineEmits` → `defineSlots`).
 

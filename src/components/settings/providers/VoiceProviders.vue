@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/stores/settings'
 import ProviderCard from './ProviderCard.vue'
 
 const s = useSettingsStore()
-const { sttProvider, stt, ttsProvider, tts, voiceProcessing, voiceDictionary, voiceSnippets } = storeToRefs(s)
+const { sttProvider, stt, ttsProvider, tts, voiceProcessing, voiceDictionary, voiceSnippets, showSttMic } = storeToRefs(s)
 
 function addDictionaryEntry() {
   voiceDictionary.value = [...voiceDictionary.value, { wrong: '', correct: '' }]
@@ -232,6 +232,24 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
 
 <template>
   <div class="voice-providers">
+    <!-- ── STT Mic visibility ─────────────────────────────────────────────── -->
+    <div class="processing-card">
+      <div class="processing-row">
+        <div class="processing-info">
+          <span class="processing-label">Show microphone button in chat</span>
+          <span class="processing-hint">Display the STT mic icon in the chat input toolbar. Disable to hide it.</span>
+        </div>
+        <button
+          class="custom-toggle"
+          :class="{ 'custom-toggle--on': showSttMic }"
+          :aria-label="showSttMic ? 'Hide STT mic button' : 'Show STT mic button'"
+          @click="showSttMic = !showSttMic"
+        >
+          <span class="custom-toggle-thumb" />
+        </button>
+      </div>
+    </div>
+
     <!-- ── STT Section ──────────────────────────────────────────────────── -->
     <div class="section-heading">
       <Mic :size="16" :stroke-width="1.8" />

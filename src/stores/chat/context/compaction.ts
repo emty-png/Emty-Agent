@@ -38,6 +38,7 @@ export interface SettingsSnapshot {
   google: { apiKey: string }
   compatibleProviders: CompatibleProvider[] | ProviderSnapshot[]
   agent: AgentConfig
+  promptOverrides?: Record<string, string>
 }
 
 interface CompactionSummaryResult {
@@ -222,19 +223,7 @@ function buildCompactionModel(activeModel: ActiveModelSnapshot, settings: Settin
   return buildLanguageModel({ type: activeModel.sdkType ?? 'compatible', apiKey: compatible.apiKey, baseURL: compatible.baseURL, name: compatible.name, headers: compatible.headers }, activeModel.id)
 }
 
-// Phase 3: Summary Generation
-async function summarizeChunk(options: { model: LanguageModel; providerOptions?: Record<string, Record<string, ProviderJsonValue>>; request: string; previousSummary?: string; focusTopic?: string }): Promise<string> {
-  let prompt = options.request
-  if (options.previousSummary) {
-    prompt = `Update this previous summary with the new chunk information:\n\n${options.previousSummary}\n\nNew chunk:\n${prompt}`
-  }
-  if (options.focusTopic) {
-    prompt = `IMPORTANT: Focus especially on preserving information related to: ${options.focusTopic}\n\n${prompt}`
-  }
-
-  const result = await generateText({
-    model: options.model,
-    system: `You are compressing earlier turns from a coding-agent session into durable working context.
+export const COMPACTION_SYSTEM = `You are compressing earlier turns from a coding-agent session into durable working context.
 Produce a compact, loss-aware summary for later continuation.
 Use this exact template:
 ## Active Task
@@ -252,7 +241,21 @@ Use this exact template:
 ## Remaining Work
 [What is left to do]
 
-Keep only facts needed to continue the task correctly. Preserve repository facts, files read or changed.`,
+Keep only facts needed to continue the task correctly. Preserve repository facts, files read or changed.`
+
+// Phase 3: Summary Generation
+async function summarizeChunk(options: { model: LanguageModel; providerOptions?: Record<string, Record<string, ProviderJsonValue>>; request: string; previousSummary?: string; focusTopic?: string; systemOverride?: string | undefined }): Promise<string> {
+  let prompt = options.request
+  if (options.previousSummary) {
+    prompt = `Update this previous summary with the new chunk information:\n\n${options.previousSummary}\n\nNew chunk:\n${prompt}`
+  }
+  if (options.focusTopic) {
+    prompt = `IMPORTANT: Focus especially on preserving information related to: ${options.focusTopic}\n\n${prompt}`
+  }
+
+  const result = await generateText({
+    model: options.model,
+    system: options.systemOverride?.trim() || COMPACTION_SYSTEM,
     prompt,
     maxOutputTokens: MAX_SUMMARY_OUTPUT_TOKENS,
     ...(options.providerOptions ? { providerOptions: options.providerOptions } : {}),
@@ -282,6 +285,7 @@ async function buildSessionSummary(messagesToCompact: Message[], tab: ChatTab, s
     request: `Session to compact:\n\n${fullText}`,
     ...(previousSummary ? { previousSummary } : {}),
     ...(focusTopic ? { focusTopic } : {}),
+    ...(settings.promptOverrides?.['prompt-compaction'] ? { systemOverride: settings.promptOverrides['prompt-compaction'] } : {}),
   })
 
   return { summary: merged, compactedCount: messagesToCompact.length }
