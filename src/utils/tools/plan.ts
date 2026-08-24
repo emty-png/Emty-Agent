@@ -9,10 +9,14 @@ export interface PlanCreatedEvent {
   filepath: string
   conversationId: string
   planName: string
+  projectName: string | null
+  workspacePath: string | null
 }
 
 export interface CreatePlanToolsOptions {
   conversationId: string
+  workspacePath?: string | null
+  projectName?: string | null
   onPlanCreated?: (event: PlanCreatedEvent) => void
 }
 
@@ -38,6 +42,25 @@ function normalizePlanFilename(planName?: string): string {
   return rawName.toLowerCase().endsWith('.md') ? rawName : `${rawName}.md`
 }
 
+function projectNameFromPath(workspacePath: string | null): string | null {
+  if (!workspacePath)
+    return null
+  return workspacePath.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? null
+}
+
+function resolveProjectSegment(options: CreatePlanToolsOptions): string {
+  const direct = options.projectName?.trim()
+  if (direct)
+    return safePathSegment(direct, 'global')
+
+  const fromPath = projectNameFromPath(options.workspacePath ?? null)
+  if (fromPath)
+    return safePathSegment(fromPath, 'global')
+
+  // fallback to conversationId (legacy) or global
+  return safePathSegment(options.conversationId, 'global')
+}
+
 export function planToolDisplayLabel(name: string, args: Record<string, unknown>): string {
   if (name !== 'plan')
     return `Called ${name}`
@@ -51,6 +74,9 @@ export function planToolDisplayLabel(name: string, args: Record<string, unknown>
 
 export function createPlanTools(options: CreatePlanToolsOptions) {
   const conversationId = safePathSegment(options.conversationId, 'unknown-conversation')
+  const projectSegment = resolveProjectSegment(options)
+  const workspacePath = options.workspacePath ?? null
+  const projectName = projectNameFromPath(workspacePath) ?? (options.projectName?.trim() || null)
 
   return {
     plan: tool({
@@ -62,7 +88,7 @@ export function createPlanTools(options: CreatePlanToolsOptions) {
       execute: async ({ planContent, planName }) => {
         try {
           const home = await homeDir()
-          const plansDir = await join(home, '.emty', 'plans', conversationId)
+          const plansDir = await join(home, '.emty', 'plans', projectSegment)
           await ensureDir(plansDir)
 
           const filename = normalizePlanFilename(planName)
@@ -81,7 +107,7 @@ export function createPlanTools(options: CreatePlanToolsOptions) {
 
           await writeTextFile(filepath, normalizedContent)
 
-          options.onPlanCreated?.({ filepath, conversationId, planName: filename })
+          options.onPlanCreated?.({ filepath, conversationId, planName: filename, projectName, workspacePath })
 
           return {
             message: `Plan ${operation === 'create' ? 'created' : 'updated'} at ${filepath}. Waiting for user approval.`,

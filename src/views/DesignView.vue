@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Attachment, ChatTab } from '@/stores/chat/core/types'
+import type { Attachment, ChatTab, DesignVersionRef } from '@/stores/chat/core/types'
 import { ArrowDown } from 'lucide-vue-next'
 import { computed, onUnmounted, ref, watch } from 'vue'
 
@@ -7,9 +7,13 @@ import AttachmentPreview from '@/components/chat/chat-input/AttachmentPreview.vu
 import ChatInput from '@/components/chat/chat-input/ChatInput.vue'
 import MessageThread from '@/components/chat/messages/MessageThread.vue'
 import DesignCanvas from '@/components/design/DesignCanvas.vue'
+import DesignVersionBanner from '@/components/design/DesignVersionBanner.vue'
+import DesignVersionCompareModal from '@/components/design/DesignVersionCompareModal.vue'
+import DesignVersionModal from '@/components/design/DesignVersionModal.vue'
 import { useIllustrationComponent } from '@/composables/ui/useIllustration'
 
 import { useChatStore } from '@/stores/chat'
+import { useDesignVersionStore } from '@/stores/designVersions'
 import { useThemeStore } from '@/stores/themes'
 
 const props = defineProps<{
@@ -19,7 +23,73 @@ const props = defineProps<{
 const { illustrationComponent } = useIllustrationComponent()
 const chat = useChatStore()
 const theme = useThemeStore()
+const dvStore = useDesignVersionStore()
 const previewAttachment = ref<Attachment | null>(null)
+
+// ── Design version preview ──────────────────────────────────────────────────
+
+const previewVersionId = ref<string | null>(null)
+const compareAId = ref<string | null>(null)
+const compareBId = ref<string | null>(null)
+const showVersionModal = ref(false)
+const showCompareModal = ref(false)
+
+const previewVersion = computed<DesignVersionRef | null>(() => {
+  if (!previewVersionId.value)
+    return null
+  const list = (dvStore.versionsByConversation[props.tab.conversationId ?? ''] ?? props.tab.designVersions ?? []) as DesignVersionRef[]
+  return list.find(v => v.id === previewVersionId.value) ?? (dvStore.getByMessageId(previewVersionId.value) as unknown as DesignVersionRef | null) ?? null
+})
+
+function onPreviewVersion(versionId: string) {
+  // toggle: clicking same version exits preview
+  if (previewVersionId.value === versionId) {
+    previewVersionId.value = null
+    dvStore.setPreview(props.tab.id, null)
+    return
+  }
+  // If compare modal open, set as A
+  if (showCompareModal.value) {
+    compareAId.value = versionId
+    return
+  }
+  previewVersionId.value = versionId
+  dvStore.setPreview(props.tab.id, versionId)
+}
+
+function onCompareVersion(versionId: string) {
+  compareAId.value = versionId
+  compareBId.value = null
+  showCompareModal.value = true
+}
+
+function exitPreview() {
+  previewVersionId.value = null
+  dvStore.setPreview(props.tab.id, null)
+}
+
+async function restorePreview() {
+  if (!previewVersion.value)
+    return
+  const res = await dvStore.restoreVersion(props.tab, previewVersion.value.id)
+  if (res.ok)
+    exitPreview()
+}
+
+function onModalRestore(id: string) {
+  void dvStore.restoreVersion(props.tab, id).then(res => {
+    if (res.ok) {
+      showVersionModal.value = false
+      showCompareModal.value = false
+      exitPreview()
+    }
+  })
+}
+
+watch(() => props.tab.id, () => {
+  previewVersionId.value = dvStore.getPreviewId(props.tab.id)
+})
+watch(() => dvStore.getPreviewId(props.tab.id), v => { previewVersionId.value = v })
 
 // ── Resizable split ───────────────────────────────────────────────────────────
 
@@ -29,6 +99,11 @@ const SPLIT_DEFAULT = 45
 
 const splitPercent = ref(SPLIT_DEFAULT)
 const horizontalDragging = ref(false)
+const isFullscreen = ref(false)
+
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+}
 
 const dynamicSplitMin = computed(() => SPLIT_MIN)
 const dynamicSplitMax = computed(() => SPLIT_MAX)
@@ -109,6 +184,11 @@ onUnmounted(() => {
   removeMoveListeners()
 })
 
+watch(isFullscreen, val => {
+  if (val)
+    horizontalDragging.value = false
+})
+
 // ── Thread scrolling ──────────────────────────────────────────────────────────
 
 const threadRef = ref<HTMLElement | null>(null)
@@ -150,10 +230,6 @@ watch(
   },
 )
 
-watch(() => props.tab.previewUrl, url => {
-  console.warn(`[DesignView] previewUrl: ${url ?? 'null'}`)
-})
-
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 function send(text: string, attachments: Attachment[] = []) {
@@ -182,9 +258,9 @@ function stop() {
       </div>
 
       <!-- Active State (Split View) -->
-      <div v-else key="active" class="active-split">
+      <div v-else key="active" class="active-split" :class="{ 'active-split--fullscreen': isFullscreen }">
         <!-- Left Pane: Thread -->
-        <div class="left-pane" :style="leftPaneStyle">
+        <div v-if="!isFullscreen" class="left-pane" :style="leftPaneStyle">
           <div class="thread-container">
             <div class="scroll-blur-top" />
 
@@ -195,6 +271,8 @@ function stop() {
                   :agent-status="tab.agentStatus"
                   :is-sub-agent="false"
                   @preview-attachment="previewAttachment = $event"
+                  @preview-version="onPreviewVersion"
+                  @compare-version="onCompareVersion"
                 />
               </div>
             </div>
@@ -227,6 +305,7 @@ function stop() {
 
         <!-- Split Handle -->
         <div
+          v-if="!isFullscreen"
           class="split-handle"
           :class="{ 'split-handle--active': horizontalDragging }"
           @mousedown="onDragStart"
@@ -234,10 +313,21 @@ function stop() {
 
         <!-- Right Pane: Canvas -->
         <div class="right-pane">
+          <DesignVersionBanner
+            v-if="previewVersion"
+            :version="previewVersion"
+            @back="exitPreview"
+            @close="exitPreview"
+            @restore="restorePreview"
+            @compare="onCompareVersion(previewVersion!.id)"
+          />
           <DesignCanvas
             :project-version="tab.projectVersion ?? 0"
             :active-project="tab.activeDesignProject ?? null"
-            :preview-url="tab.previewUrl"
+            :tab-id="tab.id"
+            :is-fullscreen="isFullscreen"
+            :preview-version-id="previewVersion?.id ?? null"
+            @toggle-fullscreen="toggleFullscreen"
           />
         </div>
       </div>
@@ -247,6 +337,22 @@ function stop() {
       v-if="previewAttachment"
       :attachment="previewAttachment"
       @close="previewAttachment = null"
+    />
+
+    <DesignVersionModal
+      :version="(showVersionModal ? previewVersion : null) as never"
+      @close="showVersionModal = false"
+      @restore="onModalRestore"
+      @compare="onCompareVersion"
+    />
+
+    <DesignVersionCompareModal
+      v-if="showCompareModal && compareAId"
+      :a-id="compareAId"
+      :b-id="compareBId"
+      :project-path="tab.activeDesignProject?.path ?? null"
+      @close="showCompareModal = false"
+      @restore="onModalRestore"
     />
   </div>
 </template>

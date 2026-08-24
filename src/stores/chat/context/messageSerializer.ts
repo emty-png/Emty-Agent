@@ -62,7 +62,7 @@ function compressToolArgs(toolName: string, args: Record<string, unknown>): Reco
     return changed ? next : args
   }
 
-  if (toolName === 'create_design_files' || toolName === 'edit_design_files') {
+  if (toolName === 'edit_design') {
     // Truncate large file contents to avoid context bloat
     const next = { ...args } as Record<string, unknown>
     if (Array.isArray(next.files)) {

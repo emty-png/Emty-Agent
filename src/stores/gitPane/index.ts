@@ -26,6 +26,7 @@ export interface GitPaneOwnerState {
   includeUnstagedOnCommit: boolean
   skipCommitHooks: boolean
   amendCommit: boolean
+  includeCoAuthor: boolean
   closedPanes: string[]
   diffViewerData: DiffViewerData | null
 }
@@ -36,9 +37,10 @@ function createOwnerState(): GitPaneOwnerState {
   return {
     isPanelOpen: false,
     splitPercent: DEFAULT_SPLIT_PERCENT,
-    includeUnstagedOnCommit: true,
+    includeUnstagedOnCommit: false,
     skipCommitHooks: false,
     amendCommit: false,
+    includeCoAuthor: false,
     closedPanes: [],
     diffViewerData: null,
   }
@@ -48,8 +50,15 @@ export const useGitPaneStore = defineStore('gitPane', () => {
   const owners = ref<Record<string, GitPaneOwnerState>>({})
 
   function ensureOwner(ownerId: string): GitPaneOwnerState {
-    owners.value[ownerId] ??= createOwnerState()
-    return owners.value[ownerId]!
+    const existing = owners.value[ownerId]
+    if (!existing) {
+      owners.value[ownerId] = createOwnerState()
+      return owners.value[ownerId]!
+    }
+    // migration for owners created before co-author field existed
+    if ((existing as Partial<GitPaneOwnerState>).includeCoAuthor === undefined)
+      existing.includeCoAuthor = false
+    return existing
   }
 
   function getOwner(ownerId: string): GitPaneOwnerState {
@@ -82,11 +91,12 @@ export const useGitPaneStore = defineStore('gitPane', () => {
     ensureOwner(ownerId).splitPercent = normalized
   }
 
-  function setCommitOptions(ownerId: string, patch: Partial<Pick<GitPaneOwnerState, 'includeUnstagedOnCommit' | 'skipCommitHooks' | 'amendCommit'>>): void {
+  function setCommitOptions(ownerId: string, patch: Partial<Pick<GitPaneOwnerState, 'includeUnstagedOnCommit' | 'skipCommitHooks' | 'amendCommit' | 'includeCoAuthor'>>): void {
     const owner = ensureOwner(ownerId)
     owner.includeUnstagedOnCommit = patch.includeUnstagedOnCommit ?? owner.includeUnstagedOnCommit
     owner.skipCommitHooks = patch.skipCommitHooks ?? owner.skipCommitHooks
     owner.amendCommit = patch.amendCommit ?? owner.amendCommit
+    owner.includeCoAuthor = patch.includeCoAuthor ?? owner.includeCoAuthor
   }
 
   function setClosedPanes(ownerId: string, panes: string[]): void {

@@ -3,9 +3,7 @@ export const DEFAULT_TOOL_DESCRIPTIONS = {
 
 Always call read_files and wait for its result before calling edit_files or write_file on the same file. Calling read and write in parallel on the same file path is not allowed. Reading and writing different file paths in parallel is fine.
 
-If a file is truncated, use offset + limit to read subsequent pages. Read all pages before writing. Default limit: 300 lines, max: 2000.
-
-If the file content is unchanged since the last read, a deduplication stub is returned instead. Use forced: true to bypass this and always fetch fresh content from disk.`,
+If a file is truncated, use offset + limit to read subsequent pages. Read all pages before writing. Default limit: 300 lines, max: 2000.`,
 
   edit_files: `Apply one or more search-and-replace edits to existing files. Edits for each file are applied in order; if one fails, all edits for that file are rolled back.
 
@@ -95,7 +93,7 @@ This operation is cheap and does not access the filesystem.`,
 Use this when you need the complete description, activeForm, or current status of a specific task.
 Do not use this to list all tasks; use list_tasks for that purpose.`,
 
-  plan: 'Write or replace a production-quality implementation plan for the user to review before modifying files. The plan is saved to ~/.emty/plans/<conversation_id>/<planName>.md and the result includes a unified diff plus added/removed line counts. Use concise but complete markdown with scope, constraints, affected files, implementation steps, validation, rollback or risk notes, and explicit acceptance criteria.',
+  plan: 'Write or replace a production-quality implementation plan for the user to review before modifying files. The plan is saved to ~/.emty/plans/<project_name>/<planName>.md and the result includes a unified diff plus added/removed line counts. Use concise but complete markdown with scope, constraints, affected files, implementation steps, validation, rollback or risk notes, and explicit acceptance criteria.',
 
   sleep: `Pause execution for a specified duration. Use when you need to wait — for example, after starting a background server, before checking if a service is ready, or to space out retry attempts.
 
@@ -319,46 +317,46 @@ Optional parameters:
 - count: Number of images to generate (1-4, default 1).
 - size: Image dimensions as "WIDTHxHEIGHT" (e.g. "1024x1024"). Default varies by provider.`,
 
-  scaffold_project: `Create a new design project directory at ~/.emty/designs/{name}/ with all necessary files.
+  start_project: `Create a new design project and start its live preview.
 
-Call this FIRST before writing any files. It sets up the project context that create_design_files and edit_design_files will use.
+Call this FIRST, before any other design tool. It creates a project at ~/.emty/designs/{name}/ containing three files:
+- index.html — links styles.css and script.js
+- styles.css
+- script.js
 
-Rules:
-- Choose a short, descriptive project name (snake_case, e.g. "login_page", "dashboard_v2").
-- The project type determines the directory structure and whether a build step is needed.
-- For Vite projects, all necessary files (package.json, vite.config, index.html, source files) are created automatically.
-- After scaffolding, you can use edit_design_files to modify the generated files.`,
-
-  create_design_files: `Write initial files to the current design project. Must be called after scaffold_project.
+The preview renders index.html in the canvas immediately (phone/desktop toggle available). A console capture is active: anything logged via console.* or runtime errors appears in the preview console.
 
 Rules:
-- Provide file paths relative to the project root (e.g. "index.html", "src/App.vue").
-- Ensure all necessary files for the project type are included.
-- For Vite projects, include package.json, vite.config, index.html, and source files.
-- For static HTML, include index.html and any linked CSS/JS files.`,
+- Choose a short, descriptive snake_case name (e.g. "login_page", "dashboard_v2").
+- If a project with that name exists, pick a different name or pass overwrite: true to replace it.
+- After creating, use edit_design to write your actual code into the three files.`,
 
-  edit_design_files: `Edit existing files in the current design project.
-
-Rules:
-- Provide file paths relative to the project root.
-- "overwrite" mode replaces the entire file content.
-- "patch" mode compares with the on-disk version and applies the full new content (useful for tracking what changed).
-- After editing, call build_project if the project type requires a build step (Vite projects).`,
-
-  build_project: `Build the current design project if it requires a build step.
+  edit_design: `Edit files in the current design project. Only index.html, styles.css and script.js exist.
 
 Rules:
-- For "single-file" and "multiple-files" projects, this is a no-op (static HTML renders directly).
-- For Vite projects ("vite-react", "vite-vue", "vite-svelte", "vite-vanilla"), this runs npm install followed by npm run build.
-- On build failure, read the error output, fix the code, and retry.`,
+- Provide the FULL new content for each file you change — there is no partial patching.
+- Only send files that actually change; unchanged files are skipped automatically.
+- Keep index.html linking "./styles.css" and "./script.js" so the preview stays wired up.
+- The preview reloads automatically after a successful edit. If it ever looks stale, call refresh_preview.
+- After editing, check get_console if something may have gone wrong at runtime.`,
 
-  start_preview: `Start a Vite dev server for the current design project and return the preview URL.
+  refresh_preview: `Reload the live preview of the current design project.
 
-Use this after create_design_files or edit_design_files for Vite projects to get a live preview.
-The dev server runs in the background and serves the project at http://localhost:PORT.
-Call this after scaffolding and writing files for Vite projects, or after editing files to refresh the preview.`,
+Use this only when the preview did not auto-refresh after edit_design, or when you suspect it is showing stale content. Takes no parameters.`,
 
-  stop_preview: 'Stop the running Vite dev server for the current design project.',
+  get_console: `Read the console output captured from the preview (console.log/info/warn/error/debug plus uncaught errors and promise rejections).
+
+Use this to debug runtime problems: read the errors, fix the code with edit_design, then verify again.
+
+Parameters:
+- level: filter by "log", "info", "warn" or "error" (default "all").
+- limit: max entries returned, oldest first (default 50, max 200).`,
+
+  read_design: `Read one or more files from the current design project (index.html, styles.css, script.js). Returns content with 1-based line numbers in cat -n format.
+
+Use this to inspect the current state of your design files before rewriting them with edit_design.
+
+If a file is truncated, use offset + limit to read subsequent pages. Default limit: 300 lines, max: 2000.`,
 } as const
 
 export type ToolId = keyof typeof DEFAULT_TOOL_DESCRIPTIONS

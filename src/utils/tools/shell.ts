@@ -15,6 +15,7 @@ import { Child, Command } from '@tauri-apps/plugin-shell'
 import { tool } from 'ai'
 import { readonly, ref, shallowRef } from 'vue'
 import { z } from 'zod'
+import { isShellCommandBlocked, SHELL_BLOCKED_MESSAGE } from '@/utils/security/securityConfigs'
 import { safePath } from './fs/allowedPaths'
 import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
@@ -1256,6 +1257,10 @@ export function createRunCommandTool(projectPath: string, runtimeEvents?: ShellT
       if (!command)
         return { exit_code: -1, duration_ms: 0, output: 'Error: command cannot be empty.' }
 
+      if (isShellCommandBlocked(command)) {
+        return { exit_code: -1, duration_ms: 0, output: SHELL_BLOCKED_MESSAGE }
+      }
+
       // ── CWD resolution ──────────────────────────────────────────────
       if (input.cwd) {
         try {
@@ -1453,6 +1458,12 @@ export function createGitCommandTool(projectPath: string, coAuthor = false, runt
       }
 
       const commands = applyCoAuthorTrailer(normalized.commands, coAuthor ?? false)
+      for (const c of commands) {
+        const full = `git ${c.args.join(' ')}`
+        if (isShellCommandBlocked(full)) {
+          return { action: 'exec' as const, error: `Blocked by security policy: "${full}" matches shell blocklist. Edit Developer → Security → "Blocked Shell Commands" to allow it.` }
+        }
+      }
       const includesCommit = hasGitCommitCommand(commands)
       const timeoutMs = input.timeoutSeconds == null && includesCommit
         ? 0

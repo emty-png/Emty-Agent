@@ -3,10 +3,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Copy, Menu, Minus, Square, WifiOff, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
 import { useSidebarStore } from '@/stores/sidebar'
 import Sidebar from '../sidebar/Sidebar.vue'
-import BetaCloseDialog from './BetaCloseDialog.vue'
 
 interface Props {
   title?: string
@@ -21,7 +19,6 @@ const emit = defineEmits<{
 }>()
 
 const sidebar = useSidebarStore()
-const settings = useSettingsStore()
 const { collapsed: sidebarCollapsed } = storeToRefs(sidebar)
 
 const isOnline = ref(navigator.onLine)
@@ -156,23 +153,8 @@ async function toggleMaximize() {
     await appWindow.maximize()
   }
 }
-const showBetaDialog = ref(false)
-
 async function close() {
-  if (!settings.dismissedBetaCloseNotice) {
-    showBetaDialog.value = true
-    return
-  }
   await appWindow.close()
-}
-
-async function onBetaDialogClose() {
-  showBetaDialog.value = false
-  await appWindow.close()
-}
-
-function onBetaDialogDismiss() {
-  showBetaDialog.value = false
 }
 
 const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-none bg-transparent text-[var(--color-text-secondary)] cursor-default [-webkit-app-region:no-drag] transition-colors duration-[120ms] ease-in-out hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] active:bg-[var(--color-bg-elevated)]'
@@ -262,10 +244,4 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
       </div>
     </Transition>
   </Teleport>
-
-  <BetaCloseDialog
-    v-if="showBetaDialog"
-    @close="onBetaDialogClose"
-    @dismiss="onBetaDialogDismiss"
-  />
 </template>

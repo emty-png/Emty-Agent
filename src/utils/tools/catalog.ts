@@ -140,29 +140,28 @@ const BUILTIN_GROUPS: BuiltinGroupDefinition[] = [
   },
   {
     id: 'design-scaffold',
-    label: 'Scaffold',
-    description: 'Create new design projects from templates.',
+    label: 'Project',
+    description: 'Create new design projects from a template.',
     tools: [
-      { id: 'scaffold_project', label: 'scaffold_project', description: 'Scaffold a new Vite-based design project.' },
+      { id: 'start_project', label: 'start_project', description: 'Create a new design project with index.html, styles.css and script.js, and start the live preview.' },
     ],
   },
   {
     id: 'design-files',
     label: 'Files',
-    description: 'Create and edit files within a design project.',
+    description: 'Edit files within the design project.',
     tools: [
-      { id: 'create_design_files', label: 'create_design_files', description: 'Create new files in the active design project.' },
-      { id: 'edit_design_files', label: 'edit_design_files', description: 'Edit existing files in the active design project.' },
+      { id: 'edit_design', label: 'edit_design', description: 'Edit index.html, styles.css or script.js in the active design project.' },
+      { id: 'read_design', label: 'read_design', description: 'Read index.html, styles.css or script.js from the active design project with line numbers. Supports offset/limit pagination.' },
     ],
   },
   {
     id: 'design-build',
-    label: 'Build & Preview',
-    description: 'Build the design project and manage the preview dev server.',
+    label: 'Preview & Console',
+    description: 'Refresh the live preview and read its console output.',
     tools: [
-      { id: 'build_project', label: 'build_project', description: 'Build the active design project.' },
-      { id: 'start_preview', label: 'start_preview', description: 'Start the Vite preview dev server for the active design project.' },
-      { id: 'stop_preview', label: 'stop_preview', description: 'Stop the running preview dev server.' },
+      { id: 'refresh_preview', label: 'refresh_preview', description: 'Reload the live preview of the active design project.' },
+      { id: 'get_console', label: 'get_console', description: 'Read captured console logs, warnings and errors from the preview.' },
     ],
   },
 ]

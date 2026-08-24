@@ -11,7 +11,7 @@ export interface ModelSettingsSnapshot {
     id: string
     providerId: string
     supportsThinking: boolean
-    thinkingEffort: 'low' | 'medium' | 'high'
+    thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     sdkType?: 'openai' | 'anthropic' | 'google' | null
   } | null
   openai: { apiKey: string; baseURL?: string; organizationId?: string }
@@ -93,11 +93,15 @@ export function resolveMaxTokens(
   activeModel: NonNullable<ModelSettingsSnapshot['activeModel']>,
   defaultMax = 16_384,
 ): number {
-  if (activeModel.supportsThinking) {
-    if (activeModel.thinkingEffort === 'high')
-      return 16_000
+  if (activeModel.supportsThinking && activeModel.thinkingEffort !== 'off') {
     if (activeModel.thinkingEffort === 'low')
       return 2048
+    if (activeModel.thinkingEffort === 'high')
+      return 16_000
+    if (activeModel.thinkingEffort === 'xhigh')
+      return 24_000
+    if (activeModel.thinkingEffort === 'max')
+      return 32_000
     return 8000
   }
   return defaultMax

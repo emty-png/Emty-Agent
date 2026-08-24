@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   Plus,
   RefreshCw,
+  ScrollText,
   Undo2,
   X,
 } from 'lucide-vue-next'
@@ -104,8 +105,8 @@ async function toggleFile(path: string, isStaged: boolean) {
   try {
     const isUntrackedFile = !isStaged && (status.value?.untracked.some(u => u.path === path) ?? false)
     const raw = isUntrackedFile
-      ? await gitDiffNoIndex(props.cwd, path)
-      : await gitDiff(props.cwd, path, isStaged)
+      ? await gitDiffNoIndex(props.cwd, path, props.tabId)
+      : await gitDiff(props.cwd, path, isStaged, props.tabId)
     parsedDiffs[path] = parseDiffForDisplay(raw)
   }
   catch (err) {
@@ -221,6 +222,11 @@ function executeActionAndClose(action: () => void) {
   showActionsPopup.value = false
 }
 
+function openLogs() {
+  showActionsPopup.value = false
+  window.dispatchEvent(new CustomEvent('emty:open-git-logs', { detail: { tabId: props.tabId } }))
+}
+
 // ── Discard-all confirmation ────────────────────────────────────────────────
 const showDiscardAllModal = ref(false)
 function revertAll() {
@@ -299,6 +305,14 @@ const bottomBtnClass = 'inline-flex items-center gap-[5px] py-[5px] px-[12px] ro
               <main class="flex flex-col gap-0.5 max-h-[250px] overflow-y-auto pb-0.5">
                 <button
                   class="flex items-center gap-2 h-[30px] px-2 border border-transparent rounded-[var(--radius-md)] bg-transparent text-[var(--color-text-secondary)] cursor-pointer text-left transition-all duration-100 ease hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
+                  @click="openLogs"
+                >
+                  <ScrollText :size="13" class="shrink-0 text-[var(--color-text-tertiary)]" />
+                  <span class="flex-1 text-[12.5px] font-medium whitespace-nowrap overflow-hidden text-ellipsis">Logs</span>
+                </button>
+                <div class="mx-1.5 my-0.5 h-px bg-[var(--color-border-subtle)]" />
+                <button
+                  class="flex items-center gap-2 h-[30px] px-2 border border-transparent rounded-[var(--radius-md)] bg-transparent text-[var(--color-text-secondary)] cursor-pointer text-left transition-all duration-100 ease hover:bg-[var(--color-state-hover)] hover:border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
                   :disabled="loading || !!busyAction"
                   @click="executeActionAndClose(fetchRemote)"
                 >
@@ -342,7 +356,7 @@ const bottomBtnClass = 'inline-flex items-center gap-[5px] py-[5px] px-[12px] ro
             </div>
           </Transition>
         </div>
-        <button :class="iconBtnClass" title="Refresh" :disabled="loading" @click="refresh">
+        <button :class="iconBtnClass" title="Refresh" :disabled="loading" @click="() => refresh()">
           <RefreshCw :size="13" :class="{ 'animate-[spin_0.9s_linear_infinite]': loading }" />
         </button>
       </div>
@@ -377,7 +391,7 @@ const bottomBtnClass = 'inline-flex items-center gap-[5px] py-[5px] px-[12px] ro
       </p>
     </div>
 
-    <div v-else class="flex-1 overflow-y-auto pb-[52px] [scrollbar-width:thin] [scrollbar-color:var(--color-border-bright)_transparent]">
+    <div v-else class="flex flex-1 flex-col overflow-y-auto pb-[52px] [scrollbar-width:thin] [scrollbar-color:var(--color-border-bright)_transparent]">
       <div v-for="f in displayedFiles" :key="f.path" class="flex flex-col border-b border-[color-mix(in_srgb,var(--color-border-subtle)_50%,transparent)]" :class="{ 'bg-[color-mix(in_srgb,var(--color-bg-surface)_40%,transparent)]': expandedFiles.has(f.path) }">
         <div class="flex items-center px-2.5 h-8 cursor-pointer gap-2 transition-colors duration-[80ms] ease-in-out hover:bg-[var(--color-state-hover)] group/file" @click="toggleFile(f.path, filter === 'staged')">
           <span
@@ -517,7 +531,7 @@ const bottomBtnClass = 'inline-flex items-center gap-[5px] py-[5px] px-[12px] ro
           </div>
         </Transition>
       </div>
-      <div v-if="displayedFiles.length === 0" class="flex flex-col items-center justify-center gap-2 py-12 px-6 flex-1 text-center">
+      <div v-if="displayedFiles.length === 0" class="flex flex-1 flex-col items-center justify-center gap-2 py-12 px-6 text-center min-h-[260px]">
         <p class="m-0 text-[13px] font-medium text-[var(--color-text-dim)]">
           Nothing to see here…
         </p>

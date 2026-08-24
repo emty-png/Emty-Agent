@@ -5,6 +5,7 @@
  * All filesystem tools should import path-safety functions from here.
  */
 
+import type { SecurityPlatform } from '@/utils/security/platform'
 import {
   appCacheDir,
   appConfigDir,
@@ -20,6 +21,24 @@ import {
   tempDir,
 } from '@tauri-apps/api/path'
 import { exists, readTextFile } from '@tauri-apps/plugin-fs'
+import {
+  isAbsoluteInputPath,
+  isWithinPath,
+  normalizeForCompare,
+  pathBasename,
+  relativeSegments,
+  trimTrailingSeparators,
+} from '@/utils/security/pathUtils'
+import { getPlatformAsync } from '@/utils/security/platform'
+import {
+  getEffectiveSystemDenyRoots,
+  getSecurityEffectiveContent,
+  getSecurityOverridesFromStore,
+  parseSensitivePatterns,
+  parseSensitiveSegments,
+  parseWindowsDenyRoots,
+  SENSITIVE_READ_BLOCKED_MESSAGE,
+} from '@/utils/security/securityConfigs'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,47 +47,65 @@ import { exists, readTextFile } from '@tauri-apps/plugin-fs'
 export type SandboxAccessKind = 'read' | 'write' | 'list' | 'search'
 
 // ---------------------------------------------------------------------------
-// Sensitive-path blocklist
+// Sensitive-path blocklist — now fully customizable via Security panel
 // ---------------------------------------------------------------------------
 
-const WINDOWS_SYSTEM_WRITE_DENY_ROOTS = [
-  'C:\\Windows',
-  'C:\\Program Files',
-  'C:\\Program Files (x86)',
-  'C:\\ProgramData',
-]
+function getWindowsDenyRoots(): string[] {
+  const overrides = getSecurityOverridesFromStore()
+  const content = getSecurityEffectiveContent('windows-deny-roots', overrides)
+  return parseWindowsDenyRoots(content)
+}
 
-const SENSITIVE_HOME_SEGMENTS = [
-  ['.ssh'],
-  ['.aws'],
-  ['.gnupg'],
-  ['.codex'],
-  ['.claude'],
-  ['.anthropic'],
-  ['.openai'],
-  ['.gemini'],
-  ['.cursor'],
-  ['.config', 'gh'],
-  ['.config', 'op'],
-  ['AppData', 'Roaming', 'Code', 'User'],
-  ['AppData', 'Local', 'Google', 'Chrome', 'User Data'],
-  ['AppData', 'Local', 'Microsoft', 'Edge', 'User Data'],
-] as const
+function getSensitiveSegments(): string[][] {
+  const overrides = getSecurityOverridesFromStore()
+  const content = getSecurityEffectiveContent('sensitive-segments', overrides)
+  return parseSensitiveSegments(content)
+}
 
-const SENSITIVE_FILE_PATTERNS = [
-  /^\.env(?:\..+)?$/i,
-  /^\.npmrc$/i,
-  /^\.pypirc$/i,
-  /^\.?netrc$/i,
-  /^auth\.json$/i,
-  /^credentials\.json$/i,
-  /^id_(rsa|dsa|ecdsa|ed25519)(?:\.pub)?$/i,
-  /\.(?:pem|key|p12|pfx)$/i,
-  // Unix sensitive files
-  /^passwd$/i,
-  /^shadow$/i,
-  /^sudoers$/i,
-] as const
+function getSensitivePatterns(): RegExp[] {
+  const overrides = getSecurityOverridesFromStore()
+  const content = getSecurityEffectiveContent('sensitive-patterns', overrides)
+  return parseSensitivePatterns(content)
+}
+
+// Back-compat exports for any direct consumers (now dynamic)
+export function getWindowsDenyRootsList(): string[] {
+  return getWindowsDenyRoots()
+}
+export function getLinuxDenyRootsList(): string[] {
+  const overrides = getSecurityOverridesFromStore()
+  return getEffectiveSystemDenyRoots('linux', overrides)
+}
+export function getMacosDenyRootsList(): string[] {
+  const overrides = getSecurityOverridesFromStore()
+  return getEffectiveSystemDenyRoots('macos', overrides)
+}
+export function getSensitiveSegmentsList(): string[][] {
+  return getSensitiveSegments()
+}
+export function getSensitivePatternsList(): RegExp[] {
+  return getSensitivePatterns()
+}
+
+async function getCurrentPlatform(): Promise<SecurityPlatform> {
+  return await getPlatformAsync()
+}
+
+// Helper: does basename or project-relative segments match sensitive blocklist?
+// Used to block secret reads even inside the workspace (e.g. .env, *.key).
+function isSensitiveForReadKind(absolutePath: string, projectPath: string): boolean {
+  const fileName = pathBasename(absolutePath).toLowerCase()
+  if (getSensitivePatterns().some(pattern => pattern.test(fileName)))
+    return true
+
+  const projSegments = relativeSegments(projectPath, absolutePath).map(s => s.toLowerCase())
+  if (projSegments.length > 0) {
+    const segs = getSensitiveSegments()
+    if (segs.some(pattern => pattern.every((segment, index) => projSegments[index] === segment.toLowerCase())))
+      return true
+  }
+  return false
+}
 
 // ---------------------------------------------------------------------------
 // Binary detection
@@ -135,49 +172,8 @@ export function isProbablyBinary(bytes: Uint8Array): boolean {
   return suspicious / sample.length > 0.2
 }
 
-// ---------------------------------------------------------------------------
-// Path helpers
-// ---------------------------------------------------------------------------
-
-function trimTrailingSeparators(path: string): string {
-  if (/^[a-z]:[\\/]*$/i.test(path))
-    return `${path[0]}:\\`
-  if (/^[/\\]{2}[^/\\]+[/\\]+[^/\\]+[/\\]*$/.test(path))
-    return path.replace(/[\\/]+$/g, '')
-
-  const trimmed = path.replace(/[\\/]+$/g, '')
-  return trimmed || path
-}
-
-function normalizeForCompare(path: string): string {
-  const trimmed = trimTrailingSeparators(path)
-  const unified = trimmed.replace(/\\/g, '/')
-  return /^[a-z]:\//i.test(unified) ? unified.toLowerCase() : unified
-}
-
-function isAbsoluteInputPath(path: string): boolean {
-  return /^[a-z]:[\\/]/i.test(path) || path.startsWith('\\\\') || path.startsWith('/')
-}
-
-function isWithinPath(candidate: string, parent: string): boolean {
-  const normalizedCandidate = normalizeForCompare(candidate)
-  const normalizedParent = normalizeForCompare(parent)
-  return normalizedCandidate === normalizedParent || normalizedCandidate.startsWith(`${normalizedParent}/`)
-}
-
-function relativeSegments(basePath: string, absolutePath: string): string[] {
-  const normalizedBase = normalizeForCompare(basePath)
-  const normalizedAbsolute = normalizeForCompare(absolutePath)
-  if (!isWithinPath(normalizedAbsolute, normalizedBase))
-    return []
-
-  const relative = normalizedAbsolute.slice(normalizedBase.length).replace(/^\/+/, '')
-  return relative ? relative.split('/').filter(Boolean) : []
-}
-
-function pathBasename(path: string): string {
-  return path.split(/[/\\]/).pop() ?? path
-}
+// Re-export path helpers for back-compat (preferred import is from @/utils/security/pathUtils)
+export { isAbsoluteInputPath, isWithinPath, normalizeForCompare, pathBasename, relativeSegments, trimTrailingSeparators }
 
 // ---------------------------------------------------------------------------
 // Sandbox root resolution
@@ -263,22 +259,33 @@ async function isSensitivePath(
   projectPath: string,
   kind: SandboxAccessKind,
 ): Promise<boolean> {
+  // Secrets block for read-like kinds even inside the workspace.
+  // Write is intentionally allowed to edit project .env files.
+  if (kind === 'read' || kind === 'list' || kind === 'search') {
+    if (isSensitiveForReadKind(absolutePath, projectPath))
+      return true
+  }
+
   if (isWithinPath(absolutePath, projectPath))
     return false
 
-  if (kind === 'write' && WINDOWS_SYSTEM_WRITE_DENY_ROOTS.some(root => isWithinPath(absolutePath, root)))
-    return true
+  if (kind === 'write') {
+    const platform = await getCurrentPlatform()
+    const denyRoots = getEffectiveSystemDenyRoots(platform)
+    if (denyRoots.some(root => isWithinPath(absolutePath, root)))
+      return true
+  }
 
   const home = await homeDir().catch(() => null)
   if (!home || !isWithinPath(absolutePath, home))
     return false
 
   const fileName = pathBasename(absolutePath).toLowerCase()
-  if (SENSITIVE_FILE_PATTERNS.some(pattern => pattern.test(fileName)))
+  if (getSensitivePatterns().some(pattern => pattern.test(fileName)))
     return true
 
   const segments = relativeSegments(home, absolutePath).map(segment => segment.toLowerCase())
-  return SENSITIVE_HOME_SEGMENTS.some(pattern =>
+  return getSensitiveSegments().some(pattern =>
     pattern.every((segment, index) => segments[index] === segment.toLowerCase()))
 }
 
@@ -337,6 +344,11 @@ export async function safePath(
 ): Promise<string> {
   const absolutePath = await resolveToAbsolutePath(projectPath, inputPath)
   const kind = options.kind ?? 'read'
+
+  // Give a specific, actionable error for secret reads (so the agent can suggest run_command).
+  if ((kind === 'read' || kind === 'list' || kind === 'search') && isSensitiveForReadKind(absolutePath, projectPath)) {
+    throw new Error(`${SENSITIVE_READ_BLOCKED_MESSAGE} (path: "${inputPath}")`)
+  }
 
   if (!await isPathAllowed(absolutePath, projectPath, kind)) {
     throw new Error(

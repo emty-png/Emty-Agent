@@ -8,20 +8,11 @@ This skill guides creation of distinctive, production-grade frontend interfaces 
 
 The user provides frontend requirements: a component, page, application, or interface to build. They may include context about the purpose, audience, or technical constraints.
 
-## Project Type Selection
+## Project Structure
 
-Before building, decide which project type fits the user's request:
+Every design project is exactly three files: `index.html` (structure), `styles.css` (styling) and `script.js` (behavior). There is no build step and no framework — vanilla HTML/CSS/JS only.
 
-| Type               | When to Use                                                 | Example                                 |
-| ------------------ | ----------------------------------------------------------- | --------------------------------------- |
-| **single-file**    | Simple prototypes, quick landing pages, no framework needed | "Build a landing page"                  |
-| **multiple-files** | Cleaner separation, multi-page designs                      | "Build a portfolio with multiple pages" |
-| **vite-react**     | User asks for React, needs state management                 | "Build a React dashboard"               |
-| **vite-vue**       | User asks for Vue                                           | "Build a Vue app"                       |
-| **vite-svelte**    | User asks for Svelte                                        | "Build a Svelte component"              |
-| **vite-vanilla**   | Framework needed but no specific choice                     | "Build an interactive prototype"        |
-
-After deciding the type, use `scaffold_project` to create the project structure.
+Use `start_project` to create the project, then `edit_design` to write your code into the three files. Keep `index.html` linking `styles.css` and `script.js`.
 
 ## Design Thinking
 
@@ -50,6 +41,44 @@ Focus on:
 - **Motion**: Use animations for effects and micro-interactions. Prioritize CSS-only solutions for HTML. Use Motion library for React when available. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) creates more delight than scattered micro-interactions. Use scroll-triggering and hover states that surprise.
 - **Spatial Composition**: Unexpected layouts. Asymmetry. Overlap. Diagonal flow. Grid-breaking elements. Generous negative space OR controlled density.
 - **Backgrounds & Visual Details**: Create atmosphere and depth rather than defaulting to solid colors. Add contextual effects and textures that match the overall aesthetic. Apply creative forms like gradient meshes, noise textures, geometric patterns, layered transparencies, dramatic shadows, decorative borders, custom cursors, and grain overlays.
+- **Scrollbars (Required for every design)**: Always style scrollbars to match the app/site aesthetic when the browser supports it. Ship both Firefox and WebKit rules, use theme CSS variables so the scrollbar feels native to the design, and keep a graceful fallback to the OS default where unsupported. Never leave the default gray scrollbar on a styled interface.
+
+  ```css
+  /* Firefox — standard */
+  * {
+    scrollbar-width: thin; /* auto | thin | none */
+    scrollbar-color: var(--accent) transparent;
+    scrollbar-gutter: stable; /* prevent layout shift when scrollbar appears */
+  }
+  /* WebKit — Chrome, Safari, Edge, Opera */
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--accent);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--accent-hover, var(--accent));
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  /* Hide on touch/coarse pointers if the design calls for it */
+  @media (pointer: coarse) {
+    * {
+      scrollbar-width: thin;
+    }
+  }
+  ```
+
+  Match track/thumb to the page background and accent from your CSS variables (e.g. `var(--bg)`, `var(--accent)`), keep contrast ≥3:1 for the thumb, keep `border-radius` and `border` consistent with your card/button radius, and test in both Firefox and a Chromium browser. If the browser doesn't support styling (e.g. overlay scrollbars on macOS with `auto`), the OS fallback is fine — do not force with JS.
 
 NEVER use generic AI-generated aesthetics like overused font families (Inter, Roboto, Arial, system fonts), cliched color schemes (particularly purple gradients on white backgrounds), predictable layouts and component patterns, and cookie-cutter design that lacks context-specific character.
 

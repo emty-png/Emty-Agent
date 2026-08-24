@@ -1,11 +1,11 @@
+import type { FileReadRegistry } from './shared'
 import { stat } from '@tauri-apps/plugin-fs'
 import { tool } from 'ai'
 import { z } from 'zod'
 import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
-import { hasBinaryExtension, isPathAllowed, resolveToAbsolutePath } from './allowedPaths'
+import { hasBinaryExtension, safePath } from './allowedPaths'
+import { ConcurrencyLimitError, FileLockManager } from './fileLock'
 import {
-  FileLockManager,
-  FileReadRegistry,
   readTextSnapshot,
   sha256Text,
   updateReadRegistry,
@@ -17,9 +17,6 @@ import {
 
 const DEFAULT_LINE_LIMIT = 300
 const MAX_LINE_LIMIT = 2000
-
-const FILE_UNCHANGED_STUB
-  = 'File unchanged since last read. The content from the earlier read in this conversation is still current — refer to that instead of re-reading.'
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -86,20 +83,16 @@ async function processSingleFile(
   limit: number,
   registry: FileReadRegistry,
   lockManager: FileLockManager,
-  forced: boolean = false,
 ): Promise<string> {
-  // ── Path resolution ──────────────────────────────────────────────────────
+  // ── Path security (also resolves to absolute) ──────────────────────────
   let fullPath: string
   try {
-    fullPath = await resolveToAbsolutePath(projectPath, filePath)
+    fullPath = await safePath(projectPath, filePath, { kind: 'read' })
   }
   catch (e) {
-    return `Error: ${e instanceof Error ? e.message : String(e)}`
-  }
-
-  // ── Path security ────────────────────────────────────────────────────────
-  if (!await isPathAllowed(fullPath, projectPath, 'read')) {
-    return 'Error: Path traversal detected. Access denied to files outside the workspace or to sensitive files.'
+    const msg = e instanceof Error ? e.message : String(e)
+    // safePath already returns the sensitive-read hint when applicable
+    return msg.startsWith('Error:') ? msg : `Error: ${msg}`
   }
 
   // ── File existence & type check ───────────────────────────────────────────
@@ -120,51 +113,49 @@ async function processSingleFile(
     return 'Error: Cannot read binary files. File must be plain text.'
   }
 
-  // ── Read + hash + registry (serialized per file) ──────────────────────────
-  return lockManager.withLock(fullPath, async () => {
-    let range: FileRange
-    try {
-      range = await readFileRange(fullPath, start, limit)
-    }
-    catch (e) {
-      return `Error reading ${filePath}: ${e instanceof Error ? e.message : String(e)}`
-    }
+  // ── Read + hash + registry — shared lock (parallel reads allowed, global 30 limit) ─
+  try {
+    return await lockManager.withReadLock(fullPath, async () => {
+      let range: FileRange
+      try {
+        range = await readFileRange(fullPath, start, limit)
+      }
+      catch (e) {
+        return `Error reading ${filePath}: ${e instanceof Error ? e.message : String(e)}`
+      }
 
-    const hash = await sha256Text(range.rawContent)
-    const isComplete = !range.truncated && range.totalLines <= limit
-    const oneBasedOffset = start + 1
+      const hash = await sha256Text(range.rawContent)
+      const isComplete = !range.truncated && range.totalLines <= limit
+      const oneBasedOffset = start + 1
 
-    // Deduplication
-    const existing = registry.get(fullPath)
-    if (!forced && existing && existing.hash === hash) {
-      const sameRange = existing.offset === oneBasedOffset && existing.limit === limit
-      const previouslyComplete = existing.complete
-      if (sameRange || previouslyComplete)
-        return FILE_UNCHANGED_STUB
-    }
+      // Registry update — always record; no deduplication stub
+      const entry = {
+        hash,
+        complete: isComplete,
+        sizeBytes: range.sizeBytes,
+        mtimeMs: range.mtimeMs,
+        offset: oneBasedOffset,
+        limit,
+      }
+      updateReadRegistry(registry, fullPath, entry)
 
-    // Registry update
-    const entry = {
-      hash,
-      complete: isComplete,
-      sizeBytes: range.sizeBytes,
-      mtimeMs: range.mtimeMs,
-      offset: oneBasedOffset,
-      limit,
-    }
-    updateReadRegistry(registry, fullPath, entry)
+      // Format output
+      let output = range.numberedContent
 
-    // Format output
-    let output = range.numberedContent
+      if (range.truncated) {
+        const firstLine = start + 1
+        const lastLine = start + range.returnedLines
+        output += `\n\n(File truncated. Showing lines ${firstLine}\u2013${lastLine} of ${range.totalLines}. Use offset and limit to read more.)`
+      }
 
-    if (range.truncated) {
-      const firstLine = start + 1
-      const lastLine = start + range.returnedLines
-      output += `\n\n(File truncated. Showing lines ${firstLine}\u2013${lastLine} of ${range.totalLines}. Use offset and limit to read more.)`
-    }
-
-    return output
-  }, forced)
+      return output
+    })
+  }
+  catch (e) {
+    if (e instanceof ConcurrencyLimitError)
+      return `Error: ${e.message}. Too many parallel tool calls — wait for some to finish and retry.`
+    throw e
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -201,25 +192,21 @@ export function createReadFilesTool(
         .describe(
           `Max lines to return per file. Default: ${DEFAULT_LINE_LIMIT}, max: ${MAX_LINE_LIMIT}. Omit unless you need a specific range.`,
         ),
-      forced: z
-        .boolean()
-        .optional()
-        .describe('If true, bypasses deduplication and always returns fresh content from disk. Use when the file may have changed externally since the last read.'),
     }),
 
-    execute: async ({ file_paths, offset, limit, forced }) => {
+    execute: async ({ file_paths, offset, limit }) => {
       const start = offset !== undefined ? offset - 1 : 0
       const appliedLimit = Math.min(limit ?? DEFAULT_LINE_LIMIT, MAX_LINE_LIMIT)
 
       // Single file: no header, just content
       if (file_paths.length === 1) {
-        return await processSingleFile(file_paths[0]!, projectPath, start, appliedLimit, registry, lockManager, forced)
+        return await processSingleFile(file_paths[0]!, projectPath, start, appliedLimit, registry, lockManager)
       }
 
       // Multiple files: each prefixed with === path === header
       const results: string[] = []
       for (const filePath of file_paths) {
-        const content = await processSingleFile(filePath, projectPath, start, appliedLimit, registry, lockManager, forced)
+        const content = await processSingleFile(filePath, projectPath, start, appliedLimit, registry, lockManager)
         results.push(`=== ${filePath} ===\n${content}`)
       }
       return results.join('\n\n')

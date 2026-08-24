@@ -38,6 +38,8 @@ export interface WorkspaceResult {
 }
 
 const RESULT_VISIBLE_MS = 3500
+const AUTO_REFRESH_INTERVAL_MS = 2500
+const CO_AUTHOR_TRAILER = 'Co-authored-by: Emty Agent <289245867+emty-agent@users.noreply.github.com>'
 
 /**
  * Encapsulates all git working-tree state and mutating actions for a single
@@ -63,6 +65,8 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
   const refreshedAt = ref(0)
 
   let resultTimer: ReturnType<typeof setTimeout> | null = null
+  let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
+  let refreshing = false
 
   function showResult(type: WorkspaceResult['type'], text: string) {
     if (resultTimer)
@@ -71,14 +75,20 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
     resultTimer = setTimeout(() => { result.value = null }, RESULT_VISIBLE_MS)
   }
 
-  async function refresh() {
-    loading.value = true
+  async function refresh(opts: { background?: boolean } = {}) {
+    if (refreshing)
+      return
+    const background = opts.background ?? false
+    const showLoading = !background
+    if (showLoading)
+      loading.value = true
+    refreshing = true
     try {
-      isRepo.value = await isGitRepo(cwd.value)
+      isRepo.value = await isGitRepo(cwd.value, tabId)
       if (isRepo.value) {
         const [nextStatus, nextStashes] = await Promise.all([
-          gitStatus(cwd.value),
-          gitStashList(cwd.value),
+          gitStatus(cwd.value, tabId),
+          gitStashList(cwd.value, tabId),
         ])
         status.value = nextStatus
         stashes.value = nextStashes
@@ -94,8 +104,58 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
       status.value = null
     }
     finally {
-      loading.value = false
+      refreshing = false
+      if (showLoading)
+        loading.value = false
     }
+  }
+
+  function doBackgroundRefresh(): void {
+    if (refreshing || busyAction.value || document.hidden || !isRepo.value || !owner.value.isPanelOpen)
+      return
+    void refresh({ background: true })
+  }
+
+  function startAutoRefresh(): void {
+    if (typeof window === 'undefined' || typeof document === 'undefined')
+      return
+    if (autoRefreshTimer)
+      return
+    autoRefreshTimer = setInterval(doBackgroundRefresh, AUTO_REFRESH_INTERVAL_MS)
+  }
+
+  function stopAutoRefresh(): void {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer)
+      autoRefreshTimer = null
+    }
+  }
+
+  function handleWindowFocus(): void {
+    if (!isRepo.value || !owner.value.isPanelOpen || document.hidden)
+      return
+    void refresh({ background: true })
+  }
+
+  function handleVisibilityChange(): void {
+    if (document.visibilityState === 'visible' && isRepo.value && owner.value.isPanelOpen)
+      void refresh({ background: true })
+  }
+
+  let autoListenersAttached = false
+  function ensureAutoListeners(): void {
+    if (autoListenersAttached || typeof window === 'undefined')
+      return
+    window.addEventListener('focus', handleWindowFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    autoListenersAttached = true
+  }
+  function detachAutoListeners(): void {
+    if (!autoListenersAttached || typeof window === 'undefined')
+      return
+    window.removeEventListener('focus', handleWindowFocus)
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    autoListenersAttached = false
   }
 
   const unstagedCount = computed(() => (status.value?.unstaged.length ?? 0) + (status.value?.untracked.length ?? 0))
@@ -144,27 +204,27 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
   }
 
   function stageFile(path: string) {
-    return runAction('Stage', () => gitStage(cwd.value, [path]))
+    return runAction('Stage', () => gitStage(cwd.value, [path], tabId))
   }
 
   function unstageFile(path: string) {
-    return runAction('Unstage', () => gitUnstage(cwd.value, [path]))
+    return runAction('Unstage', () => gitUnstage(cwd.value, [path], tabId))
   }
 
   function discardFile(path: string) {
     const isUntracked = status.value?.untracked.some(u => u.path === path) ?? false
     return isUntracked
-      ? runAction('Discard', () => gitDiscardUntracked(cwd.value, [path]))
-      : runAction('Discard', () => gitDiscard(cwd.value, [path]))
+      ? runAction('Discard', () => gitDiscardUntracked(cwd.value, [path], false, tabId))
+      : runAction('Discard', () => gitDiscard(cwd.value, [path], tabId))
   }
 
-  const stageAll = () => runAction('Stage all', () => gitStageAll(cwd.value), null)
-  const unstageAll = () => runAction('Unstage all', () => gitUnstageAll(cwd.value))
-  const fetchRemote = () => runAction('Fetch', () => gitFetch(cwd.value), 'Fetched remote refs')
-  const pullRemote = () => runAction('Pull', () => gitPull(cwd.value), 'Pulled latest changes')
-  const pushRemote = () => runAction('Push', () => gitPush(cwd.value), 'Pushed commits')
-  const stashChanges = () => runAction('Stash', () => gitStash(cwd.value, `WIP from Emty Agent ${new Date().toISOString()}`), 'Stashed changes')
-  const popStash = () => runAction('Pop stash', () => gitStashPop(cwd.value), 'Applied latest stash')
+  const stageAll = () => runAction('Stage all', () => gitStageAll(cwd.value, tabId), null)
+  const unstageAll = () => runAction('Unstage all', () => gitUnstageAll(cwd.value, tabId))
+  const fetchRemote = () => runAction('Fetch', () => gitFetch(cwd.value, tabId), 'Fetched remote refs')
+  const pullRemote = () => runAction('Pull', () => gitPull(cwd.value, tabId), 'Pulled latest changes')
+  const pushRemote = () => runAction('Push', () => gitPush(cwd.value, tabId), 'Pushed commits')
+  const stashChanges = () => runAction('Stash', () => gitStash(cwd.value, `WIP from Emty Agent ${new Date().toISOString()}`, true, tabId), 'Stashed changes')
+  const popStash = () => runAction('Pop stash', () => gitStashPop(cwd.value, tabId), 'Applied latest stash')
 
   function discardAllConfirmed() {
     if (!status.value || discardAllCount.value === 0)
@@ -178,8 +238,8 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
 
     return runAction('Discard all', async () => {
       const [trackedResult, untrackedResult] = await Promise.all([
-        trackedPaths.length ? gitDiscard(cwd.value, trackedPaths) : Promise.resolve<ActionResult>({ ok: true, stderr: '' }),
-        untrackedPaths.length ? gitDiscardUntracked(cwd.value, untrackedPaths) : Promise.resolve<ActionResult>({ ok: true, stderr: '' }),
+        trackedPaths.length ? gitDiscard(cwd.value, trackedPaths, tabId) : Promise.resolve<ActionResult>({ ok: true, stderr: '' }),
+        untrackedPaths.length ? gitDiscardUntracked(cwd.value, untrackedPaths, false, tabId) : Promise.resolve<ActionResult>({ ok: true, stderr: '' }),
       ])
       return {
         ok: trackedResult.ok && untrackedResult.ok,
@@ -205,6 +265,10 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
     get: () => owner.value.amendCommit,
     set: (value: boolean) => gitPaneStore.setCommitOptions(tabId, { amendCommit: value }),
   })
+  const includeCoAuthor = computed({
+    get: () => owner.value.includeCoAuthor,
+    set: (value: boolean) => gitPaneStore.setCommitOptions(tabId, { includeCoAuthor: value }),
+  })
 
   const commitDisabledReason = computed(() => {
     if (hasConflicts.value)
@@ -228,8 +292,8 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
 
   async function generateCommitMessage(): Promise<string> {
     const [diff, stat] = await Promise.all([
-      gitDiffStaged(cwd.value),
-      gitDiffStagedStat(cwd.value),
+      gitDiffStaged(cwd.value, tabId),
+      gitDiffStagedStat(cwd.value, tabId),
     ])
     if (!diff.trim())
       throw new CommitMessageValidationError('No staged changes to commit')
@@ -255,7 +319,7 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
     isCommitting.value = true
     try {
       if (includeUnstaged.value && unstagedCount.value > 0) {
-        const staged = await gitStageAll(cwd.value)
+        const staged = await gitStageAll(cwd.value, tabId)
         if (!staged.ok) {
           showResult('err', staged.stderr || 'Failed to stage files')
           return false
@@ -280,9 +344,12 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
         return false
       }
 
+      if (includeCoAuthor.value && !message.includes('Co-authored-by:'))
+        message = `${message.trimEnd()}\n\n${CO_AUTHOR_TRAILER}`
+
       const success = await runAction(
         'Commit',
-        () => gitCommit(cwd.value, message, { amend: amendCommit.value, skipHooks: skipCommitHooks.value }),
+        () => gitCommit(cwd.value, message, { amend: amendCommit.value, skipHooks: skipCommitHooks.value }, tabId),
         amendCommit.value ? 'Commit amended' : 'Committed',
         'Commit failed',
       )
@@ -298,9 +365,44 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
     }
   }
 
-  watch(cwd, () => { refresh() })
+  watch(cwd, () => { void refresh() })
+
+  // ── Auto refresh: polling + focus/visibility ─────────────────────────────
+
+  watch(isRepo, repo => {
+    if (repo && owner.value.isPanelOpen) {
+      ensureAutoListeners()
+      startAutoRefresh()
+    }
+    else if (!repo) {
+      stopAutoRefresh()
+      detachAutoListeners()
+    }
+    else {
+      stopAutoRefresh()
+    }
+  })
+
+  watch(() => owner.value.isPanelOpen, open => {
+    if (open && isRepo.value) {
+      ensureAutoListeners()
+      startAutoRefresh()
+      void refresh({ background: true })
+    }
+    else {
+      stopAutoRefresh()
+    }
+  })
+
+  // Start polling immediately if already in a repo with panel open (e.g. restored session)
+  if (typeof window !== 'undefined' && isRepo.value && owner.value.isPanelOpen) {
+    ensureAutoListeners()
+    startAutoRefresh()
+  }
 
   function dispose() {
+    stopAutoRefresh()
+    detachAutoListeners()
     if (resultTimer) {
       clearTimeout(resultTimer)
       resultTimer = null
@@ -340,6 +442,7 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
     includeUnstaged,
     skipCommitHooks,
     amendCommit,
+    includeCoAuthor,
     commitDisabledReason,
     commit,
     // lifecycle

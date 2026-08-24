@@ -19,6 +19,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   previewAttachment: [Attachment]
+  previewVersion: [string]
+  compareVersion: [string]
 }>()
 
 const chat = useChatStore()
@@ -69,7 +71,7 @@ const sessionDividerTextClasses = 'text-[11px] font-semibold tracking-[0.04em] u
   <TransitionGroup name="msg" :css="!isStreaming">
     <template v-for="(msg, msgIdx) in displayMessages" :key="msg.id">
       <RestorePointBanner
-        v-if="!isSubAgent && msg.role === 'user' && !msg.isBgNotification && checkpointAtIndex(msgIdx)"
+        v-if="!isSubAgent && !chat.activeTab.isDesignTab && msg.role === 'user' && !msg.isBgNotification && checkpointAtIndex(msgIdx)"
         :key="`rp-${msg.id}`"
         :checkpoint="checkpointAtIndex(msgIdx)!"
         :disabled="isStreaming"
@@ -94,6 +96,8 @@ const sessionDividerTextClasses = 'text-[11px] font-semibold tracking-[0.04em] u
         v-else-if="!msg.isBgNotification"
         :msg="msg"
         :agent-status="msg.id === messages.at(-1)?.id && msg.elapsedSec == null ? props.agentStatus : { type: 'idle' }"
+        @preview-version="emit('previewVersion', $event)"
+        @compare-version="emit('compareVersion', $event)"
       />
     </template>
   </TransitionGroup>

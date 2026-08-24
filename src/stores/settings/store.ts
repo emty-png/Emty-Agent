@@ -15,11 +15,18 @@ import type {
   ImageGenProviderConfig,
   McpServerConfig,
   MemoryConfig,
+  ModelSamplingConfig,
+  ModelSamplingOverride,
   OpenAIConfig,
+  ProviderAppearanceConfig,
+  ProviderContextConfig,
+  ProviderReasoningConfig,
+  ProviderSamplingConfig,
   SerperConfig,
   SoundConfig,
   TavilyConfig,
   ThinkingEffort,
+  TruncationStrategy,
   WebSearchProvider,
 } from './types'
 import type { SttProvider, SttProviderConfig, TtsProvider, TtsProviderConfig, VoiceDictionaryEntry, VoiceProcessingConfig, VoiceSnippet } from './voiceTypes'
@@ -189,13 +196,13 @@ export const useSettingsStore = defineStore(
         auto: true,
         thresholdPercent: 85,
         showManualButton: true,
+        modelUid: null,
       },
       gitCoAuthor: true,
       defaultModelUid: null,
       subagentModelUid: null,
     })
     const completedOnboarding = ref(false)
-    const dismissedBetaCloseNotice = ref(false)
     const toolDisabledIds = ref<{ build: string[]; design: string[] }>({ build: [], design: [] })
 
     // Migrate legacy flat disabledToolIds → per-mode toolDisabledIds.build
@@ -226,6 +233,593 @@ export const useSettingsStore = defineStore(
       if (!v)
         promptOverrides.value = {}
     }, { immediate: true })
+
+    // ── security overrides (path & command blocklists) ───────────────────────
+    const securityOverrides = ref<Record<string, string>>({})
+
+    // Single watcher: defensive null guard + sync to shared security cache
+    // (covers both immediate hydration and runtime edits). securityCache also
+    // hydrates synchronously from localStorage on module load for early callers.
+    watch(securityOverrides, v => {
+      if (!v) {
+        securityOverrides.value = {}
+        import('@/utils/security/securityCache').then(m => m.setSecurityOverridesCache({})).catch(() => {})
+        return
+      }
+      import('@/utils/security/securityCache').then(m => m.setSecurityOverridesCache(v ?? {})).catch(() => {})
+    }, { immediate: true, deep: true })
+
+    onMounted(() => {
+      import('@/utils/security/securityCache').then(m => m.setSecurityOverridesCache(securityOverrides.value ?? {})).catch(() => {})
+    })
+
+    const providerAppearance = ref<ProviderAppearanceConfig>({
+      global: {
+        hideThinking: false,
+        disableThinkingMarkdown: false,
+        disableAssistantMarkdown: false,
+      },
+      perProvider: {},
+    })
+
+    watch(providerAppearance, v => {
+      if (!v || typeof v !== 'object') {
+        providerAppearance.value = {
+          global: {
+            hideThinking: false,
+            disableThinkingMarkdown: false,
+            disableAssistantMarkdown: false,
+          },
+          perProvider: {},
+        }
+        return
+      }
+      let mutated = false
+      if (!v.global) {
+        v.global = {
+          hideThinking: false,
+          disableThinkingMarkdown: false,
+          disableAssistantMarkdown: false,
+        }
+        mutated = true
+      }
+      else {
+        if (typeof v.global.hideThinking !== 'boolean') {
+          v.global.hideThinking = false
+          mutated = true
+        }
+        if (typeof v.global.disableThinkingMarkdown !== 'boolean') {
+          v.global.disableThinkingMarkdown = false
+          mutated = true
+        }
+        if (typeof v.global.disableAssistantMarkdown !== 'boolean') {
+          v.global.disableAssistantMarkdown = false
+          mutated = true
+        }
+      }
+      if (!v.perProvider || typeof v.perProvider !== 'object') {
+        v.perProvider = {}
+        mutated = true
+      }
+      if (mutated)
+        providerAppearance.value = { global: { ...v.global }, perProvider: { ...v.perProvider } }
+    }, { immediate: true })
+
+    function setGlobalAppearance(key: keyof ProviderAppearanceConfig['global'], value: boolean): void {
+      providerAppearance.value = {
+        ...providerAppearance.value,
+        global: { ...providerAppearance.value.global, [key]: value },
+      }
+    }
+
+    function setProviderAppearance(
+      providerId: string,
+      key: keyof NonNullable<ProviderAppearanceConfig['perProvider'][string]>,
+      value: boolean,
+    ): void {
+      const nextPerProvider = { ...providerAppearance.value.perProvider }
+      const cur = { ...(nextPerProvider[providerId] ?? {}) }
+      if (value)
+        (cur as Record<string, boolean>)[key] = true
+      else
+        delete (cur as Record<string, unknown>)[key]
+      if (Object.keys(cur).length === 0)
+        delete nextPerProvider[providerId]
+      else
+        nextPerProvider[providerId] = cur
+      providerAppearance.value = {
+        ...providerAppearance.value,
+        perProvider: nextPerProvider,
+      }
+    }
+
+    function shouldHideThinking(providerId: string | null | undefined): boolean {
+      if (providerAppearance.value.global.hideThinking)
+        return true
+      if (providerId && providerAppearance.value.perProvider[providerId]?.hideThinking)
+        return true
+      return false
+    }
+
+    function shouldDisableThinkingMarkdown(providerId: string | null | undefined): boolean {
+      if (providerAppearance.value.global.disableThinkingMarkdown)
+        return true
+      if (providerId && providerAppearance.value.perProvider[providerId]?.disableThinkingMarkdown)
+        return true
+      return false
+    }
+
+    function shouldDisableAssistantMarkdown(providerId: string | null | undefined): boolean {
+      if (providerAppearance.value.global.disableAssistantMarkdown)
+        return true
+      if (providerId && providerAppearance.value.perProvider[providerId]?.disableAssistantMarkdown)
+        return true
+      return false
+    }
+
+    const providerSampling = ref<ProviderSamplingConfig>({
+      global: {},
+      perProvider: {},
+    })
+
+    watch(providerSampling, v => {
+      if (!v || typeof v !== 'object') {
+        providerSampling.value = { global: {}, perProvider: {} }
+        return
+      }
+      let mutated = false
+      if (!v.global || typeof v.global !== 'object') {
+        v.global = {}
+        mutated = true
+      }
+      else {
+        const g = v.global as Record<string, unknown>
+        for (const k of ['temperature', 'topP', 'topK', 'maxTokens', 'frequencyPenalty', 'presencePenalty', 'seed'] as const) {
+          const val = g[k]
+          if (val !== undefined && typeof val !== 'number') {
+            delete g[k]
+            mutated = true
+          }
+        }
+        if (g.stopSequences !== undefined && !Array.isArray(g.stopSequences)) {
+          delete g.stopSequences
+          mutated = true
+        }
+        if (g.responseFormat !== undefined && !['text', 'json_object', 'json_schema'].includes(g.responseFormat as string)) {
+          delete g.responseFormat
+          mutated = true
+        }
+        if (g.parallelToolCalls !== undefined && typeof g.parallelToolCalls !== 'boolean') {
+          delete g.parallelToolCalls
+          mutated = true
+        }
+      }
+      if (!v.perProvider || typeof v.perProvider !== 'object') {
+        v.perProvider = {}
+        mutated = true
+      }
+      else {
+        for (const [pid, entry] of Object.entries(v.perProvider as Record<string, Record<string, unknown>>)) {
+          if (!entry || typeof entry !== 'object') {
+            delete (v.perProvider as Record<string, unknown>)[pid]
+            mutated = true
+            continue
+          }
+          for (const k of ['temperature', 'topP', 'topK', 'maxTokens', 'frequencyPenalty', 'presencePenalty', 'seed'] as const) {
+            const val = entry[k]
+            if (val !== undefined && typeof val !== 'number') {
+              delete entry[k]
+              mutated = true
+            }
+          }
+          if (entry.stopSequences !== undefined && !Array.isArray(entry.stopSequences)) {
+            delete entry.stopSequences
+            mutated = true
+          }
+          if (entry.responseFormat !== undefined && !['text', 'json_object', 'json_schema'].includes(entry.responseFormat as string)) {
+            delete entry.responseFormat
+            mutated = true
+          }
+          if (entry.parallelToolCalls !== undefined && typeof entry.parallelToolCalls !== 'boolean') {
+            delete entry.parallelToolCalls
+            mutated = true
+          }
+          if (Object.keys(entry).length === 0) {
+            delete (v.perProvider as Record<string, unknown>)[pid]
+            mutated = true
+          }
+        }
+      }
+      if (mutated)
+        providerSampling.value = { global: { ...v.global }, perProvider: { ...v.perProvider } }
+    }, { immediate: true })
+
+    function clampSampling(key: keyof ProviderSamplingConfig['global'], value: number): number {
+      switch (key) {
+        case 'temperature': return Math.min(2, Math.max(0, value))
+        case 'topP': return Math.min(1, Math.max(0, value))
+        case 'topK': return Math.min(100, Math.max(0, Math.round(value)))
+        case 'maxTokens': return Math.min(32768, Math.max(256, Math.round(value)))
+        case 'seed': return Math.min(2147483647, Math.max(0, Math.round(value)))
+        case 'frequencyPenalty':
+        case 'presencePenalty': return Math.min(2, Math.max(-2, value))
+        default: return value
+      }
+    }
+
+    function setGlobalSampling(key: keyof ProviderSamplingConfig['global'], value: number | boolean | string[] | string | null | undefined): void {
+      const nextGlobal = { ...providerSampling.value.global } as Record<string, unknown>
+      if (value == null || (typeof value === 'number' && Number.isNaN(value))) {
+        delete nextGlobal[key as string]
+      }
+      else if (key === 'stopSequences') {
+        nextGlobal[key as string] = (value as string[]).filter(s => typeof s === 'string' && s.length > 0).slice(0, 10)
+      }
+      else if (typeof value === 'number' && ['temperature', 'topP', 'topK', 'maxTokens', 'frequencyPenalty', 'presencePenalty', 'seed'].includes(key as string)) {
+        nextGlobal[key as string] = clampSampling(key as keyof ProviderSamplingConfig['global'], value as number)
+      }
+      else {
+        nextGlobal[key as string] = value
+      }
+      providerSampling.value = { ...providerSampling.value, global: nextGlobal as ProviderSamplingConfig['global'] }
+    }
+
+    function setProviderSampling(
+      providerId: string,
+      key: keyof ProviderSamplingConfig['global'],
+      value: number | boolean | string[] | string | null | undefined,
+    ): void {
+      const nextPerProvider = { ...providerSampling.value.perProvider }
+      const cur = { ...(nextPerProvider[providerId] ?? {}) } as Record<string, unknown>
+      if (value == null || (typeof value === 'number' && Number.isNaN(value))) {
+        delete cur[key as string]
+      }
+      else if (key === 'stopSequences') {
+        cur[key as string] = (value as string[]).filter(s => typeof s === 'string' && s.length > 0).slice(0, 10)
+        if ((cur[key as string] as string[]).length === 0)
+          delete cur[key as string]
+      }
+      else if (typeof value === 'number' && ['temperature', 'topP', 'topK', 'maxTokens', 'frequencyPenalty', 'presencePenalty', 'seed'].includes(key as string)) {
+        cur[key as string] = clampSampling(key as keyof ProviderSamplingConfig['global'], value as number)
+      }
+      else {
+        cur[key as string] = value
+      }
+      if (Object.keys(cur).length === 0)
+        delete nextPerProvider[providerId]
+      else
+        nextPerProvider[providerId] = cur as ProviderSamplingConfig['global']
+      providerSampling.value = { ...providerSampling.value, perProvider: nextPerProvider }
+    }
+
+    function getEffectiveSamplingValue(
+      providerId: string | null | undefined,
+      key: keyof ProviderSamplingConfig['global'],
+    ): unknown {
+      if (providerId && providerSampling.value.perProvider[providerId]?.[key] !== undefined)
+        return providerSampling.value.perProvider[providerId][key]
+      if (providerSampling.value.global[key] !== undefined)
+        return providerSampling.value.global[key]
+      return undefined
+    }
+
+    function getEffectiveSampling(providerId: string | null | undefined): ProviderSamplingConfig['global'] {
+      const keys: Array<keyof ProviderSamplingConfig['global']> = ['temperature', 'topP', 'topK', 'maxTokens', 'frequencyPenalty', 'presencePenalty', 'seed', 'stopSequences', 'responseFormat', 'parallelToolCalls']
+      const out: ProviderSamplingConfig['global'] = {}
+      for (const k of keys) {
+        const v = getEffectiveSamplingValue(providerId, k)
+        if (v !== undefined)
+          (out as Record<string, unknown>)[k] = v
+      }
+      return out
+    }
+
+    const modelSampling = ref<ModelSamplingConfig>({})
+
+    watch(modelSampling, v => {
+      if (!v || typeof v !== 'object') {
+        modelSampling.value = {}
+        return
+      }
+      let mutated = false
+      for (const [uid, entry] of Object.entries(v as Record<string, Record<string, unknown>>)) {
+        if (!entry || typeof entry !== 'object') {
+          delete (v as Record<string, unknown>)[uid]
+          mutated = true
+          continue
+        }
+        for (const k of ['temperature', 'topP', 'topK', 'maxTokens', 'frequencyPenalty', 'presencePenalty', 'seed', 'contextLimit'] as const) {
+          const val = entry[k]
+          if (val !== undefined && typeof val !== 'number') {
+            delete entry[k]
+            mutated = true
+          }
+        }
+        if (entry.stopSequences !== undefined && !Array.isArray(entry.stopSequences)) {
+          delete entry.stopSequences
+          mutated = true
+        }
+        if (entry.responseFormat !== undefined && !['text', 'json_object', 'json_schema'].includes(entry.responseFormat as string)) {
+          delete entry.responseFormat
+          mutated = true
+        }
+        if (entry.parallelToolCalls !== undefined && typeof entry.parallelToolCalls !== 'boolean') {
+          delete entry.parallelToolCalls
+          mutated = true
+        }
+        if (Object.keys(entry).length === 0) {
+          delete (v as Record<string, unknown>)[uid]
+          mutated = true
+        }
+      }
+      if (mutated)
+        modelSampling.value = { ...v }
+    }, { immediate: true, deep: true })
+
+    function setModelSampling(
+      modelUid: string,
+      key: keyof ModelSamplingOverride,
+      value: number | boolean | string[] | string | null | undefined,
+    ): void {
+      const next = { ...modelSampling.value }
+      const cur = { ...(next[modelUid] ?? {}) } as Record<string, unknown>
+      if (value == null || (typeof value === 'number' && Number.isNaN(value))) {
+        delete cur[key as string]
+      }
+      else if (key === 'stopSequences') {
+        const arr = (value as string[]).filter(s => typeof s === 'string' && s.length > 0).slice(0, 10)
+        if (arr.length === 0)
+          delete cur[key as string]
+        else cur[key as string] = arr
+      }
+      else if (typeof value === 'number' && ['temperature', 'topP', 'topK', 'maxTokens', 'frequencyPenalty', 'presencePenalty', 'seed', 'contextLimit'].includes(key as string)) {
+        cur[key as string] = clampSampling(key as keyof ProviderSamplingConfig['global'], value as number)
+        if (key === 'contextLimit' && typeof value === 'number') {
+          cur[key as string] = Math.min(2000000, Math.max(1024, Math.round(value as number)))
+        }
+      }
+      else {
+        cur[key as string] = value
+      }
+      if (Object.keys(cur).length === 0)
+        delete next[modelUid]
+      else
+        next[modelUid] = cur as ModelSamplingOverride
+      modelSampling.value = next
+    }
+
+    /* eslint-disable ts/no-use-before-define */
+    function getEffectiveModelSampling(modelUid: string | null | undefined, providerId: string | null | undefined): ModelSamplingOverride | undefined {
+      if (!modelUid && !providerId)
+        return undefined
+      const out: ModelSamplingOverride = {}
+      const keys: Array<keyof ModelSamplingOverride> = ['temperature', 'topP', 'topK', 'maxTokens', 'frequencyPenalty', 'presencePenalty', 'seed', 'stopSequences', 'responseFormat', 'parallelToolCalls', 'contextLimit']
+      for (const k of keys) {
+        let v: unknown
+        if (modelUid && (modelSampling.value[modelUid] as Record<string, unknown>)?.[k] !== undefined)
+          v = (modelSampling.value[modelUid] as Record<string, unknown>)[k]
+        else if (providerId && getEffectiveSamplingValue(providerId, k as keyof ProviderSamplingConfig['global']) !== undefined)
+          v = getEffectiveSamplingValue(providerId, k as keyof ProviderSamplingConfig['global'])
+        else if (k === 'contextLimit' && providerId && providerContext.value.perProvider[providerId]?.contextLimit !== undefined)
+          v = providerContext.value.perProvider[providerId]?.contextLimit
+        else if (k === 'contextLimit' && providerContext.value.global.contextLimit !== undefined)
+          v = providerContext.value.global.contextLimit
+        if (v !== undefined)
+          (out as Record<string, unknown>)[k] = v
+      }
+      return Object.keys(out).length > 0 ? out : undefined
+    }
+    /* eslint-enable ts/no-use-before-define */
+
+    const providerContext = ref<ProviderContextConfig>({ global: {}, perProvider: {} })
+
+    watch(providerContext, v => {
+      if (!v || typeof v !== 'object') {
+        providerContext.value = { global: {}, perProvider: {} }
+        return
+      }
+      let mutated = false
+      if (!v.global || typeof v.global !== 'object') {
+        v.global = {}
+        mutated = true
+      }
+      else {
+        const g = v.global as Record<string, unknown>
+        if (g.contextLimit !== undefined && (typeof g.contextLimit !== 'number' || g.contextLimit < 1024)) {
+          if (typeof g.contextLimit === 'number' && g.contextLimit < 1024) {
+            g.contextLimit = 1024
+          }
+          else if (typeof g.contextLimit !== 'number') {
+            delete g.contextLimit
+            mutated = true
+          }
+        }
+        if (g.truncationStrategy !== undefined && !['auto', 'truncate', 'compact'].includes(g.truncationStrategy as string)) {
+          delete g.truncationStrategy
+          mutated = true
+        }
+      }
+      if (!v.perProvider || typeof v.perProvider !== 'object') {
+        v.perProvider = {}
+        mutated = true
+      }
+      else {
+        for (const [pid, entry] of Object.entries(v.perProvider as Record<string, Record<string, unknown>>)) {
+          if (!entry || typeof entry !== 'object') {
+            delete (v.perProvider as Record<string, unknown>)[pid]
+            mutated = true
+            continue
+          }
+          if (entry.contextLimit !== undefined && typeof entry.contextLimit !== 'number') {
+            delete entry.contextLimit
+            mutated = true
+          }
+          if (entry.truncationStrategy !== undefined && !['auto', 'truncate', 'compact'].includes(entry.truncationStrategy as string)) {
+            delete entry.truncationStrategy
+            mutated = true
+          }
+          if (Object.keys(entry).length === 0) {
+            delete (v.perProvider as Record<string, unknown>)[pid]
+            mutated = true
+          }
+        }
+      }
+      if (mutated)
+        providerContext.value = { global: { ...v.global }, perProvider: { ...v.perProvider } }
+    }, { immediate: true })
+
+    function setProviderContext(
+      providerId: string | null,
+      key: keyof ProviderContextConfig['global'],
+      value: number | string | null | undefined,
+    ): void {
+      if (providerId == null) {
+        const nextGlobal = { ...providerContext.value.global } as Record<string, unknown>
+        if (value == null) {
+          delete nextGlobal[key as string]
+        }
+        else {
+          if (key === 'contextLimit' && typeof value === 'number')
+            nextGlobal[key as string] = Math.min(2000000, Math.max(1024, Math.round(value as number)))
+          else
+            nextGlobal[key as string] = value
+        }
+        providerContext.value = { ...providerContext.value, global: nextGlobal as ProviderContextConfig['global'] }
+        return
+      }
+      const nextPer = { ...providerContext.value.perProvider }
+      const cur = { ...(nextPer[providerId] ?? {}) } as Record<string, unknown>
+      if (value == null) {
+        delete cur[key as string]
+      }
+      else {
+        if (key === 'contextLimit' && typeof value === 'number')
+          cur[key as string] = Math.min(2000000, Math.max(1024, Math.round(value as number)))
+        else
+          cur[key as string] = value
+      }
+      if (Object.keys(cur).length === 0)
+        delete nextPer[providerId]
+      else nextPer[providerId] = cur as ProviderContextConfig['global']
+      providerContext.value = { ...providerContext.value, perProvider: nextPer }
+    }
+
+    function getEffectiveContextLimit(providerId: string | null | undefined, modelUid?: string | null): number | undefined {
+      if (modelUid && (modelSampling.value[modelUid] as ModelSamplingOverride)?.contextLimit !== undefined)
+        return (modelSampling.value[modelUid] as ModelSamplingOverride).contextLimit
+      if (providerId && providerContext.value.perProvider[providerId]?.contextLimit !== undefined)
+        return providerContext.value.perProvider[providerId]?.contextLimit
+      if (providerContext.value.global.contextLimit !== undefined)
+        return providerContext.value.global.contextLimit
+      return undefined
+    }
+
+    function getEffectiveTruncation(providerId: string | null | undefined): TruncationStrategy | undefined {
+      if (providerId && providerContext.value.perProvider[providerId]?.truncationStrategy !== undefined)
+        return providerContext.value.perProvider[providerId]?.truncationStrategy
+      return providerContext.value.global.truncationStrategy
+    }
+
+    const providerReasoning = ref<ProviderReasoningConfig>({ global: {}, perProvider: {} })
+
+    watch(providerReasoning, v => {
+      if (!v || typeof v !== 'object') {
+        providerReasoning.value = { global: {}, perProvider: {} }
+        return
+      }
+      let mutated = false
+      if (!v.global || typeof v.global !== 'object') {
+        v.global = {}
+        mutated = true
+      }
+      else {
+        const g = v.global as Record<string, unknown>
+        if (g.customBudgetTokens !== undefined && typeof g.customBudgetTokens !== 'number') {
+          delete g.customBudgetTokens
+          mutated = true
+        }
+      }
+      if (!v.perProvider || typeof v.perProvider !== 'object') {
+        v.perProvider = {}
+        mutated = true
+      }
+      else {
+        for (const [pid, entry] of Object.entries(v.perProvider as Record<string, Record<string, unknown>>)) {
+          if (!entry || typeof entry !== 'object') {
+            delete (v.perProvider as Record<string, unknown>)[pid]
+            mutated = true
+            continue
+          }
+          if (entry.customBudgetTokens !== undefined && typeof entry.customBudgetTokens !== 'number') {
+            delete entry.customBudgetTokens
+            mutated = true
+          }
+          if (Object.keys(entry).length === 0) {
+            delete (v.perProvider as Record<string, unknown>)[pid]
+            mutated = true
+          }
+        }
+      }
+      if (mutated)
+        providerReasoning.value = { global: { ...v.global }, perProvider: { ...v.perProvider } }
+    }, { immediate: true })
+
+    function setProviderReasoning(
+      providerId: string | null,
+      key: keyof ProviderReasoningConfig['global'],
+      value: number | null | undefined,
+    ): void {
+      if (providerId == null) {
+        const nextGlobal = { ...providerReasoning.value.global } as Record<string, unknown>
+        if (value == null || Number.isNaN(value))
+          delete nextGlobal[key as string]
+        else nextGlobal[key as string] = Math.min(100000, Math.max(512, Math.round(value as number)))
+        providerReasoning.value = { ...providerReasoning.value, global: nextGlobal as ProviderReasoningConfig['global'] }
+        return
+      }
+      const nextPer = { ...providerReasoning.value.perProvider }
+      const cur = { ...(nextPer[providerId] ?? {}) } as Record<string, unknown>
+      if (value == null || Number.isNaN(value))
+        delete cur[key as string]
+      else cur[key as string] = Math.min(100000, Math.max(512, Math.round(value as number)))
+      if (Object.keys(cur).length === 0)
+        delete nextPer[providerId]
+      else nextPer[providerId] = cur as ProviderReasoningConfig['global']
+      providerReasoning.value = { ...providerReasoning.value, perProvider: nextPer }
+    }
+
+    function getEffectiveReasoningBudget(providerId: string | null | undefined): number | undefined {
+      if (providerId && providerReasoning.value.perProvider[providerId]?.customBudgetTokens !== undefined)
+        return providerReasoning.value.perProvider[providerId]?.customBudgetTokens
+      return providerReasoning.value.global.customBudgetTokens
+    }
+
+    function getEffectiveThinkingLevels(model: DiscoveredModel): ThinkingEffort[] {
+      const opts = model.reasoningOptions
+      if (opts?.length) {
+        const effort = opts.find((o): o is { type: 'effort'; values: string[] } => o.type === 'effort')
+        if (effort) {
+          const map: Record<string, ThinkingEffort> = { low: 'low', medium: 'medium', high: 'high', xhigh: 'xhigh', max: 'max', off: 'off' }
+          const levels: ThinkingEffort[] = []
+          for (const v of effort.values) {
+            const mapped = map[v] ?? (v as ThinkingEffort)
+            if (['off', 'low', 'medium', 'high', 'xhigh', 'max'].includes(mapped) && !levels.includes(mapped))
+              levels.push(mapped)
+          }
+          if (!levels.includes('off'))
+            levels.unshift('off')
+          return levels.length > 0 ? levels : (['off', 'low', 'medium', 'high', 'xhigh', 'max'] as ThinkingEffort[])
+        }
+        const budget = opts.find((o): o is { type: 'budget_tokens'; min: number } => o.type === 'budget_tokens')
+        if (budget)
+          return ['off', 'low', 'medium', 'high', 'xhigh', 'max']
+      }
+      if (!model.supportsThinking)
+        return ['off']
+      return ['off', 'low', 'medium', 'high', 'xhigh', 'max']
+    }
+    // alias for new naming, keep both for compatibility
+    const getThinkingLevels = getEffectiveThinkingLevels
 
     const globalSkills = ref<SkillMetadata[]>([])
     const projectSkills = ref<SkillMetadata[]>([])
@@ -352,6 +946,21 @@ export const useSettingsStore = defineStore(
 
     function resetAllPrompts(): void {
       promptOverrides.value = {}
+    }
+
+    // ── security overrides ───────────────────────────────────────────────────
+    function setSecurityOverride(id: string, content: string): void {
+      securityOverrides.value = { ...securityOverrides.value, [id]: content }
+    }
+
+    function resetSecurityOverride(id: string): void {
+      const next = { ...securityOverrides.value }
+      delete next[id]
+      securityOverrides.value = next
+    }
+
+    function resetAllSecurity(): void {
+      securityOverrides.value = {}
     }
 
     async function refreshProjectSkills(projectPath: string | null): Promise<void> {
@@ -1263,6 +1872,7 @@ export const useSettingsStore = defineStore(
             Math.max(50, agent.value.sessionCompaction?.thresholdPercent ?? 85),
           ),
           showManualButton: agent.value.sessionCompaction?.showManualButton !== false,
+          modelUid: agent.value.sessionCompaction?.modelUid ?? null,
         },
         gitCoAuthor: agent.value.gitCoAuthor !== false,
         defaultModelUid: agent.value.defaultModelUid ?? null,
@@ -1271,6 +1881,15 @@ export const useSettingsStore = defineStore(
     }
 
     normalizeAgentConfig()
+
+    // expose setter for future picker UI — compactionModelUid is optional
+    function setCompactionModelUid(uid: string | null): void {
+      agent.value.sessionCompaction.modelUid = uid
+    }
+
+    function getCompactionModelUid(): string | null {
+      return agent.value.sessionCompaction.modelUid ?? null
+    }
 
     // ── onboarding ────────────────────────────────────────────────────────
     function completeOnboarding() {
@@ -1333,7 +1952,29 @@ export const useSettingsStore = defineStore(
       agent,
       completedOnboarding,
       completeOnboarding,
-      dismissedBetaCloseNotice,
+      providerAppearance,
+      setGlobalAppearance,
+      setProviderAppearance,
+      shouldHideThinking,
+      shouldDisableThinkingMarkdown,
+      shouldDisableAssistantMarkdown,
+      providerSampling,
+      setGlobalSampling,
+      setProviderSampling,
+      getEffectiveSamplingValue,
+      getEffectiveSampling,
+      modelSampling,
+      setModelSampling,
+      getEffectiveModelSampling,
+      providerContext,
+      setProviderContext,
+      getEffectiveContextLimit,
+      getEffectiveTruncation,
+      providerReasoning,
+      setProviderReasoning,
+      getEffectiveReasoningBudget,
+      getEffectiveThinkingLevels,
+      getThinkingLevels,
       toolDisabledIds,
       getToolDisabledIds,
       toolDescriptionOverrides,
@@ -1344,6 +1985,10 @@ export const useSettingsStore = defineStore(
       setPromptOverride,
       resetPromptOverride,
       resetAllPrompts,
+      securityOverrides,
+      setSecurityOverride,
+      resetSecurityOverride,
+      resetAllSecurity,
       disabledSkillIds,
       globalSkills,
       projectSkills,
@@ -1373,6 +2018,8 @@ export const useSettingsStore = defineStore(
       activeModel,
       subagentActiveModel,
       enabledModels,
+      setCompactionModelUid,
+      getCompactionModelUid,
       toggleModel,
       setModelThinking,
       setActiveModel,
@@ -1412,15 +2059,20 @@ export const useSettingsStore = defineStore(
         'developerMode',
         'agent',
         'completedOnboarding',
-        'dismissedBetaCloseNotice',
         'toolDisabledIds',
         'toolDescriptionOverrides',
         'promptOverrides',
+        'securityOverrides',
         'disabledSkillIds',
         'compatibleProviders',
         'mcpServers',
         'discoveredModels',
         'activeModelUid',
+        'providerAppearance',
+        'providerSampling',
+        'modelSampling',
+        'providerContext',
+        'providerReasoning',
       ],
     },
   },

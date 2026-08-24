@@ -59,28 +59,18 @@ export const skillProvider: CommandProvider = async (tab, projectPath) => {
       if (currentMode === 'design' && skill.name === 'skill-factory')
         continue
 
-      if (skill.commands.length > 0) {
-        for (const cmd of skill.commands) {
-          commands.push({
-            id: `skill-${skill.id}-${cmd.name}`,
-            label: `/${cmd.name}`,
-            description: cmd.description,
-            type: 'skill',
-            skillId: skill.id,
-            ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
-          })
-        }
-      }
-      else {
-        commands.push({
-          id: `skill-${skill.id}`,
-          label: `/skill-${skill.name}`,
-          description: skill.title,
-          type: 'skill',
-          skillId: skill.id,
-          ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
-        })
-      }
+      // Single slash command per SKILL.md — multiple commands per file removed.
+      // Nested skills (e.g. responsive-design/build) expose as /<name> to preserve /build and /audit UX.
+      const isNested = skill.id.includes('/')
+      const label = isNested ? `/${skill.name}` : `/skill-${skill.name}`
+      commands.push({
+        id: `skill-${skill.id}`,
+        label,
+        description: skill.description || skill.title,
+        type: 'skill',
+        skillId: skill.id,
+        ...(skill.whenToUse ? { whenToUse: skill.whenToUse } : {}),
+      })
     }
   }
   catch {

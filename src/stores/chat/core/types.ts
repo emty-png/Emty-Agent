@@ -97,6 +97,19 @@ export type MessagePart
     | { type: 'reasoning'; text: string }
     | { type: 'tool'; toolCallId: string }
 
+export interface DesignVersionRef {
+  id: string
+  versionNumber: number
+  createdAt: number
+  label: string
+  filesChanged: string[]
+  snapshotPath: string
+  messageId: string
+  conversationId: string
+  projectPath: string
+  projectName: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -117,6 +130,8 @@ export interface Message {
    *  Sent to the AI for context but never rendered as a user bubble in the UI.
    */
   isBgNotification?: boolean
+  /** Design version attached to this assistant turn (if it edited files). */
+  designVersionId?: string | null
 }
 
 // ── Draft / estimator ─────────────────────────────────────────────────────────
@@ -200,6 +215,10 @@ export interface ChatTab {
   devServerTaskId?: string | undefined
   /** FIFO queue of messages waiting for idle. Drained automatically after each turn. */
   messageQueue: QueuedMessage[]
+  /** Design version history (persisted via design_versions table). */
+  designVersions?: DesignVersionRef[]
+  /** Currently previewed version id (null = live). */
+  activePreviewVersionId?: string | null
 }
 
 export type { Attachment, SubAgentInfo, SubAgentPersonality, TaskItem, ToolPermissionDecision }

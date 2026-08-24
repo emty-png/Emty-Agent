@@ -59,14 +59,14 @@ interface SettingsSnapshot {
     id: string
     providerId: string
     supportsThinking: boolean
-    thinkingEffort: 'low' | 'medium' | 'high'
+    thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     sdkType?: 'openai' | 'anthropic' | 'google' | null
   } | null
   subagentActiveModel: {
     id: string
     providerId: string
     supportsThinking: boolean
-    thinkingEffort: 'low' | 'medium' | 'high'
+    thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     sdkType?: 'openai' | 'anthropic' | 'google' | null
   } | null
   openai: { apiKey: string; baseURL?: string; organizationId?: string }

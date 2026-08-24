@@ -1,99 +1,223 @@
 /**
- * Design project tools: scaffold_project, create_design_files, edit_design_files, build_project
+ * Design project tools: start_project, edit_design, refresh_preview, get_console
  *
- * Used exclusively in 'design' mode. These tools manage file-based design projects
- * stored in ~/.emty/designs/{project_name}/.
+ * Used exclusively in 'design' mode. Manages static 3-file design projects
+ * (index.html, styles.css, script.js) stored in ~/.emty/designs/{name}/.
+ *
+ * The preview renders via srcdoc with styles/script inlined; console output is
+ * captured by an injected bootstrap script and relayed through postMessage.
  */
 
+import type { FileReadRegistry } from './fs/shared'
 import type { DesignProjectType } from '@/stores/chat/core/types'
 import { homeDir, join } from '@tauri-apps/api/path'
 import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
-import { Command } from '@tauri-apps/plugin-shell'
 import { tool, zodSchema } from 'ai'
 import { z } from 'zod'
+import { ConcurrencyLimitError, FileLockManager } from './fs/fileLock'
+import { readTextSnapshot, updateReadRegistry } from './fs/shared'
 import { DEFAULT_TOOL_DESCRIPTIONS } from './toolDescriptions'
 
-// ── Dev server management ─────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────
 
-/** Preferred port for design preview dev servers. Vite auto-increments if busy. */
-const DESIGN_PREVIEW_PORT = 5190
+/** The only files a design project may contain. */
+export const DESIGN_FILES = ['index.html', 'styles.css', 'script.js'] as const
 
-/** Active dev server child processes keyed by project path. */
-const devServers = new Map<string, { kill: () => Promise<void> }>()
+/** Valid project names: lowercase letters/digits, then letters/digits/-/_ (max 64). */
+const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
-export async function stopDevServer(projectPath: string): Promise<void> {
-  const entry = devServers.get(projectPath)
-  if (entry) {
-    console.warn(`[dev-server] Stopping dev server for ${projectPath}`)
-    try { await entry.kill() }
-    catch { /* ignore */ }
-    devServers.delete(projectPath)
-    console.warn(`[dev-server] ✓ Stopped dev server for ${projectPath}`)
+// ── Console capture store (keyed by project path) ────────────────────────────
+
+export type DesignConsoleLevel = 'log' | 'info' | 'warn' | 'error' | 'debug'
+
+export interface DesignConsoleEntry {
+  level: DesignConsoleLevel
+  args: string[]
+  timestamp: number
+}
+
+const MAX_CONSOLE_ENTRIES = 500
+const MAX_TRACKED_PROJECTS = 50
+
+const consoleBuffers = new Map<string, DesignConsoleEntry[]>()
+
+function getConsoleBuffer(projectPath: string): DesignConsoleEntry[] {
+  let buffer = consoleBuffers.get(projectPath)
+  if (!buffer) {
+    buffer = []
+    consoleBuffers.set(projectPath, buffer)
+    // Prune the oldest tracked project when over budget (Map preserves order)
+    if (consoleBuffers.size > MAX_TRACKED_PROJECTS) {
+      const oldest = consoleBuffers.keys().next().value
+      if (oldest !== undefined)
+        consoleBuffers.delete(oldest)
+    }
   }
+  return buffer
+}
+
+export function pushConsoleEntries(projectPath: string, entries: DesignConsoleEntry[]): void {
+  if (entries.length === 0)
+    return
+  const buffer = getConsoleBuffer(projectPath)
+  buffer.push(...entries)
+  if (buffer.length > MAX_CONSOLE_ENTRIES)
+    buffer.splice(0, buffer.length - MAX_CONSOLE_ENTRIES)
+}
+
+export function clearConsoleBuffer(projectPath: string): void {
+  consoleBuffers.delete(projectPath)
+}
+
+// ── Console bootstrap script (injected into preview srcdoc) ──────────────────
+
+/**
+ * Runs before any user code. Wraps console methods and global error handlers,
+ * serializes arguments safely, and relays entries to the parent window via
+ * postMessage. Kept as a plain string so it can be injected into srcdoc.
+ */
+export const CONSOLE_BOOTSTRAP = `<script>(function(){
+  function ser(v, depth){
+    try {
+      if (v === null) return 'null';
+      if (v === undefined) return 'undefined';
+      var t = typeof v;
+      if (t === 'string') return v;
+      if (t === 'number' || t === 'boolean') return String(v);
+      if (t === 'function') return '[Function' + (v.name ? ': ' + v.name : '') + ']';
+      if (v instanceof Error) return v.stack || (v.name + ': ' + v.message);
+      if (typeof Element !== 'undefined' && v instanceof Element) return '<' + v.tagName.toLowerCase() + '\\u003E';
+      if (depth > 3) return Array.isArray(v) ? '[Array]' : '{\\u2026}';
+      if (Array.isArray(v)) {
+        var parts = v.slice(0, 20).map(function(x){ return ser(x, depth + 1); });
+        if (v.length > 20) parts.push('\\u2026 ' + (v.length - 20) + ' more');
+        return '[' + parts.join(', ') + ']';
+      }
+      var keys = Object.keys(v).slice(0, 20);
+      return '{' + keys.map(function(k){ return k + ': ' + ser(v[k], depth + 1); }).join(', ') + '}';
+    } catch (e) { return '[unserializable]'; }
+  }
+  function send(level, args){
+    try {
+      var out = [];
+      for (var i = 0; i < args.length; i++) {
+        var s = ser(args[i], 0);
+        out.push(s.length > 2000 ? s.slice(0, 2000) + '\\u2026' : s);
+      }
+      parent.postMessage({ source: 'emty-design-console', level: level, args: out, timestamp: Date.now() }, '*');
+    } catch (e) { /* ignore */ }
+  }
+  ['log','info','warn','error','debug'].forEach(function(level){
+    var original = typeof console[level] === 'function' ? console[level].bind(console) : function(){};
+    console[level] = function(){ send(level, arguments); original.apply(null, arguments); };
+  });
+  window.addEventListener('error', function(e){
+    var loc = e.lineno ? ' (' + e.lineno + ':' + e.colno + ')' : '';
+    send('error', [(e.message || 'Script error') + loc]);
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    send('error', ['Unhandled promise rejection: ' + ser(e.reason, 0)]);
+  });
+})();<\/script>`
+
+/** Inject the console bootstrap as the first child of <head> (or prepend). */
+export function injectConsoleBootstrap(html: string): string {
+  const headMatch = /<head[^>]*>/i.exec(html)
+  if (headMatch && headMatch.index !== undefined) {
+    const idx = headMatch.index + headMatch[0].length
+    return html.slice(0, idx) + CONSOLE_BOOTSTRAP + html.slice(idx)
+  }
+  return CONSOLE_BOOTSTRAP + html
+}
+
+// ── Design picker bootstrap (inside-iframe, browser-style) ───────────────────
+
+export const DESIGN_PICKER_SOURCE = 'emty-design-picker'
+export const DESIGN_PICKER_HOST_SOURCE = 'emty-design-picker-host'
+
+/**
+ * Exact clone of the browser picker visuals (browser_bridge.js:333) but
+ * running inside the design preview iframe via postMessage to the parent
+ * DesignCanvas. No Tauri IPC — uses parent.postMessage for annotations
+ * and listens for host commands (startPicker / stopPicker / setAnnotations).
+ */
+export const DESIGN_PICKER_BOOTSTRAP = `<script>(function(){
+  var PICKER_ROOT_ID='__emty_design_picker__';
+  var PICKER_STYLE_ID='__emty_design_picker_styles__';
+  var pickerState={active:false,hovered:null,selected:null,root:null,hoverBox:null,markerLayer:null,composer:null,annotations:[],raf:0,markerListenersActive:false};
+  function normalizeText(v){return String(v==null?'':v).replace(/\\s+/g,' ').trim();}
+  function truncate(v,max){var t=normalizeText(v);return t.length>max?t.slice(0,max)+'...':t;}
+  function truncateRaw(v,max){var t=String(v==null?'':v);return t.length>max?t.slice(0,max)+'...':t;}
+  function isVisible(el){if(!(el instanceof HTMLElement))return false;var r=el.getBoundingClientRect();var s=window.getComputedStyle(el);return r.width>0&&r.height>0&&s.visibility!=='hidden'&&s.display!=='none';}
+  function elementText(el){return normalizeText(el.getAttribute('aria-label')||el.innerText||el.textContent||'');}
+  function elementRole(el){return el.getAttribute('role')||null;}
+  function elementIdentifier(el){if(el.id)return '#'+el.id;if(el.getAttribute('name'))return el.tagName.toLowerCase()+'[name="'+el.getAttribute('name')+'"]';if(el.classList.length>0)return el.tagName.toLowerCase()+'.'+Array.prototype.slice.call(el.classList,0,2).join('.');return el.tagName.toLowerCase();}
+  function cssEscape(value){if(window.CSS&&typeof window.CSS.escape==='function')return window.CSS.escape(String(value));return String(value).replace(/[^a-zA-Z0-9_-]/g,function(ch){return '\\\\'+ch});}
+  function selectorForElement(el){if(!(el instanceof Element))return '';if(el.id)return '#'+cssEscape(el.id);var parts=[];var cur=el;while(cur&&cur instanceof Element&&cur!==document.documentElement){var part=cur.tagName.toLowerCase();var parent=cur.parentElement;if(!parent)break;var same=Array.prototype.slice.call(parent.children).filter(function(c){return c.tagName===cur.tagName});if(same.length>1)part+=':nth-of-type('+(same.indexOf(cur)+1)+')';parts.unshift(part);if(parts.length>=6)break;cur=parent;}return parts.join(' > ')||elementIdentifier(el);}
+  function elementAttributes(el){var out={};var attrs=Array.prototype.slice.call(el.attributes||[]);for(var i=0;i<attrs.length;i++){var a=attrs[i];out[a.name]=truncateRaw(a.value,300);}return out;}
+  function describeElement(el,opts){opts=opts||{};var r=el.getBoundingClientRect();var needsMax=opts.maxHtmlChars==null?4000:opts.maxHtmlChars;var val='value' in el?String(el.value==null?'':el.value):'';var checked='checked' in el?Boolean(el.checked):undefined;return {tag:el.tagName.toLowerCase(),id:el.id||null,classes:Array.prototype.slice.call(el.classList),name:el.getAttribute('name'),role:elementRole(el),ariaLabel:el.getAttribute('aria-label'),selector:selectorForElement(el),selectorHint:elementIdentifier(el),text:truncate(elementText(el),220),href:el instanceof HTMLAnchorElement?el.href:null,attributes:elementAttributes(el),outerHTML:truncateRaw(el.outerHTML||'',needsMax),placeholder:el.getAttribute('placeholder'),type:'type' in el?String(el.type==null?'':el.type):null,disabled:'disabled' in el?Boolean(el.disabled):false,checked:checked,valuePreview:val?truncate(val,120):null,rect:{x:Math.round(r.x),y:Math.round(r.y),width:Math.round(r.width),height:Math.round(r.height)}};}
+  function installPickerStyles(){if(document.getElementById(PICKER_STYLE_ID))return;var s=document.createElement('style');s.id=PICKER_STYLE_ID;s.textContent='#'+PICKER_ROOT_ID+'{position:fixed;inset:0;z-index:2147483647;pointer-events:none;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#f8fbff} #'+PICKER_ROOT_ID+' *{box-sizing:border-box} .emty-picker-hover,.emty-picker-marker-box{position:fixed;border:2px solid #178cff;background:rgba(23,140,255,0.16);box-shadow:0 0 0 1px rgba(255,255,255,0.76),0 10px 32px rgba(0,0,0,0.18);pointer-events:none} .emty-picker-hover{display:none} .emty-picker-pin,.emty-picker-marker-pin{position:fixed;display:grid;place-items:center;width:22px;height:22px;border:2px solid #ffffff;border-radius:999px;background:#178cff;box-shadow:0 6px 18px rgba(0,0,0,0.25);pointer-events:none} .emty-picker-pin::before,.emty-picker-marker-pin::before{content:"";width:8px;height:8px;border-radius:999px;background:#ffffff} .emty-picker-composer{position:fixed;width:min(300px,calc(100vw - 24px));border:1px solid #262626;border-radius:12px;background:#0a0a0a;box-shadow:0 12px 32px rgba(0,0,0,0.45),0 2px 8px rgba(0,0,0,0.3);padding:6px;pointer-events:auto} .emty-picker-composer-row{display:flex;align-items:center;gap:8px} .emty-picker-comment{flex:1;min-width:0;height:28px;box-sizing:border-box;border:1px solid #333333;border-radius:8px;outline:0;resize:none;background:#141414;color:#f2f2f2;font:inherit;font-size:12px;line-height:20px;padding:4px 8px;transition:border-color 150ms ease} .emty-picker-comment:focus{border-color:#00e5ff} .emty-picker-comment::placeholder{color:#595959} .emty-picker-action,.emty-picker-cancel{display:grid;place-items:center;width:28px;height:28px;flex-shrink:0;border:1px solid #333333;border-radius:8px;background:#141414;color:#8a8a8a;cursor:pointer;font:inherit;transition:background 100ms cubic-bezier(0.4,0,0.2,1),border-color 100ms cubic-bezier(0.4,0,0.2,1),color 100ms cubic-bezier(0.4,0,0.2,1)} .emty-picker-cancel:hover{background:#1c1c1c;color:#f2f2f2} .emty-picker-cancel:active{transform:scale(0.97)} .emty-picker-action:disabled{cursor:default;opacity:0.45} .emty-picker-action:not(:disabled){border-color:rgba(0,229,255,0.4);background:rgba(0,229,255,0.18);color:#00e5ff} .emty-picker-action:not(:disabled):hover{background:rgba(0,229,255,0.28)} .emty-picker-action:not(:disabled):active{transform:scale(0.97)} .emty-picker-marker-note{position:fixed;max-width:260px;padding:7px 10px;border-radius:12px;background:#178cff;color:#ffffff;font-size:12px;font-weight:600;line-height:1.35;box-shadow:0 8px 22px rgba(0,0,0,0.25);pointer-events:none}';(document.head||document.documentElement).appendChild(s);}
+  function ensurePickerRoot(){installPickerStyles();if(pickerState.root&&document.documentElement.contains(pickerState.root))return pickerState.root;var root=document.createElement('div');root.id=PICKER_ROOT_ID;var hoverBox=document.createElement('div');hoverBox.className='emty-picker-hover';var pin=document.createElement('div');pin.className='emty-picker-pin';hoverBox.appendChild(pin);var markerLayer=document.createElement('div');markerLayer.className='emty-picker-marker-layer';root.appendChild(markerLayer);root.appendChild(hoverBox);document.documentElement.appendChild(root);pickerState.root=root;pickerState.hoverBox=hoverBox;pickerState.markerLayer=markerLayer;return root;}
+  function isPickerElement(n){return n instanceof Element&&!!n.closest('#'+PICKER_ROOT_ID);}
+  function elementFromPointer(e){var el=document.elementFromPoint(e.clientX,e.clientY);if(!el||isPickerElement(el)||el===document.documentElement||el===document.body)return null;return el;}
+  function positionBox(box,rect){var left=rect.left;var top=rect.top;var width=rect.width;var height=rect.height;var right=rect.right;box.style.display='block';box.style.left=Math.max(0,Math.round(left))+'px';box.style.top=Math.max(0,Math.round(top))+'px';box.style.width=Math.max(1,Math.round(width))+'px';box.style.height=Math.max(1,Math.round(height))+'px';var pin=box.querySelector('.emty-picker-pin, .emty-picker-marker-pin');if(pin){pin.style.left=Math.min(window.innerWidth-26,Math.max(4,Math.round(right-12)))+'px';pin.style.top=Math.min(window.innerHeight-26,Math.max(4,Math.round(top+height/2-11)))+'px';}}
+  function updateHoverBox(){if(!pickerState.hoverBox||!pickerState.hovered)return;positionBox(pickerState.hoverBox,pickerState.hovered.getBoundingClientRect());}
+  function hideHoverBox(){if(pickerState.hoverBox)pickerState.hoverBox.style.display='none';}
+  function scheduleMarkerRender(){if(pickerState.raf)return;pickerState.raf=window.requestAnimationFrame(function(){pickerState.raf=0;renderPickerMarkers();updateHoverBox();});}
+  function syncMarkerListeners(){var should=pickerState.active||pickerState.annotations.length>0;if(should===pickerState.markerListenersActive)return;pickerState.markerListenersActive=should;var m=should?'addEventListener':'removeEventListener';window[m]('scroll',scheduleMarkerRender,true);window[m]('resize',scheduleMarkerRender,true);}
+  function renderPickerMarkers(){ensurePickerRoot();var layer=pickerState.markerLayer;if(!layer)return;layer.textContent='';for(var i=0;i<pickerState.annotations.length;i++){var ann=pickerState.annotations[i];if(!ann||!ann.element||!ann.element.selector)continue;var el=null;try{el=document.querySelector(ann.element.selector);}catch(e){el=null;}if(!el||!isVisible(el))continue;var rect=el.getBoundingClientRect();var box=document.createElement('div');box.className='emty-picker-marker-box';var p=document.createElement('div');p.className='emty-picker-marker-pin';box.appendChild(p);positionBox(box,rect);var note=document.createElement('div');note.className='emty-picker-marker-note';note.textContent=truncate(ann.comment,90);note.style.left=Math.min(window.innerWidth-272,Math.max(8,Math.round(rect.left)))+'px';note.style.top=Math.min(window.innerHeight-48,Math.max(8,Math.round(rect.bottom+8)))+'px';layer.appendChild(box);layer.appendChild(note);}}
+  function removeComposer(){if(pickerState.composer){pickerState.composer.remove();pickerState.composer=null;}pickerState.selected=null;}
+  function showComposerFor(el){ensurePickerRoot();removeComposer();pickerState.selected=el;var rect=el.getBoundingClientRect();var c=document.createElement('div');c.className='emty-picker-composer';c.innerHTML='<div class="emty-picker-composer-row"><button class="emty-picker-cancel" type="button" aria-label="Cancel annotation"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button><textarea class="emty-picker-comment" rows="1" placeholder="Add a comment..."></textarea><button class="emty-picker-action" type="button" aria-label="Attach comment" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button></div>';var left=Math.min(window.innerWidth-332,Math.max(12,rect.left+rect.width/2-160));var below=rect.bottom+10;var top=below+58<window.innerHeight?below:Math.max(12,rect.top-58);c.style.left=left+'px';c.style.top=top+'px';var ta=c.querySelector('.emty-picker-comment');var act=c.querySelector('.emty-picker-action');var canc=c.querySelector('.emty-picker-cancel');ta.addEventListener('input',function(){act.disabled=ta.value.trim().length===0;});ta.addEventListener('keydown',function(e){if(e.key==='Escape'){e.preventDefault();removeComposer();}if((e.key==='Enter'&&(e.metaKey||e.ctrlKey))||(e.key==='Enter'&&!e.shiftKey)){e.preventDefault();submitPickerComment(ta.value);}});act.addEventListener('click',function(){submitPickerComment(ta.value);});canc.addEventListener('click',removeComposer);pickerState.root.appendChild(c);pickerState.composer=c;setTimeout(function(){ta.focus();},0);}
+  function makePickerId(){if(window.crypto&&typeof window.crypto.randomUUID==='function')return window.crypto.randomUUID();return 'design-element-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
+  function submitPickerComment(raw){var comment=normalizeText(raw);var el=pickerState.selected;if(!comment||!el)return;var ann={id:makePickerId(),comment:comment,url:window.location.href,title:document.title,createdAt:Date.now(),element:describeElement(el,{maxHtmlChars:6000})};pickerState.annotations.push(ann);removeComposer();renderPickerMarkers();try{parent.postMessage({source:'emty-design-picker',kind:'annotation',annotation:ann},'*');}catch(e){}}
+  function onPickerPointerMove(e){if(!pickerState.active||pickerState.composer)return;var el=elementFromPointer(e);if(el===pickerState.hovered)return;pickerState.hovered=el;if(!el){hideHoverBox();return;}updateHoverBox();}
+  function onPickerPointerDown(e){if(!pickerState.active)return;if(isPickerElement(e.target))return;var el=elementFromPointer(e);if(!el)return;e.preventDefault();e.stopPropagation();showComposerFor(el);}
+  function onPickerClick(e){if(!pickerState.active||isPickerElement(e.target))return;e.preventDefault();e.stopPropagation();}
+  function onPickerKeydown(e){if(!pickerState.active)return;if(e.key==='Escape'){e.preventDefault();stopPicker();}}
+  function startPicker(){ensurePickerRoot();if(pickerState.active)return;pickerState.active=true;document.addEventListener('pointermove',onPickerPointerMove,true);document.addEventListener('pointerdown',onPickerPointerDown,true);document.addEventListener('click',onPickerClick,true);document.addEventListener('keydown',onPickerKeydown,true);syncMarkerListeners();renderPickerMarkers();}
+  function stopPicker(){if(!pickerState.active)return;pickerState.active=false;pickerState.hovered=null;document.removeEventListener('pointermove',onPickerPointerMove,true);document.removeEventListener('pointerdown',onPickerPointerDown,true);document.removeEventListener('click',onPickerClick,true);document.removeEventListener('keydown',onPickerKeydown,true);removeComposer();hideHoverBox();syncMarkerListeners();}
+  function setAnnotations(list){pickerState.annotations=Array.isArray(list)?list:[];renderPickerMarkers();syncMarkerListeners();}
+  window.__EMTY_DESIGN_PICKER__={start:startPicker,stop:stopPicker,setAnnotations:setAnnotations};
+  window.addEventListener('message',function(e){try{var d=e.data;if(!d||d.source!=='emty-design-picker-host')return;if(d.action==='startPicker')startPicker();else if(d.action==='stopPicker')stopPicker();else if(d.action==='setAnnotations')setAnnotations(d.annotations||[]);}catch(err){}});
+})();<\/script>`
+
+export function injectPickerBootstrap(html: string): string {
+  // Insert picker bootstrap right after console bootstrap if present, else after <head>.
+  const consoleIdx = html.indexOf(CONSOLE_BOOTSTRAP)
+  if (consoleIdx !== -1) {
+    const insertAt = consoleIdx + CONSOLE_BOOTSTRAP.length
+    return html.slice(0, insertAt) + DESIGN_PICKER_BOOTSTRAP + html.slice(insertAt)
+  }
+  // Fallback: console marker exists but CONSOLE_BOOTSTRAP not matched verbatim (e.g. minified) — find the first </script> after the marker
+  if (html.includes('emty-design-console')) {
+    const markerIdx = html.indexOf('emty-design-console')
+    const closeIdx = html.indexOf('</script>', markerIdx)
+    if (closeIdx !== -1) {
+      const insertAt = closeIdx + '</script>'.length
+      return html.slice(0, insertAt) + DESIGN_PICKER_BOOTSTRAP + html.slice(insertAt)
+    }
+  }
+  const headMatch = /<head[^>]*>/i.exec(html)
+  if (headMatch && headMatch.index !== undefined) {
+    const idx = headMatch.index + headMatch[0].length
+    return html.slice(0, idx) + DESIGN_PICKER_BOOTSTRAP + html.slice(idx)
+  }
+  return DESIGN_PICKER_BOOTSTRAP + html
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-type ShellBinary = 'sh' | 'powershell' | 'pwsh' | 'git-bash' | 'git-bash-x86'
 
 async function getDesignsRoot(): Promise<string> {
   const home = await homeDir()
   return join(home, '.emty', 'designs')
 }
 
-function createShellArgs(shell: ShellBinary, command: string): string[] {
-  if (shell === 'powershell' || shell === 'pwsh')
-    return ['-NoProfile', '-NonInteractive', '-Command', command]
-  if (shell === 'git-bash' || shell === 'git-bash-x86')
-    return ['-lc', command]
-  return ['-c', command]
-}
-
-async function resolveShell(): Promise<ShellBinary> {
-  const { platform } = await import('@tauri-apps/plugin-os')
-  const currentPlatform = await platform()
-  if (currentPlatform !== 'windows')
-    return 'sh'
-
-  // Try sh first (Git Bash or WSL)
-  try {
-    const result = await Command.create('sh', ['-c', 'exit 0']).execute()
-    if (result.code === 0)
-      return 'sh'
-  }
-  catch { /* ignore */ }
-
-  // Try pwsh (PowerShell 7)
-  try {
-    const result = await Command.create('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'exit 0']).execute()
-    if (result.code === 0)
-      return 'pwsh'
-  }
-  catch { /* ignore */ }
-
-  // Fall back to Windows PowerShell
-  return 'powershell'
-}
-
-async function runShellCommand(cwd: string, command: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  const shell = await resolveShell()
-  const args = createShellArgs(shell, command)
-  const cmd = Command.create(shell, args, { cwd })
-  const result = await cmd.execute()
-  return {
-    code: result.code ?? 1,
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
-  }
-}
-
 async function ensureDir(dirPath: string): Promise<void> {
-  if (!(await exists(dirPath))) {
+  if (!(await exists(dirPath)))
     await mkdir(dirPath, { recursive: true })
-  }
 }
 
-async function write_file(filePath: string, content: string): Promise<void> {
+async function writeFile(filePath: string, content: string): Promise<void> {
   // Handle both forward and back slashes for Windows compatibility
   const lastSlash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
   const dir = lastSlash >= 0 ? filePath.substring(0, lastSlash + 1) : ''
@@ -102,1038 +226,390 @@ async function write_file(filePath: string, content: string): Promise<void> {
   await writeTextFile(filePath, content)
 }
 
-// ── Vite template files ──────────────────────────────────────────────────────
+// ── Project templates ────────────────────────────────────────────────────────
 
-function getViteTemplateFiles(type: DesignProjectType, name: string): Array<{ path: string; content: string }> {
-  const displayName = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-
-  const viteConfig = `import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-
-// https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-})
-`
+function getTemplateFiles(name: string): Array<{ path: (typeof DESIGN_FILES)[number]; content: string }> {
+  const title = name.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
   const indexHtml = `<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${displayName}</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title}</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="starter">
+    <h1>${title}</h1>
+    <p>Edit these files to begin building your design.</p>
+  </main>
+  <script src="script.js"><\/script>
+</body>
 </html>
 `
 
-  const viteSvg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="31.88" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 257"><defs><linearGradient id="IconifyId1813088fe1fbc01fb466" x1="-.828%" x2="57.636%" y1="7.652%" y2="78.411%"><stop offset="0%" stop-color="#41D1FF"></stop><stop offset="100%" stop-color="#BD34FE"></stop></linearGradient><linearGradient id="IconifyId1813088fe1fbc01fb467" x1="43.376%" x2="50.316%" y1="2.242%" y2="89.03%"><stop offset="0%" stop-color="#FFBD4F"></stop><stop offset="100%" stop-color="#FF9640"></stop></linearGradient></defs><path fill="url(#IconifyId1813088fe1fbc01fb466)" d="M255.153 37.938L134.897 252.976c-2.483 4.44-8.862 4.466-11.382.048L.875 37.958c-2.746-4.814 1.371-10.646 6.827-9.67l120.385 21.517a6.537 6.537 0 0 0 2.322-.004l117.867-21.483c5.438-.991 9.574 4.796 6.877 9.62Z"></path><path fill="url(#IconifyId1813088fe1fbc01fb467)" d="M185.432.063L96.44 17.501a3.268 3.268 0 0 0-2.634 3.014l-5.474 92.456a3.268 3.268 0 0 0 3.997 3.378l24.777-5.718c2.318-.535 4.413 1.507 3.936 3.838l-7.361 36.047c-.495 2.426 1.782 4.5 4.151 3.78l15.304-4.649c2.372-.72 4.652 1.36 4.15 3.788l-11.698 56.621c-.732 3.542 3.979 5.473 5.943 2.437l1.313-2.028l72.516-144.72c1.215-2.423-.88-5.186-3.54-4.672l-25.505 4.922c-2.396.462-4.435-1.77-3.759-4.114l16.646-57.705c.677-2.35-1.37-4.583-3.769-4.113Z"></path></svg>'
-
-  if (type === 'vite-react') {
-    const packageJson = `{
-  "name": "${name}",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.4.1",
-    "vite": "^6.3.2"
-  }
-}
-`
-    const mainJsx = `import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
-`
-    const indexCss = `:root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  const stylesCss = `/* ${title} — styles */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
   min-height: 100vh;
+  display: grid;
+  place-items: center;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: #fafafa;
+  color: #111;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-`
-    const appJsx = `import { useState } from 'react'
-import './App.css'
-
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <div>
-        <h1>Vite + React</h1>
-        <div className="card">
-          <button onClick={() => setCount((count) => count + 1)}>
-            count is {count}
-          </button>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test HMR
-          </p>
-        </div>
-        <p className="read-the-docs">
-          Click on the Vite and React logos to learn more
-        </p>
-      </div>
-    </>
-  )
-}
-
-export default App
-`
-    const appCss = `#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+.starter {
   text-align: center;
+  padding: 48px 32px;
 }
 
-.card {
-  padding: 2em;
+.starter h1 {
+  font-size: clamp(28px, 5vw, 44px);
+  letter-spacing: -0.02em;
 }
 
-.read-the-docs {
-  color: #888;
-}
-`
-    return [
-      { path: 'package.json', content: packageJson },
-      { path: 'vite.config.js', content: viteConfig },
-      { path: 'index.html', content: indexHtml },
-      { path: 'public/vite.svg', content: viteSvg },
-      { path: 'src/main.jsx', content: mainJsx },
-      { path: 'src/App.jsx', content: appJsx },
-      { path: 'src/App.css', content: appCss },
-      { path: 'src/index.css', content: indexCss },
-    ]
-  }
-
-  if (type === 'vite-vue') {
-    const packageJson = `{
-  "name": "${name}",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "vue": "^3.5.13"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.3",
-    "vite": "^6.3.2"
-  }
+.starter p {
+  margin-top: 12px;
+  color: #666;
 }
 `
-    const viteConfigVue = `import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
 
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [vue()],
-})
+  const scriptJs = `// ${title} — scripts
+console.log('Design project ready')
 `
-    const mainJs = `import { createApp } from 'vue'
-import './style.css'
-import App from './App.vue'
 
-createApp(App).mount('#root')
-`
-    const styleCss = `:root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-`
-    const appVue = `<script setup>
-import { ref } from 'vue'
-
-const count = ref(0)
-</script>
-
-<template>
-  <div>
-    <h1>Vite + Vue</h1>
-    <div class="card">
-      <button type="button" @click="count++">count is {{ count }}</button>
-      <p>
-        Edit <code>src/App.vue</code> to test HMR
-      </p>
-    </div>
-    <p class="read-the-docs">
-      Click on the Vite and Vue logos to learn more
-    </p>
-  </div>
-</template>
-
-<style scoped>
-.read-the-docs {
-  color: #888;
-}
-</style>
-`
-    return [
-      { path: 'package.json', content: packageJson },
-      { path: 'vite.config.js', content: viteConfigVue },
-      { path: 'index.html', content: indexHtml },
-      { path: 'public/vite.svg', content: viteSvg },
-      { path: 'src/main.js', content: mainJs },
-      { path: 'src/App.vue', content: appVue },
-      { path: 'src/style.css', content: styleCss },
-    ]
-  }
-
-  if (type === 'vite-svelte') {
-    const packageJson = `{
-  "name": "${name}",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "svelte": "^5.28.2"
-  },
-  "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5.0.3",
-    "vite": "^6.3.2"
-  }
-}
-`
-    const viteConfigSvelte = `import { defineConfig } from 'vite'
-import { svelte } from '@sveltejs/vite-plugin-svelte'
-
-// https://vite.dev/config/
-export default defineConfig({
-  plugins: [svelte()],
-})
-`
-    const mainJs = `import './app.css'
-import App from './App.svelte'
-import { mount } from 'svelte'
-
-const app = mount(App, {
-  target: document.getElementById('root'),
-})
-
-export default app
-`
-    const appCss = `:root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-`
-    const appSvelte = `<script>
-  let count = $state(0)
-  function increment() {
-    count += 1
-  }
-</script>
-
-<main>
-  <h1>Vite + Svelte</h1>
-
-  <div class="card">
-    <button onclick={increment}>
-      count is {count}
-    </button>
-    <p>
-      Edit <code>src/App.svelte</code> and save to test HMR
-    </p>
-  </div>
-
-  <p class="read-the-docs">
-    Click on the Vite and Svelte logos to learn more
-  </p>
-</main>
-
-<style>
-  .read-the-docs {
-    color: #888;
-  }
-</style>
-`
-    return [
-      { path: 'package.json', content: packageJson },
-      { path: 'vite.config.js', content: viteConfigSvelte },
-      { path: 'index.html', content: indexHtml },
-      { path: 'public/vite.svg', content: viteSvg },
-      { path: 'src/main.js', content: mainJs },
-      { path: 'src/App.svelte', content: appSvelte },
-      { path: 'src/app.css', content: appCss },
-    ]
-  }
-
-  // vite-vanilla (default)
-  const packageJson = `{
-  "name": "${name}",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "devDependencies": {
-    "vite": "^6.3.2"
-  }
-}
-`
-  const mainJs = `import './style.css'
-
-document.querySelector('#app').innerHTML = \`
-  <div>
-    <h1>Hello Vite!</h1>
-    <div class="card">
-      <button id="counter" type="button"></button>
-    </div>
-    <p class="read-the-docs">
-      Click on the Vite logo to learn more
-    </p>
-  </div>
-\`
-
-document.addEventListener('DOMContentLoaded', () => {
-  document.querySelector('#counter').addEventListener('click', () => {
-    count = Math.round(count * 10 + 1) / 10
-    document.querySelector('#counter').textContent = \`count is \${count}\`
-  })
-})
-
-let count = 0
-`
-  const styleCss = `:root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-`
   return [
-    { path: 'package.json', content: packageJson },
-    { path: 'vite.config.js', content: viteConfig },
     { path: 'index.html', content: indexHtml },
-    { path: 'public/vite.svg', content: viteSvg },
-    { path: 'src/main.js', content: mainJs },
-    { path: 'src/style.css', content: styleCss },
+    { path: 'styles.css', content: stylesCss },
+    { path: 'script.js', content: scriptJs },
   ]
 }
 
-// ── scaffold_project ─────────────────────────────────────────────────────────
+// ── start_project ────────────────────────────────────────────────────────────
 
-export function createScaffoldProjectTool(
+export function createStartProjectTool(
   onProjectScaffold?: (project: { path: string; name: string; type: DesignProjectType }) => void,
+  onVersionAccumulate?: (files: Array<{ path: string; content: string }>) => void,
 ) {
   return tool({
-    description: DEFAULT_TOOL_DESCRIPTIONS.scaffold_project,
+    description: DEFAULT_TOOL_DESCRIPTIONS.start_project,
     inputSchema: zodSchema(z.object({
-      type: z.enum(['single-file', 'multiple-files', 'vite-react', 'vite-vue', 'vite-svelte', 'vite-vanilla'])
-        .describe('Project type: "single-file" (one HTML with inline CSS/JS), "multiple-files" (separate HTML/CSS/JS), "vite-react" / "vite-vue" / "vite-svelte" / "vite-vanilla" (Vite framework project)'),
-      name: z.string().min(1).describe('Project name in snake_case (e.g. "login_page") — used as the directory name'),
+      name: z.string().regex(NAME_PATTERN, 'Project name must be lowercase (letters, digits, "-" or "_"), start with a letter or digit, max 64 chars — e.g. "login_page"'),
+      overwrite: z.boolean().optional().describe('Set true to replace an existing project with the same name'),
     })),
-    execute: async ({ type, name }) => {
-      console.warn('[scaffold_project] ── START ──')
-      console.warn(`[scaffold_project] type=${JSON.stringify(type)} name=${JSON.stringify(name)}`)
+    execute: async ({ name, overwrite }) => {
+      console.warn(`[start_project] ── START ── name=${JSON.stringify(name)} overwrite=${!!overwrite}`)
       try {
-        if (!name || name.trim().length === 0) {
-          const msg = 'scaffold_project validation failed: name is required'
-          console.warn(`[scaffold_project] ✗ ${msg}`)
-          return { ok: false, message: msg }
-        }
-
         const designsRoot = await getDesignsRoot()
         const projectPath = await join(designsRoot, name)
 
-        // Create project directory
-        await ensureDir(projectPath)
-
-        // For Vite projects, create all necessary files automatically
-        let filesCreated = 0
-        if (type.startsWith('vite-')) {
-          const templateFiles = getViteTemplateFiles(type, name)
-          for (const file of templateFiles) {
-            const fullPath = await join(projectPath, file.path)
-            await write_file(fullPath, file.content)
-            filesCreated++
-            console.warn(`[scaffold_project] ✓ Created ${file.path}`)
-          }
+        if (await exists(projectPath) && !overwrite) {
+          const msg = `A project named "${name}" already exists. Pick a different name, or pass overwrite: true to replace it.`
+          console.warn(`[start_project] ✗ ${msg}`)
+          return { ok: false, message: msg }
         }
 
-        console.warn(`[scaffold_project] ✓ Project scaffolded at ${projectPath} (${filesCreated} files created)`)
+        await ensureDir(projectPath)
+        clearConsoleBuffer(projectPath)
 
-        // Notify callback so the tab can store the project metadata
-        onProjectScaffold?.({ path: projectPath, name, type })
+        for (const file of getTemplateFiles(name)) {
+          await writeFile(await join(projectPath, file.path), file.content)
+          console.warn(`[start_project] ✓ Created ${file.path}`)
+        }
 
+        onProjectScaffold?.({ path: projectPath, name, type: 'multiple-files' })
+        const templateFiles = getTemplateFiles(name)
+        onVersionAccumulate?.(templateFiles.map(f => ({ path: f.path, content: f.content })))
+
+        console.warn(`[start_project] ✓ Project ready at ${projectPath}`)
         return {
           ok: true,
           path: projectPath,
-          type,
-          filesCreated,
-          message: type.startsWith('vite-')
-            ? `Project "${name}" scaffolded at ${projectPath}. Type: ${type}. ${filesCreated} files created automatically. Run build to install dependencies and build.`
-            : `Project "${name}" scaffolded at ${projectPath}. Type: ${type}. Now use create_design_files to write the project files.`,
+          files: [...DESIGN_FILES],
+          message: `Project "${name}" created at ${projectPath} with index.html, styles.css and script.js. The live preview has started. Use edit_design to make changes.`,
         }
       }
       catch (e) {
         const detail = e instanceof Error ? e.message : String(e)
-        console.warn(`[scaffold_project] ✗ EXCEPTION: ${detail}`)
-        return { ok: false, message: `scaffold_project failed: ${detail}` }
+        console.warn(`[start_project] ✗ EXCEPTION: ${detail}`)
+        return { ok: false, message: `start_project failed: ${detail}` }
       }
     },
   })
 }
 
-// ── create_design_files ──────────────────────────────────────────────────────
+// ── edit_design ──────────────────────────────────────────────────────────────
 
-export function createDesignFilesTool(
-  getProject?: () => { path: string; name: string; type: DesignProjectType } | null,
+type ActiveProjectGetter = () => { path: string; name: string; type: DesignProjectType } | null
+
+export function createEditDesignTool(
+  getActiveDesignProject?: ActiveProjectGetter,
   onFilesChanged?: () => void,
+  onVersionAccumulate?: (files: Array<{ path: string; content: string }>) => void,
 ) {
   return tool({
-    description: DEFAULT_TOOL_DESCRIPTIONS.create_design_files,
+    description: DEFAULT_TOOL_DESCRIPTIONS.edit_design,
     inputSchema: zodSchema(z.object({
       files: z.array(z.object({
-        path: z.string().describe('File path relative to project root (e.g. "index.html")'),
-        content: z.string().describe('Full file content'),
-      })).describe('Array of files to create'),
+        path: z.enum(['index.html', 'styles.css', 'script.js'])
+          .describe('File to edit relative to the project root'),
+        content: z.string().describe('Full new file content'),
+      })).min(1).max(3).describe('Files to write (full content per file)'),
     })),
     execute: async ({ files }) => {
-      console.warn('[create_design_files] ── START ──')
-      console.warn(`[create_design_files] files count=${files.length}`)
+      console.warn(`[edit_design] ── START ── files=${files.length}`)
       try {
-        const project = getProject?.()
+        const project = getActiveDesignProject?.()
         if (!project) {
-          const msg = 'No active design project. Call scaffold_project first.'
-          console.warn(`[create_design_files] ✗ ${msg}`)
+          const msg = 'No active design project. Call start_project first.'
+          console.warn(`[edit_design] ✗ ${msg}`)
           return { ok: false, message: msg }
         }
 
-        const results: Array<{ path: string; ok: boolean; error?: string }> = []
+        const results: Array<{ path: string; ok: boolean; skipped?: boolean; error?: string }> = []
 
         for (const file of files) {
           try {
             const fullPath = await join(project.path, file.path)
-            await write_file(fullPath, file.content)
+            let unchanged = false
+            try {
+              if (await exists(fullPath))
+                unchanged = (await readTextFile(fullPath)) === file.content
+            }
+            catch { /* treat as changed */ }
+
+            if (unchanged) {
+              results.push({ path: file.path, ok: true, skipped: true })
+              console.warn(`[edit_design] ⊘ ${file.path} unchanged, skipping`)
+              continue
+            }
+
+            await writeFile(fullPath, file.content)
             results.push({ path: file.path, ok: true })
-            console.warn(`[create_design_files] ✓ wrote ${file.path} (${file.content.length} bytes)`)
+            console.warn(`[edit_design] ✓ wrote ${file.path} (${file.content.length} bytes)`)
           }
           catch (e) {
             const error = e instanceof Error ? e.message : String(e)
             results.push({ path: file.path, ok: false, error })
-            console.warn(`[create_design_files] ✗ failed ${file.path}: ${error}`)
+            console.warn(`[edit_design] ✗ failed ${file.path}: ${error}`)
           }
         }
 
-        const allOk = results.every(r => r.ok)
         const failed = results.filter(r => !r.ok)
+        const written = results.filter(r => r.ok && !r.skipped)
 
-        if (allOk)
+        if (written.length > 0 && failed.length === 0) {
           onFilesChanged?.()
+          const writtenFiles = files.filter(f => written.some(w => w.path === f.path))
+          onVersionAccumulate?.(writtenFiles.map(f => ({ path: f.path, content: f.content })))
+        }
 
         return {
-          ok: allOk,
-          filesWritten: results.filter(r => r.ok).length,
-          filesFailed: failed.length,
+          ok: failed.length === 0,
+          written: written.length,
+          skipped: results.filter(r => r.skipped).length,
           errors: failed.length > 0 ? failed.map(f => `${f.path}: ${f.error}`) : undefined,
-          message: allOk
-            ? `${results.length} files written to ${project.name}/`
-            : `${results.filter(r => r.ok).length}/${results.length} files written. Failed: ${failed.map(f => f.path).join(', ')}`,
+          message: failed.length === 0
+            ? `${written.length} file(s) written${written.length > 0 ? ' — preview reloaded' : ', nothing changed'}`
+            : `Failed: ${failed.map(f => f.path).join(', ')}`,
         }
       }
       catch (e) {
         const detail = e instanceof Error ? e.message : String(e)
-        console.warn(`[create_design_files] ✗ EXCEPTION: ${detail}`)
-        return { ok: false, message: `create_design_files failed: ${detail}` }
+        console.warn(`[edit_design] ✗ EXCEPTION: ${detail}`)
+        return { ok: false, message: `edit_design failed: ${detail}` }
       }
     },
   })
 }
 
-// ── edit_design_files ────────────────────────────────────────────────────────
+// ── refresh_preview ──────────────────────────────────────────────────────────
 
-export function createEditDesignFilesTool(
-  getProject?: () => { path: string; name: string; type: DesignProjectType } | null,
+export function createRefreshPreviewTool(
+  getActiveDesignProject?: ActiveProjectGetter,
   onFilesChanged?: () => void,
 ) {
   return tool({
-    description: DEFAULT_TOOL_DESCRIPTIONS.edit_design_files,
+    description: DEFAULT_TOOL_DESCRIPTIONS.refresh_preview,
+    inputSchema: zodSchema(z.object({})),
+    execute: async () => {
+      console.warn('[refresh_preview] ── START ──')
+      try {
+        const project = getActiveDesignProject?.()
+        if (!project) {
+          const msg = 'No active design project. Call start_project first.'
+          console.warn(`[refresh_preview] ✗ ${msg}`)
+          return { ok: false, message: msg }
+        }
+
+        onFilesChanged?.()
+        console.warn(`[refresh_preview] ✓ Preview refreshed for ${project.name}`)
+        return { ok: true, message: `Preview refreshed for "${project.name}".` }
+      }
+      catch (e) {
+        const detail = e instanceof Error ? e.message : String(e)
+        console.warn(`[refresh_preview] ✗ EXCEPTION: ${detail}`)
+        return { ok: false, message: `refresh_preview failed: ${detail}` }
+      }
+    },
+  })
+}
+
+// ── get_console ──────────────────────────────────────────────────────────────
+
+export function createGetConsoleTool(getActiveDesignProject?: ActiveProjectGetter) {
+  return tool({
+    description: DEFAULT_TOOL_DESCRIPTIONS.get_console,
     inputSchema: zodSchema(z.object({
-      files: z.array(z.object({
-        path: z.string().describe('File path relative to project root'),
-        content: z.string().describe('New file content'),
-        mode: z.enum(['overwrite', 'patch']).describe('"overwrite" replaces entire file; "patch" applies changes (full content provided, diff tracked for logging)'),
-      })).describe('Array of files to edit'),
+      level: z.enum(['all', 'log', 'info', 'warn', 'error']).optional().describe('Filter by log level (default "all")'),
+      limit: z.number().int().min(1).max(200).optional().describe('Max entries to return, newest last (default 50)'),
     })),
-    execute: async ({ files }) => {
-      console.warn('[edit_design_files] ── START ──')
-      console.warn(`[edit_design_files] files count=${files.length}`)
+    execute: async ({ level, limit }) => {
+      console.warn(`[get_console] ── START ── level=${level ?? 'all'} limit=${limit ?? 50}`)
       try {
-        const project = getProject?.()
+        const project = getActiveDesignProject?.()
         if (!project) {
-          const msg = 'No active design project. Call scaffold_project first.'
-          console.warn(`[edit_design_files] ✗ ${msg}`)
+          const msg = 'No active design project. Call start_project first.'
+          console.warn(`[get_console] ✗ ${msg}`)
           return { ok: false, message: msg }
         }
 
-        // Stop dev server for Vite projects so it can be restarted with updated files
-        if (project.type.startsWith('vite-')) {
-          console.warn('[edit_design_files] Stopping dev server for Vite project before edit')
-          await stopDevServer(project.path)
+        const buffer = consoleBuffers.get(project.path) ?? []
+        const filtered = (!level || level === 'all')
+          ? buffer
+          : buffer.filter(entry => entry.level === level)
+        const max = Math.min(limit ?? 50, 200)
+        const entries = filtered.slice(-max)
+
+        const counts = {
+          total: buffer.length,
+          errors: buffer.filter(e => e.level === 'error').length,
+          warnings: buffer.filter(e => e.level === 'warn').length,
         }
 
-        const results: Array<{ path: string; ok: boolean; error?: string }> = []
-
-        for (const file of files) {
-          try {
-            const fullPath = await join(project.path, file.path)
-
-            // For patch mode, read existing content to log the diff
-            if (file.mode === 'patch') {
-              try {
-                if (await exists(fullPath)) {
-                  const existing = await readTextFile(fullPath)
-                  if (existing === file.content) {
-                    console.warn(`[edit_design_files] ⊘ ${file.path} unchanged, skipping`)
-                    results.push({ path: file.path, ok: true })
-                    continue
-                  }
-                }
-              }
-              catch {
-                // File might not exist yet, that's fine — proceed with write
-              }
-            }
-
-            await write_file(fullPath, file.content)
-            results.push({ path: file.path, ok: true })
-            console.warn(`[edit_design_files] ✓ ${file.mode} ${file.path} (${file.content.length} bytes)`)
-          }
-          catch (e) {
-            const error = e instanceof Error ? e.message : String(e)
-            results.push({ path: file.path, ok: false, error })
-            console.warn(`[edit_design_files] ✗ failed ${file.path}: ${error}`)
-          }
-        }
-
-        const allOk = results.every(r => r.ok)
-        const failed = results.filter(r => !r.ok)
-
-        if (allOk)
-          onFilesChanged?.()
-
-        return {
-          ok: allOk,
-          filesEdited: results.filter(r => r.ok).length,
-          filesFailed: failed.length,
-          errors: failed.length > 0 ? failed.map(f => `${f.path}: ${f.error}`) : undefined,
-          message: allOk
-            ? `${results.length} files edited in ${project.name}/`
-            : `${results.filter(r => r.ok).length}/${results.length} files edited. Failed: ${failed.map(f => f.path).join(', ')}`,
-        }
-      }
-      catch (e) {
-        const detail = e instanceof Error ? e.message : String(e)
-        console.warn(`[edit_design_files] ✗ EXCEPTION: ${detail}`)
-        return { ok: false, message: `edit_design_files failed: ${detail}` }
-      }
-    },
-  })
-}
-
-// ── build_project ────────────────────────────────────────────────────────────
-
-export function createBuildProjectTool(
-  getProject?: () => { path: string; name: string; type: DesignProjectType } | null,
-  onFilesChanged?: () => void,
-) {
-  return tool({
-    description: DEFAULT_TOOL_DESCRIPTIONS.build_project,
-    inputSchema: zodSchema(z.object({})),
-    execute: async () => {
-      console.warn('[build_project] ── START ──')
-      try {
-        const project = getProject?.()
-        if (!project) {
-          const msg = 'No active design project. Call scaffold_project first.'
-          console.warn(`[build_project] ✗ ${msg}`)
-          return { ok: false, message: msg }
-        }
-
-        // Static HTML types don't need a build step
-        if (project.type === 'single-file' || project.type === 'multiple-files') {
-          console.warn(`[build_project] ⊘ No build needed for ${project.type}`)
-          return {
-            ok: true,
-            message: 'No build needed for static HTML project. The files render directly.',
-          }
-        }
-
-        // Vite project — run npm install then npm run build
-        console.warn(`[build_project] Running install + build for ${project.type} at ${project.path}`)
-        const startTime = Date.now()
-
-        // Step 1: Run npm install
-        console.warn('[build_project] Running npm install...')
-        const installOutput = await runShellCommand(project.path, 'npm install')
-
-        if (installOutput.code !== 0) {
-          const installDurationMs = Date.now() - startTime
-          console.warn(`[build_project] ✗ npm install failed (exit ${installOutput.code})`)
-          console.warn(`[build_project] stderr: ${installOutput.stderr.slice(0, 500)}`)
-          return {
-            ok: false,
-            errors: installOutput.stderr || installOutput.stdout,
-            exitCode: installOutput.code,
-            durationMs: installDurationMs,
-            message: `npm install failed (exit code ${installOutput.code}). Read the errors and fix.`,
-          }
-        }
-
-        console.warn('[build_project] npm install succeeded, running build...')
-
-        // Step 2: Run npm run build
-        const buildOutput = await runShellCommand(project.path, 'npm run build')
-        const durationMs = Date.now() - startTime
-
-        const stdout = buildOutput.stdout
-        const stderr = buildOutput.stderr
-        const exitCode = buildOutput.code
-
-        if (exitCode === 0) {
-          console.warn(`[build_project] ✓ Build succeeded in ${durationMs}ms`)
-          onFilesChanged?.()
-          return {
-            ok: true,
-            output: stdout,
-            durationMs,
-            message: `Build succeeded in ${Math.round(durationMs / 1000)}s. Preview is now available.`,
-          }
-        }
-        else {
-          console.warn(`[build_project] ✗ Build failed (exit ${exitCode})`)
-          console.warn(`[build_project] stderr: ${stderr.slice(0, 500)}`)
-          return {
-            ok: false,
-            errors: stderr || stdout,
-            exitCode,
-            durationMs,
-            message: `Build failed (exit code ${exitCode}). Read the errors, fix the code, and retry.`,
-          }
-        }
-      }
-      catch (e) {
-        const detail = e instanceof Error ? e.message : String(e)
-        console.warn(`[build_project] ✗ EXCEPTION: ${detail}`)
-        return { ok: false, message: `build_project failed: ${detail}` }
-      }
-    },
-  })
-}
-
-// ── start_preview ─────────────────────────────────────────────────────────────
-
-export function createStartPreviewTool(
-  getProject?: () => { path: string; name: string; type: DesignProjectType } | null,
-  onPreviewUrl?: (url: string | null) => void,
-  onDevServerTaskId?: (id: string | null) => void,
-) {
-  return tool({
-    description: DEFAULT_TOOL_DESCRIPTIONS.start_preview,
-    inputSchema: zodSchema(z.object({})),
-    execute: async () => {
-      console.warn('[start_preview] ── START ──')
-      try {
-        const project = getProject?.()
-        if (!project) {
-          const msg = 'No active design project. Call scaffold_project first.'
-          console.warn(`[start_preview] ✗ ${msg}`)
-          return { ok: false, message: msg }
-        }
-
-        // Static HTML projects don't need a dev server
-        if (project.type === 'single-file' || project.type === 'multiple-files') {
-          console.warn(`[start_preview] ⊘ No dev server needed for ${project.type}`)
-          return {
-            ok: true,
-            message: 'No dev server needed for static HTML project. Files render directly via srcdoc.',
-          }
-        }
-
-        // Stop any existing dev server for this project
-        await stopDevServer(project.path)
-
-        console.warn(`[start_preview] Starting dev server for ${project.type} at ${project.path}`)
-        console.warn(`[start_preview] Preferred port: ${DESIGN_PREVIEW_PORT} (Vite auto-increments if busy)`)
-
-        // Ensure dependencies are installed before starting the dev server
-        const nodeModulesPath = await join(project.path, 'node_modules')
-        if (!(await exists(nodeModulesPath))) {
-          console.warn('[start_preview] node_modules not found, running npm install...')
-          const installResult = await runShellCommand(project.path, 'npm install')
-          if (installResult.code !== 0) {
-            const msg = `npm install failed (exit ${installResult.code}): ${installResult.stderr.slice(0, 500)}`
-            console.warn(`[start_preview] ✗ ${msg}`)
-            return { ok: false, message: msg }
-          }
-          console.warn('[start_preview] ✓ npm install succeeded')
-        }
-
-        // Start npm run dev in the background, passing --port to control the starting port.
-        // Vite will auto-increment if the port is already in use (no --strictPort).
-        const shell = await resolveShell()
-        const devCommand = `npm run dev -- --port ${DESIGN_PREVIEW_PORT}`
-        console.warn(`[start_preview] Shell: ${shell}, Command: ${devCommand}`)
-        const args = createShellArgs(shell, devCommand)
-        console.warn(`[start_preview] Args: ${JSON.stringify(args)}`)
-        const command = Command.create(shell, args, { cwd: project.path })
-
-        // Spawn the process first
-        const child = await command.spawn()
-        console.warn(`[start_preview] Spawned dev server, PID: ${child.pid}`)
-
-        // Store for cleanup
-        devServers.set(project.path, { kill: async () => {
-          try { await child.kill() }
-          catch { /* ignore */ }
-        } })
-
-        // Detect the Vite URL asynchronously — don't block the tool call
-        // Accumulate from both streams and strip ANSI escape codes before matching.
-        // Vite may send "Local: http://..." to stdout OR stderr depending on version.
-        let outputBuffer = ''
-        const ESC = String.fromCharCode(27)
-        const stripAnsi = (s: string) => s.replace(new RegExp(`${ESC}\\[[0-9;]*m`, 'g'), '')
-        const urlPattern = /Local:\s+(https?:\/\/(?:localhost|127\.0\.0\.1):\d+)/
-
-        const urlPromise = new Promise<string>((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            console.warn(`[start_preview] ✗ Timed out after 20s waiting for dev server URL. Buffer: ${outputBuffer.slice(-500)}`)
-            reject(new Error('Dev server did not start within 20s'))
-          }, 20_000)
-
-          const checkForUrl = (raw: string) => {
-            outputBuffer += raw
-            const cleaned = stripAnsi(outputBuffer)
-            const match = cleaned.match(urlPattern)
-            if (match?.[1]) {
-              clearTimeout(timeout)
-              console.warn(`[start_preview] Detected dev server URL: ${match[1]}`)
-              resolve(match[1])
-            }
-          }
-
-          command.stdout.on('data', (chunk: string) => {
-            checkForUrl(chunk)
-          })
-
-          command.stderr.on('data', (chunk: string) => {
-            checkForUrl(chunk)
-          })
-
-          command.on('error', err => {
-            clearTimeout(timeout)
-            console.warn(`[start_preview] ✗ Process error: ${err}`)
-            reject(err)
-          })
-
-          command.on('close', event => {
-            clearTimeout(timeout)
-            if (event.code !== 0) {
-              console.warn(`[start_preview] ✗ Dev server exited with code ${event.code}`)
-              reject(new Error(`Dev server exited with code ${event.code}`))
-            }
-          })
-        })
-
-        // Fire-and-forget: resolve URL in background, update previewUrl when ready
-        urlPromise
-          .then(url => {
-            console.warn(`[start_preview] ✓ Dev server running at ${url}`)
-            onPreviewUrl?.(url)
-            onDevServerTaskId?.(`dev-${project.path}`)
-          })
-          .catch(err => {
-            console.warn(`[start_preview] ✗ Failed to detect dev server URL: ${err}`)
-            onPreviewUrl?.(null)
-          })
-
+        console.warn(`[get_console] ✓ Returning ${entries.length}/${filtered.length} entries`)
         return {
           ok: true,
-          message: `Dev server starting on port ${DESIGN_PREVIEW_PORT} (auto-increments if busy). Preview will appear in the canvas shortly.`,
+          counts,
+          entries,
+          message: entries.length === 0
+            ? 'No console output captured yet.'
+            : `${entries.length} of ${filtered.length} matching entr${filtered.length === 1 ? 'y' : 'ies'} (${counts.total} total, ${counts.errors} errors, ${counts.warnings} warnings), oldest first.`,
         }
       }
       catch (e) {
         const detail = e instanceof Error ? e.message : String(e)
-        console.warn(`[start_preview] ✗ EXCEPTION: ${detail}`)
-        return { ok: false, message: `start_preview failed: ${detail}` }
+        console.warn(`[get_console] ✗ EXCEPTION: ${detail}`)
+        return { ok: false, message: `get_console failed: ${detail}` }
       }
     },
   })
 }
 
-// ── stop_preview ──────────────────────────────────────────────────────────────
+// ── read_design ─────────────────────────────────────────────────────────────
 
-export function createStopPreviewTool(
-  getProject?: () => { path: string; name: string; type: DesignProjectType } | null,
-  onPreviewUrl?: (url: string | null) => void,
-  onDevServerTaskId?: (id: string | null) => void,
-) {
+const read_design_DEFAULT_LIMIT = 300
+const read_design_MAX_LIMIT = 2000
+
+export function createReadDesignTool(getActiveDesignProject?: ActiveProjectGetter) {
+  const registry: FileReadRegistry = new Map()
+  const lockManager = new FileLockManager()
+
   return tool({
-    description: DEFAULT_TOOL_DESCRIPTIONS.stop_preview,
-    inputSchema: zodSchema(z.object({})),
-    execute: async () => {
-      console.warn('[stop_preview] ── START ──')
+    description: DEFAULT_TOOL_DESCRIPTIONS.read_design,
+    inputSchema: zodSchema(z.object({
+      file_paths: z.array(z.enum(['index.html', 'styles.css', 'script.js'])).min(1).describe('Design files to read relative to the project root'),
+      offset: z.number().int().min(1).optional().describe('The 1-based line number to start reading from. Omit to start from line 1. Only needed when paginating through a truncated file.'),
+      limit: z.number().int().min(1).max(read_design_MAX_LIMIT).optional().describe(`Max lines to return per file. Default: ${read_design_DEFAULT_LIMIT}, max: ${read_design_MAX_LIMIT}. Omit unless you need a specific range.`),
+    })),
+    execute: async ({ file_paths, offset, limit }) => {
+      console.warn(`[read_design] ── START ── files=${file_paths.length}`)
       try {
-        const project = getProject?.()
+        const project = getActiveDesignProject?.()
         if (!project) {
-          console.warn('[stop_preview] ✗ No active design project')
-          return { ok: false, message: 'No active design project.' }
+          const msg = 'No active design project. Call start_project first.'
+          console.warn(`[read_design] ✗ ${msg}`)
+          return { ok: false, message: msg }
         }
 
-        console.warn(`[stop_preview] Stopping dev server for ${project.name}`)
-        await stopDevServer(project.path)
-        onPreviewUrl?.(null)
-        onDevServerTaskId?.(null)
-        console.warn('[stop_preview] ✓ Dev server stopped')
-        return { ok: true, message: 'Dev server stopped.' }
+        const start = offset !== undefined ? offset - 1 : 0
+        const appliedLimit = Math.min(limit ?? read_design_DEFAULT_LIMIT, read_design_MAX_LIMIT)
+        const projectPath = project.path
+
+        async function readOne(filePath: string): Promise<string> {
+          const fullPath = await join(projectPath, filePath)
+
+          try {
+            return await lockManager.withReadLock(fullPath, async () => {
+              let snapshot: Awaited<ReturnType<typeof readTextSnapshot>>
+              try {
+                snapshot = await readTextSnapshot(fullPath)
+              }
+              catch (e) {
+                const error = e instanceof Error ? e.message : String(e)
+                return `Error: Cannot read ${filePath}: ${error}`
+              }
+
+              const allLines = snapshot.content.length === 0 ? [] : snapshot.content.split('\n')
+              const totalLines = allLines.length
+              const collected = allLines.slice(start, start + appliedLimit)
+              const truncated = totalLines > start + collected.length
+              const oneBasedOffset = start + 1
+
+              // Registry update — always record; no deduplication stub
+              updateReadRegistry(registry, fullPath, {
+                hash: snapshot.hash,
+                complete: !truncated,
+                sizeBytes: snapshot.sizeBytes,
+                mtimeMs: snapshot.mtimeMs,
+                offset: oneBasedOffset,
+                limit: appliedLimit,
+              })
+
+              let output = collected
+                .map((line, i) => `${String(start + i + 1).padStart(String(start + collected.length).length)}\t${line}`)
+                .join('\n')
+
+              if (truncated) {
+                output += `\n\n(File truncated. Showing lines ${start + 1}\u2013${start + collected.length} of ${totalLines}. Use offset and limit to read more.)`
+              }
+
+              return output
+            })
+          }
+          catch (e) {
+            if (e instanceof ConcurrencyLimitError)
+              return `Error: ${e.message}. Too many parallel tool calls — wait for some to finish and retry.`
+            throw e
+          }
+        }
+
+        if (file_paths.length === 1) {
+          const content = await readOne(file_paths[0]!)
+          console.warn(`[read_design] ✓ Read ${file_paths[0]}`)
+          return { ok: true, file: file_paths[0], content }
+        }
+
+        const parts: string[] = []
+        for (const filePath of file_paths)
+          parts.push(`=== ${filePath} ===\n${await readOne(filePath)}`)
+
+        console.warn(`[read_design] ✓ Read ${file_paths.length} files`)
+        return { ok: true, files: [...file_paths], content: parts.join('\n\n') }
       }
       catch (e) {
         const detail = e instanceof Error ? e.message : String(e)
-        console.warn(`[stop_preview] ✗ EXCEPTION: ${detail}`)
-        return { ok: false, message: `stop_preview failed: ${detail}` }
+        console.warn(`[read_design] ✗ EXCEPTION: ${detail}`)
+        return { ok: false, message: `read_design failed: ${detail}` }
       }
     },
   })
@@ -1142,24 +618,23 @@ export function createStopPreviewTool(
 // ── Display labels ───────────────────────────────────────────────────────────
 
 export function designProjectToolDisplayLabel(name: string, args: Record<string, unknown>): string {
-  if (name === 'scaffold_project') {
+  if (name === 'start_project') {
     const projectName = typeof args.name === 'string' ? args.name : ''
-    const type = typeof args.type === 'string' ? args.type : ''
-    return projectName ? `Scaffolding "${projectName}" (${type})` : 'Scaffolding project'
+    return projectName ? `Starting project "${projectName}"` : 'Starting project'
   }
-  if (name === 'create_design_files') {
-    const files = Array.isArray(args.files) ? args.files : []
-    return `Writing ${files.length} file${files.length !== 1 ? 's' : ''}`
-  }
-  if (name === 'edit_design_files') {
+  if (name === 'edit_design') {
     const files = Array.isArray(args.files) ? args.files : []
     return `Editing ${files.length} file${files.length !== 1 ? 's' : ''}`
   }
-  if (name === 'build_project')
-    return 'Building project'
-  if (name === 'start_preview')
-    return 'Starting dev server'
-  if (name === 'stop_preview')
-    return 'Stopping dev server'
+  if (name === 'refresh_preview')
+    return 'Refreshing preview'
+  if (name === 'get_console')
+    return 'Reading console output'
+  if (name === 'read_design') {
+    const files = Array.isArray(args.file_paths)
+      ? args.file_paths.filter((f): f is string => typeof f === 'string')
+      : []
+    return files.length === 1 ? `Reading ${files[0]}` : `Reading ${files.length} files`
+  }
   return `Called ${name}`
 }

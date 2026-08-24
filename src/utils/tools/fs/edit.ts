@@ -1,6 +1,5 @@
 import type {
   BeforeFileWriteCallback,
-  FileLockManager,
   FileReadRegistry,
   LineEnding,
   TextEncoding,
@@ -10,6 +9,7 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
 import { hasBinaryExtension, safePath } from './allowedPaths'
+import { ConcurrencyLimitError, FileLockManager } from './fileLock'
 import {
   applyLineEnding,
   createUnifiedDiff,
@@ -141,173 +141,180 @@ async function processFile(
   if (hasBinaryExtension(filePath))
     return { file: filePath, status: 'error', message: 'Cannot edit binary files' }
 
-  return lockManager.withLock(fullPath, async () => {
-    const info = await stat(fullPath).catch(() => null)
-    if (info && !info.isFile)
-      return { file: filePath, status: 'error', message: `${filePath} is not a regular file.` }
+  try {
+    return await lockManager.withWriteLock(fullPath, async () => {
+      const info = await stat(fullPath).catch(() => null)
+      if (info && !info.isFile)
+        return { file: filePath, status: 'error', message: `${filePath} is not a regular file.` }
 
-    const fileExists = info !== null
-    let fileBuffer = ''
-    let originalContent = ''
-    let diskLineEnding: LineEnding = 'lf'
-    let diskEncoding: TextEncoding = 'utf8'
+      const fileExists = info !== null
+      let fileBuffer = ''
+      let originalContent = ''
+      let diskLineEnding: LineEnding = 'lf'
+      let diskEncoding: TextEncoding = 'utf8'
 
-    if (fileExists) {
-      const registryEntry = registry.get(fullPath)
-      if (!registryEntry) {
-        return {
-          file: filePath,
-          status: 'error',
-          message: 'File has not been read yet. Call read_files first before editing.',
-        }
-      }
-
-      let snapshot: Awaited<ReturnType<typeof readTextSnapshot>>
-      try {
-        snapshot = await readTextSnapshot(fullPath)
-      }
-      catch (e) {
-        return { file: filePath, status: 'error', message: `Failed to read file: ${e instanceof Error ? e.message : String(e)}` }
-      }
-
-      const mtimesMatch = registryEntry.mtimeMs !== null
-        && snapshot.mtimeMs !== null
-        && registryEntry.mtimeMs === snapshot.mtimeMs
-      if (!mtimesMatch && registryEntry.hash !== snapshot.hash) {
-        return {
-          file: filePath,
-          status: 'error',
-          message: 'File has been modified since last read. Re-read with read_files before editing.',
-        }
-      }
-
-      fileBuffer = snapshot.content
-      originalContent = snapshot.content
-      diskLineEnding = snapshot.lineEnding
-      diskEncoding = snapshot.encoding
-    }
-    else {
-      const firstOld = edits[0] ? stripLineNumbers(normalizeLineEndings(edits[0].old_string)) : null
-      if (firstOld !== '')
-        return { file: filePath, status: 'error', message: `File does not exist: ${filePath}` }
-    }
-
-    if (fileExists && fileBuffer.length > 0 && edits.length > 0) {
-      const firstOld = stripLineNumbers(normalizeLineEndings(edits[0]!.old_string))
-      if (firstOld === '') {
-        return {
-          file: filePath,
-          status: 'error',
-          message: `Cannot create new file - ${filePath} already exists and is not empty. Use edit_files with an actual old_string, or write_file to overwrite it.`,
-        }
-      }
-    }
-
-    for (let i = 0; i < edits.length; i++) {
-      const edit = edits[i]!
-      const editIndex = i + 1
-      const snippet = normalizeLineEndings(edit.old_string).slice(0, 30).replace(/\n/g, '\\n')
-      const prepared = prepareEdit(fileBuffer, edit.old_string, edit.new_string)
-
-      if (prepared.oldString === prepared.newString)
-        continue
-
-      if (prepared.actualOld === null) {
-        const hint = prepared.usedStrippedLineNumbers ? ' after removing copied line numbers' : ''
-        return {
-          file: filePath,
-          status: 'error',
-          message: `Edit #${editIndex} failed: old_string starting with '${snippet}...' not found in file${hint}. No edits applied to this file. Check exact wording and read file again if necessary.`,
-        }
-      }
-
-      if (prepared.actualOld === '') {
-        if (fileBuffer.length > 0) {
+      if (fileExists) {
+        const registryEntry = registry.get(fullPath)
+        if (!registryEntry) {
           return {
             file: filePath,
             status: 'error',
-            message: `Edit #${editIndex} failed: empty old_string can only create or replace an empty file. No edits applied to this file.`,
+            message: 'File has not been read yet. Call read_files first before editing.',
           }
         }
-        fileBuffer = prepared.newString
-        continue
-      }
 
-      if (!edit.replace_all) {
-        const count = countOccurrences(fileBuffer, prepared.actualOld)
-        if (count > 1) {
-          return {
-            file: filePath,
-            status: 'error',
-            message: `Edit #${editIndex} failed: old_string starting with '${snippet}...' was found ${count} times. Include more surrounding lines to uniquely identify the target. No edits applied to this file.`,
-          }
-        }
-      }
-
-      fileBuffer = edit.replace_all
-        ? fileBuffer.split(prepared.actualOld).join(prepared.newString)
-        : fileBuffer.replace(prepared.actualOld, prepared.newString)
-    }
-
-    const parentDir = parentDirPath(fullPath)
-    if (parentDir) {
-      try {
-        await ensureDir(parentDir)
-      }
-      catch (e) {
-        return { file: filePath, status: 'error', message: `Failed to create directories: ${e instanceof Error ? e.message : String(e)}` }
-      }
-    }
-
-    const shouldWrite = !fileExists || fileBuffer !== originalContent
-    if (shouldWrite) {
-      if (onBeforeFileWrite) {
+        let snapshot: Awaited<ReturnType<typeof readTextSnapshot>>
         try {
-          await onBeforeFileWrite(filePath, fullPath, fileExists ? originalContent : null)
+          snapshot = await readTextSnapshot(fullPath)
         }
         catch (e) {
-          return { file: filePath, status: 'error', message: `Failed to checkpoint file: ${e instanceof Error ? e.message : String(e)}` }
+          return { file: filePath, status: 'error', message: `Failed to read file: ${e instanceof Error ? e.message : String(e)}` }
+        }
+
+        const mtimesMatch = registryEntry.mtimeMs !== null
+          && snapshot.mtimeMs !== null
+          && registryEntry.mtimeMs === snapshot.mtimeMs
+        if (!mtimesMatch && registryEntry.hash !== snapshot.hash) {
+          return {
+            file: filePath,
+            status: 'error',
+            message: 'File has been modified since last read. Re-read with read_files before editing.',
+          }
+        }
+
+        fileBuffer = snapshot.content
+        originalContent = snapshot.content
+        diskLineEnding = snapshot.lineEnding
+        diskEncoding = snapshot.encoding
+      }
+      else {
+        const firstOld = edits[0] ? stripLineNumbers(normalizeLineEndings(edits[0].old_string)) : null
+        if (firstOld !== '')
+          return { file: filePath, status: 'error', message: `File does not exist: ${filePath}` }
+      }
+
+      if (fileExists && fileBuffer.length > 0 && edits.length > 0) {
+        const firstOld = stripLineNumbers(normalizeLineEndings(edits[0]!.old_string))
+        if (firstOld === '') {
+          return {
+            file: filePath,
+            status: 'error',
+            message: `Cannot create new file - ${filePath} already exists and is not empty. Use edit_files with an actual old_string, or write_file to overwrite it.`,
+          }
+        }
+      }
+
+      for (let i = 0; i < edits.length; i++) {
+        const edit = edits[i]!
+        const editIndex = i + 1
+        const snippet = normalizeLineEndings(edit.old_string).slice(0, 30).replace(/\n/g, '\\n')
+        const prepared = prepareEdit(fileBuffer, edit.old_string, edit.new_string)
+
+        if (prepared.oldString === prepared.newString)
+          continue
+
+        if (prepared.actualOld === null) {
+          const hint = prepared.usedStrippedLineNumbers ? ' after removing copied line numbers' : ''
+          return {
+            file: filePath,
+            status: 'error',
+            message: `Edit #${editIndex} failed: old_string starting with '${snippet}...' not found in file${hint}. No edits applied to this file. Check exact wording and read file again if necessary.`,
+          }
+        }
+
+        if (prepared.actualOld === '') {
+          if (fileBuffer.length > 0) {
+            return {
+              file: filePath,
+              status: 'error',
+              message: `Edit #${editIndex} failed: empty old_string can only create or replace an empty file. No edits applied to this file.`,
+            }
+          }
+          fileBuffer = prepared.newString
+          continue
+        }
+
+        if (!edit.replace_all) {
+          const count = countOccurrences(fileBuffer, prepared.actualOld)
+          if (count > 1) {
+            return {
+              file: filePath,
+              status: 'error',
+              message: `Edit #${editIndex} failed: old_string starting with '${snippet}...' was found ${count} times. Include more surrounding lines to uniquely identify the target. No edits applied to this file.`,
+            }
+          }
+        }
+
+        fileBuffer = edit.replace_all
+          ? fileBuffer.split(prepared.actualOld).join(prepared.newString)
+          : fileBuffer.replace(prepared.actualOld, prepared.newString)
+      }
+
+      const parentDir = parentDirPath(fullPath)
+      if (parentDir) {
+        try {
+          await ensureDir(parentDir)
+        }
+        catch (e) {
+          return { file: filePath, status: 'error', message: `Failed to create directories: ${e instanceof Error ? e.message : String(e)}` }
+        }
+      }
+
+      const shouldWrite = !fileExists || fileBuffer !== originalContent
+      if (shouldWrite) {
+        if (onBeforeFileWrite) {
+          try {
+            await onBeforeFileWrite(filePath, fullPath, fileExists ? originalContent : null)
+          }
+          catch (e) {
+            return { file: filePath, status: 'error', message: `Failed to checkpoint file: ${e instanceof Error ? e.message : String(e)}` }
+          }
+        }
+
+        try {
+          await writeEncodedTextFile(fullPath, applyLineEnding(fileBuffer, diskLineEnding), diskEncoding)
+        }
+        catch (e) {
+          return { file: filePath, status: 'error', message: `Failed to write file: ${e instanceof Error ? e.message : String(e)}` }
         }
       }
 
       try {
-        await writeEncodedTextFile(fullPath, applyLineEnding(fileBuffer, diskLineEnding), diskEncoding)
+        const newInfo = await stat(fullPath)
+        const updatedEntry = {
+          hash: await sha256Text(fileBuffer),
+          complete: true,
+          sizeBytes: newInfo.size,
+          mtimeMs: newInfo.mtime?.getTime() ?? null,
+        }
+        updateReadRegistry(registry, fullPath, updatedEntry)
       }
-      catch (e) {
-        return { file: filePath, status: 'error', message: `Failed to write file: ${e instanceof Error ? e.message : String(e)}` }
+      catch { /* non-fatal */ }
+
+      const { added, removed } = diffLineStats(originalContent, fileBuffer)
+
+      return {
+        file: filePath,
+        status: 'success',
+        message: `Successfully applied ${edits.length} edit${edits.length > 1 ? 's' : ''} sequentially.`,
+        added,
+        removed,
+        diff: createUnifiedDiff(filePath, originalContent, fileBuffer),
       }
-    }
-
-    try {
-      const newInfo = await stat(fullPath)
-      const updatedEntry = {
-        hash: await sha256Text(fileBuffer),
-        complete: true,
-        sizeBytes: newInfo.size,
-        mtimeMs: newInfo.mtime?.getTime() ?? null,
-      }
-      updateReadRegistry(registry, fullPath, updatedEntry)
-    }
-    catch { /* non-fatal */ }
-
-    const { added, removed } = diffLineStats(originalContent, fileBuffer)
-
-    return {
-      file: filePath,
-      status: 'success',
-      message: `Successfully applied ${edits.length} edit${edits.length > 1 ? 's' : ''} sequentially.`,
-      added,
-      removed,
-      diff: createUnifiedDiff(filePath, originalContent, fileBuffer),
-    }
-  })
+    })
+  }
+  catch (e) {
+    if (e instanceof ConcurrencyLimitError)
+      return { file: filePath, status: 'error', message: `${e.message}. Too many parallel tool calls — wait for some to finish and retry.` }
+    throw e
+  }
 }
 
 export function createEditFilesTool(
   projectPath: string,
   registry: FileReadRegistry,
   onBeforeFileWrite: BeforeFileWriteCallback | undefined,
-  lockManager: FileLockManager,
+  lockManager: FileLockManager = new FileLockManager(),
 ) {
   return tool({
     description: DEFAULT_TOOL_DESCRIPTIONS.edit_files,

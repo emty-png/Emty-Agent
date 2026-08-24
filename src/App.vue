@@ -9,6 +9,7 @@ import ProviderBrowser from './components/settings/providers/ProviderBrowser.vue
 import SettingsModal from './components/settings/SettingsModal.vue'
 import SideBar from './components/sidebar/Sidebar.vue'
 import TitleBar from './components/titlebar/Titlebar.vue'
+import { useAppView } from './composables/ui/useAppView'
 import { useZoom } from './composables/ui/useZoom'
 import { getDb } from './db/database'
 import { useProjectStore } from './stores/project'
@@ -23,7 +24,7 @@ import ProjectView from './views/ProjectView.vue'
 
 type ViewType = 'chat' | 'history' | 'projects' | 'hooks' | 'developer'
 
-const activeView = ref<ViewType>('chat')
+const { activeView, setView } = useAppView()
 const settingsOpen = ref(false)
 const showProviderBrowser = ref(false)
 
@@ -43,7 +44,7 @@ const settings = useSettingsStore()
 useZoom()
 
 function selectView(view: ViewType) {
-  activeView.value = view
+  setView(view)
 }
 
 onMounted(async () => {

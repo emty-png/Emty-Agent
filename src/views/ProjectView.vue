@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { open } from '@tauri-apps/plugin-dialog'
+import { FolderOpen, FolderPlus } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import FileContent from '@/components/project/FileContent.vue'
 import FileFuzzyFinder from '@/components/project/FileFuzzyFinder.vue'
 import FileTabBar from '@/components/project/FileTabBar.vue'
@@ -18,6 +20,49 @@ const { tabs } = storeToRefs(fileTabs)
 
 const fuzzyFinder = useFileFuzzyFinder()
 const showCreateDialog = ref(false)
+
+// ── project picker (file tree header) ────────────────────────────────────────
+const pickerOpen = ref(false)
+const picking = ref(false)
+
+// design folders opened via the canvas "show code" action are not selectable projects
+const selectableProjects = computed(() =>
+  project.openProjects.filter(path => !project.designProjects.includes(path)),
+)
+
+function toggleProjectPicker() {
+  pickerOpen.value = !pickerOpen.value
+}
+
+function closeProjectPicker() {
+  pickerOpen.value = false
+}
+
+function selectProject(path: string) {
+  project.setProject(path)
+  closeProjectPicker()
+}
+
+async function pickNewProjectFolder() {
+  if (picking.value)
+    return
+  picking.value = true
+  try {
+    const selected = await open({
+      directory: true,
+      recursive: true,
+      multiple: false,
+      title: 'Open project folder',
+    })
+    if (typeof selected === 'string') {
+      project.addProject(selected)
+      closeProjectPicker()
+    }
+  }
+  finally {
+    picking.value = false
+  }
+}
 
 // ── load tree when project changes ───────────────────────────────────────────
 watch(projectPath, async (newPath, oldPath) => {
@@ -52,9 +97,15 @@ function onMouseUp() {
   dragging.value = false
 }
 
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape')
+    closeProjectPicker()
+}
+
 onMounted(async () => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
+  window.addEventListener('keydown', onKeydown)
 
   if (projectPath.value)
     await ft.loadTree()
@@ -63,6 +114,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -88,8 +140,54 @@ onUnmounted(() => {
         <div class="panel-header">
           <span class="panel-title">{{ projectName }}</span>
           <div class="ml-auto flex items-center gap-[2px]">
+            <div class="relative">
+              <button
+                class="panel-header-btn"
+                title="Change project"
+                aria-label="Select project"
+                @click="toggleProjectPicker"
+              >
+                <FolderOpen :size="12" :stroke-width="1.8" />
+              </button>
+
+              <div class="absolute top-[calc(100%+6px)] left-1/2 -translate-x-1/2 z-[10000]">
+                <Transition
+                  enter-active-class="transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] origin-top"
+                  enter-from-class="opacity-0 [transform:translateY(-8px)_scale(0.96)]"
+                  enter-to-class="opacity-100 [transform:translateY(0)_scale(1)]"
+                  leave-active-class="transition-[opacity,transform] duration-100 ease-[cubic-bezier(0.7,0,0.84,0)] origin-top"
+                  leave-from-class="opacity-100 [transform:translateY(0)_scale(1)]"
+                  leave-to-class="opacity-0 [transform:translateY(-8px)_scale(0.96)]"
+                >
+                  <div v-if="pickerOpen" class="pp-menu">
+                    <button
+                      class="pp-item pp-item--new"
+                      :disabled="picking"
+                      @click="pickNewProjectFolder"
+                    >
+                      <FolderPlus :size="13" :stroke-width="1.8" class="shrink-0" />
+                      <span>New Project</span>
+                    </button>
+
+                    <template v-if="selectableProjects.length > 0">
+                      <div class="pp-divider" />
+                      <button
+                        v-for="path in selectableProjects"
+                        :key="path"
+                        class="pp-item"
+                        :class="{ 'pp-item--active': project.projectPath === path }"
+                        @click="selectProject(path)"
+                      >
+                        <FolderOpen :size="13" :stroke-width="1.8" class="shrink-0 text-[var(--color-text-tertiary)]" />
+                        <span class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{{ path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() }}</span>
+                      </button>
+                    </template>
+                  </div>
+                </Transition>
+              </div>
+            </div>
             <button
-              v-if="ft.tree.length > 0"
+              v-if="ft.tree.length > 0 && !project.isDesignProject"
               class="panel-header-btn"
               title="New file or folder"
               @click="showCreateDialog = true"
@@ -124,6 +222,9 @@ onUnmounted(() => {
         <FileContent />
       </div>
     </div>
+
+    <!-- ── project picker backdrop ─────────────────────────────────── -->
+    <div v-if="pickerOpen" class="fixed inset-0 z-[9999]" @click="closeProjectPicker" />
 
     <!-- ── fuzzy finder overlay ────────────────────────────────────── -->
     <FileFuzzyFinder
@@ -209,6 +310,7 @@ onUnmounted(() => {
   background: var(--color-bg-surface);
   border-right: none;
   min-width: 160px;
+  overflow: visible;
 }
 
 .split-panel--right {
@@ -292,5 +394,71 @@ onUnmounted(() => {
 .split-handle--active {
   background: var(--color-accent, #10b981);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent, #10b981) 20%, transparent);
+}
+
+/* ── project picker menu ─────────────────────────────────────────────────────── */
+.pp-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 210px;
+  padding: 4px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    0 12px 28px rgba(0, 0, 0, 0.35);
+}
+
+.pp-divider {
+  height: 1px;
+  margin: 2px 4px;
+  background: var(--color-border-mid);
+}
+
+.pp-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding-inline: 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+}
+
+.pp-item:hover {
+  background: var(--color-state-hover);
+  color: var(--color-text-primary);
+}
+
+.pp-item--active {
+  background: var(--color-accent-muted-plus);
+  color: var(--color-text-primary);
+}
+
+.pp-item--new {
+  color: var(--color-accent-text);
+}
+
+.pp-item--new:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  color: var(--color-accent-text);
+}
+
+.pp-item:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 </style>

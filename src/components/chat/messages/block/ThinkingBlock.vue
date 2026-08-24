@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { Check, ChevronDown, Copy } from 'lucide-vue-next'
 import { computed } from 'vue'
+import ThinkingMarkdown from '../markdown/ThinkingMarkdown.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   text: string
   wordCount: number
   streaming: boolean
   isOpen: boolean
   copied: boolean
-}>()
+  disableMarkdown?: boolean
+}>(), {
+  disableMarkdown: false,
+})
 
 const emit = defineEmits<{
   toggle: []
@@ -87,9 +91,17 @@ const label = computed(() => {
           class="relative ml-[8.25px] flex flex-col border-l-[1.5px] border-[var(--color-border-subtle)] pb-[6px] pl-[14px] pt-[6px] transition-colors duration-300 ease-[ease]"
           :class="streaming ? 'before:absolute before:-left-[1.75px] before:bottom-0 before:top-0 before:z-[2] before:w-[2px] before:rounded-[2px] before:bg-[var(--color-accent)] before:opacity-[0.32] before:shadow-[0_0_10px_var(--color-accent)] before:content-[\'\']' : ''"
         >
-          <div class="whitespace-pre-wrap break-words text-[13px] leading-[1.6] text-[var(--color-text-tertiary)] antialiased [text-rendering:optimizeLegibility]">
+          <div
+            v-if="disableMarkdown"
+            class="whitespace-pre-wrap break-words text-[13px] leading-[1.6] text-[var(--color-text-tertiary)] antialiased [text-rendering:optimizeLegibility]"
+          >
             {{ text }}
           </div>
+          <ThinkingMarkdown
+            v-else
+            :content="text"
+            :streaming="streaming"
+          />
         </div>
       </div>
     </div>

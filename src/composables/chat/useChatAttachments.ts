@@ -2,6 +2,7 @@ import type { Attachment } from '@/stores/chat/core/attachmentTypes'
 import { computed, ref } from 'vue'
 import { useChatStore } from '@/stores/chat'
 import { isImageMime } from '@/stores/chat/core/attachmentTypes'
+import { useSettingsStore } from '@/stores/settings'
 import { openFileDialog, readFileAsAttachment } from '@/utils/attachments'
 
 /**
@@ -11,6 +12,7 @@ import { openFileDialog, readFileAsAttachment } from '@/utils/attachments'
  */
 export function useChatAttachments() {
   const chat = useChatStore()
+  const settings = useSettingsStore()
 
   const attachments = computed({
     get: () => chat.activeTab.draft.attachments,
@@ -19,12 +21,30 @@ export function useChatAttachments() {
 
   const previewAttachment = ref<Attachment | null>(null)
 
+  // Whether the currently selected model advertises vision / attachment support.
+  // We still *allow* image drops for non-vision models (the requirement) — the
+  // chat input will warn and the serializer will handle fallback. This computed
+  // is exported so the UI can surface the warning.
+  const activeModelSupportsAttachments = computed(() => {
+    const uid = chat.activeTab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid
+    const m = settings.enabledModels.find(x => x.uid === uid) ?? settings.activeModel
+    return Boolean(m?.supportsAttachments)
+  })
+
+  const hasImageAttachments = computed(() =>
+    attachments.value.some(a => a.type === 'image' || isImageMime(a.mimeType)),
+  )
+
   async function addFiles(files: FileList | File[]) {
     if (chat.activeTab.mode === 'design') {
       console.warn('Attachments are not supported in design mode.')
       return
     }
 
+    // Allow image attachments for *any* model, including those where
+    // supportsAttachments === false. Previously dropping an image on a
+    // text-only model would be ignored; now we store the image and let
+    // ChatInput/ModelPicker surface a warning and offer a model switch.
     const nextAttachments = [...attachments.value]
     for (const file of files) {
       try { nextAttachments.push(await readFileAsAttachment(file)) }
@@ -40,6 +60,8 @@ export function useChatAttachments() {
   }
 
   function onPaste(e: ClipboardEvent) {
+    // Paste should work for any model, even text-only ones — we allow the image
+    // to be attached and rely on the vision warning + serializer fallback.
     const items = e.clipboardData?.items
     if (!items)
       return
@@ -56,6 +78,14 @@ export function useChatAttachments() {
           )
         }
       }
+      else if (item.type.startsWith('image/')) {
+        // Some browsers expose image paste as string item — handle gracefully
+        const file = item.getAsFile?.()
+        if (file) {
+          e.preventDefault()
+          imageFiles.push(file)
+        }
+      }
     }
     if (imageFiles.length > 0)
       addFiles(imageFiles)
@@ -67,6 +97,8 @@ export function useChatAttachments() {
       return
     }
 
+    // File picker is allowed regardless of vision support — images will be
+    // attached even for text-only models (warning shown in ChatInput).
     try {
       const newAttachments = await openFileDialog()
       attachments.value = [...attachments.value, ...newAttachments]
@@ -76,12 +108,46 @@ export function useChatAttachments() {
     }
   }
 
+  // Browser-native drop fallback (DataTransfer) — ensures image dropping works
+  // outside Tauri's onDragDropEvent (e.g., web preview, or models without
+  // native vision). This is the explicit "image dropping for models that don't
+  // support it" path.
+  async function handleDomDrop(e: DragEvent) {
+    if (chat.activeTab.mode === 'design')
+      return
+    const files = e.dataTransfer?.files
+    if (!files || files.length === 0)
+      return
+    e.preventDefault()
+    const list: File[] = []
+    for (const f of Array.from(files)) {
+      // Accept any file; image detection is inside readFileAsAttachment
+      list.push(f)
+    }
+    if (list.length > 0)
+      await addFiles(list)
+  }
+
+  function handleDomDragOver(e: DragEvent) {
+    if (chat.activeTab.mode === 'design')
+      return
+    // Always allow drop, even for non-vision models — we show a warning instead
+    // of blocking.
+    e.preventDefault()
+    if (e.dataTransfer)
+      e.dataTransfer.dropEffect = 'copy'
+  }
+
   return {
     attachments,
     previewAttachment,
+    activeModelSupportsAttachments,
+    hasImageAttachments,
     addFiles,
     removeAttachment,
     onPaste,
     handleOpenFileDialog,
+    handleDomDrop,
+    handleDomDragOver,
   }
 }

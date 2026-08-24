@@ -1,6 +1,12 @@
 import type { LanguageModel, ModelMessage, SystemModelMessage } from 'ai'
 import type { ChatTab } from '@/stores/chat/core/types'
-import type { McpServerConfig } from '@/stores/settings/types'
+import type {
+  McpServerConfig,
+  ModelSamplingConfig,
+  ProviderContextConfig,
+  ProviderReasoningConfig,
+  ProviderSamplingConfig,
+} from '@/stores/settings/types'
 import type { ProviderCredentials, StreamChatFinishEvent } from '@/utils/ai'
 import type { WorkspaceSnapshot } from '@/utils/worktrees'
 
@@ -12,7 +18,7 @@ export interface ModelConfig {
   providerId: string
   supportsToolCalls: boolean
   supportsThinking: boolean
-  thinkingEffort: 'low' | 'medium' | 'high'
+  thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   contextLimit?: number | null
   sdkType?: 'openai' | 'anthropic' | 'google' | null
 }
@@ -33,6 +39,15 @@ export interface SettingsForContext {
   mcpServers: McpServerConfig[]
   promptOverrides: Record<string, string>
   getToolDisabledIds: (mode?: 'build' | 'design') => string[]
+  providerSampling?: ProviderSamplingConfig
+  modelSampling?: ModelSamplingConfig
+  providerContext?: ProviderContextConfig
+  providerReasoning?: ProviderReasoningConfig
+  getEffectiveSamplingValue?: (providerId: string | null | undefined, key: keyof ProviderSamplingConfig['global']) => unknown
+  getEffectiveSampling?: (providerId: string | null | undefined) => ProviderSamplingConfig['global']
+  getEffectiveModelSampling?: (modelUid: string | null | undefined, providerId: string | null | undefined) => unknown
+  getEffectiveContextLimit?: (providerId: string | null | undefined, modelUid?: string | null) => number | undefined
+  getEffectiveReasoningBudget?: (providerId: string | null | undefined) => number | undefined
 }
 
 export interface AgentRunContext {
@@ -42,6 +57,15 @@ export interface AgentRunContext {
   systemPrompt: string | SystemModelMessage[]
   apiMessages: ModelMessage[]
   maxOutputTokens: number
+  temperature?: number
+  topP?: number
+  topK?: number
+  frequencyPenalty?: number
+  presencePenalty?: number
+  seed?: number
+  stopSequences?: string[]
+  responseFormat?: 'text' | 'json_object' | 'json_schema'
+  parallelToolCalls?: boolean
   providerOptions: Record<string, Record<string, unknown>> | undefined
   effectiveProjectPath: string | null
   workspaceSnapshot: WorkspaceSnapshot | null
@@ -116,7 +140,75 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
     throw new Error('NO_MODEL')
 
   const model = resolveLanguageModel(activeModel, settings, buildLanguageModel as (creds: ProviderCredentials, id: string) => LanguageModel)
-  const maxOutputTokens = resolveMaxTokens(activeModel, 16_384)
+  let maxOutputTokens = resolveMaxTokens(activeModel, 16_384)
+  const providerIdForSampling = activeModel.providerId
+  const modelUidForSampling = activeModel.uid
+
+  function resolveGenerationValue<K extends keyof NonNullable<SettingsForContext['providerSampling']>['global']>(key: K): NonNullable<SettingsForContext['providerSampling']>['global'][K] | undefined {
+    // model-level first
+    const modelVal = (settings.modelSampling as Record<string, Record<string, unknown>> | undefined)?.[modelUidForSampling]?.[key as string]
+    if (modelVal !== undefined)
+      return modelVal as NonNullable<SettingsForContext['providerSampling']>['global'][K]
+    if (settings.getEffectiveSamplingValue) {
+      const v = settings.getEffectiveSamplingValue(providerIdForSampling, key)
+      if (v !== undefined)
+        return v as NonNullable<SettingsForContext['providerSampling']>['global'][K]
+    }
+    if (!settings.providerSampling)
+      return undefined
+    const per = settings.providerSampling.perProvider[providerIdForSampling]?.[key]
+    if (per !== undefined)
+      return per as NonNullable<SettingsForContext['providerSampling']>['global'][K]
+    return settings.providerSampling.global[key]
+  }
+
+  const temperature = resolveGenerationValue('temperature') as number | undefined
+  const topP = resolveGenerationValue('topP') as number | undefined
+  const topK = resolveGenerationValue('topK') as number | undefined
+  const frequencyPenalty = resolveGenerationValue('frequencyPenalty') as number | undefined
+  const presencePenalty = resolveGenerationValue('presencePenalty') as number | undefined
+  const seed = resolveGenerationValue('seed') as number | undefined
+  const stopSequences = resolveGenerationValue('stopSequences') as string[] | undefined
+  const responseFormat = resolveGenerationValue('responseFormat') as 'text' | 'json_object' | 'json_schema' | undefined
+  const parallelToolCalls = resolveGenerationValue('parallelToolCalls') as boolean | undefined
+  const samplingMaxTokens = resolveGenerationValue('maxTokens') as number | undefined
+  if (samplingMaxTokens !== undefined)
+    maxOutputTokens = samplingMaxTokens
+
+  // reasoning custom budget override
+  let customReasoningBudget: number | undefined
+  if (settings.getEffectiveReasoningBudget) {
+    customReasoningBudget = settings.getEffectiveReasoningBudget(providerIdForSampling)
+  }
+  else if (settings.providerReasoning) {
+    const per = settings.providerReasoning.perProvider[providerIdForSampling]?.customBudgetTokens
+    if (per !== undefined)
+      customReasoningBudget = per
+    else customReasoningBudget = settings.providerReasoning.global.customBudgetTokens
+  }
+  if (customReasoningBudget !== undefined && activeModel.supportsThinking)
+    maxOutputTokens = customReasoningBudget
+
+  // context limit override (effective for estimation/compaction, not generation)
+  let effectiveContextLimit: number | undefined
+  if (settings.getEffectiveContextLimit) {
+    effectiveContextLimit = settings.getEffectiveContextLimit(providerIdForSampling, modelUidForSampling)
+  }
+  else {
+    const modelCtx = (settings.modelSampling as Record<string, Record<string, unknown>> | undefined)?.[modelUidForSampling]?.contextLimit as number | undefined
+    if (modelCtx !== undefined) {
+      effectiveContextLimit = modelCtx
+    }
+    else if (settings.providerContext) {
+      const perCtx = settings.providerContext.perProvider[providerIdForSampling]?.contextLimit
+      if (perCtx !== undefined)
+        effectiveContextLimit = perCtx
+      else effectiveContextLimit = settings.providerContext.global.contextLimit
+    }
+  }
+  const effectiveActiveModel: ModelConfig = effectiveContextLimit !== undefined
+    ? { ...activeModel, contextLimit: effectiveContextLimit }
+    : activeModel
 
   const effectiveDisabledSkillIds = getEffectiveDisabledSkillIds(tab, settings.disabledSkillIds)
 
@@ -172,25 +264,55 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
     cacheRuntime,
   )
 
-  const providerOptions = mergeProviderOptions(
+  let providerOptions = mergeProviderOptions(
     buildProviderOptions({
-      providerId: activeModel.providerId,
-      modelId: activeModel.id,
-      supportsThinking: activeModel.supportsThinking,
-      thinkingEffort: activeModel.thinkingEffort,
+      providerId: effectiveActiveModel.providerId,
+      modelId: effectiveActiveModel.id,
+      supportsThinking: effectiveActiveModel.supportsThinking,
+      thinkingEffort: effectiveActiveModel.thinkingEffort,
     }),
     buildContextCachingProviderOptions(cacheRuntime),
   )
+
+  // generation-specific provider options (responseFormat, parallelToolCalls)
+  if (responseFormat !== undefined || parallelToolCalls !== undefined) {
+    const genOpts: Record<string, Record<string, unknown>> = {}
+    if (responseFormat !== undefined) {
+      // OpenAI expects { type: 'json_object' } etc; Google uses responseMimeType
+      if (effectiveActiveModel.providerId === 'openai' || effectiveActiveModel.sdkType === 'openai') {
+        genOpts.openai = { ...(genOpts.openai ?? {}), responseFormat: responseFormat === 'text' ? { type: 'text' } : { type: 'json_object' } }
+      }
+      else if (effectiveActiveModel.providerId === 'google' || effectiveActiveModel.sdkType === 'google') {
+        genOpts.google = { ...(genOpts.google ?? {}), responseMimeType: responseFormat === 'json_object' ? 'application/json' : 'text/plain' }
+      }
+      else {
+        genOpts.openai = { ...(genOpts.openai ?? {}), responseFormat: responseFormat === 'text' ? { type: 'text' } : { type: 'json_object' } }
+      }
+    }
+    if (parallelToolCalls !== undefined) {
+      genOpts.openai = { ...(genOpts.openai ?? {}), parallelToolCalls }
+    }
+    providerOptions = mergeProviderOptions(providerOptions, genOpts as never)
+  }
 
   const replayId = tab.conversationId ? newReplayId() : null
 
   return {
     tab,
     model,
-    activeModel,
+    activeModel: effectiveActiveModel,
     systemPrompt,
     apiMessages,
     maxOutputTokens,
+    ...(temperature !== undefined ? { temperature } : {}),
+    ...(topP !== undefined ? { topP } : {}),
+    ...(topK !== undefined ? { topK } : {}),
+    ...(frequencyPenalty !== undefined ? { frequencyPenalty } : {}),
+    ...(presencePenalty !== undefined ? { presencePenalty } : {}),
+    ...(seed !== undefined ? { seed } : {}),
+    ...(stopSequences !== undefined ? { stopSequences } : {}),
+    ...(responseFormat !== undefined ? { responseFormat } : {}),
+    ...(parallelToolCalls !== undefined ? { parallelToolCalls } : {}),
     providerOptions,
     effectiveProjectPath,
     workspaceSnapshot,

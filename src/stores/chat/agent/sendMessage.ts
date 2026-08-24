@@ -7,11 +7,13 @@ import type { QuestionAnswer, QuestionSpec } from '@/utils/tools/questions'
 import type { TaskItem } from '@/utils/tools/todos'
 import { APICallError } from 'ai'
 import {
+  dbDeleteMessages,
   dbInsertConversation,
   dbInsertMessage,
   dbSaveMemory,
   dbTouchConversation,
   dbUpdateConversationDesigns,
+  dbUpdateConversationMsgCount,
   dbUpdateConversationWorkspace,
   dbUpdateMessage,
 } from '@/db/database'
@@ -25,7 +27,8 @@ import {
   statusWaitingPermission,
 } from '@/stores/chat/agent/status'
 import { runSubAgentStream } from '@/stores/chat/agent/subagent'
-import { compactConversationSession, persistCompactionMessages, shouldCompactSession } from '@/stores/chat/context/compaction'
+import { compactConversationSession, getEffectiveContextLimit, persistCompactionMessages, shouldCompactSession } from '@/stores/chat/context/compaction'
+import { sanitizeLiveMessage, sanitizeModelMessages } from '@/stores/chat/context/intraCompaction'
 import { buildMentionContext } from '@/stores/chat/context/mentions'
 import { toModelMessages } from '@/stores/chat/context/messageSerializer'
 import { BG_TASK_COMPLETED_DIVIDER } from '@/stores/chat/core/constants'
@@ -69,6 +72,7 @@ export function createSendMessage(
     const tab = activeTab.value
     if ((!content.trim() && (!attachments || attachments.length === 0)) || tab.agentStatus.type !== 'idle')
       return
+    setStatus(tab, STATUS_INITIALIZING)
 
     const [
       { useSettingsStore },
@@ -154,11 +158,15 @@ export function createSendMessage(
     tab.draft = { text: '', attachments: [] }
     tab.estimator = { estimate: tab.estimator.estimate, error: '', estimating: false }
 
-    // ── Checkpoint ────────────────────────────────────────────────────────
+    // ── Checkpoint (mode-specific: design versions replace generic checkpoints) ─
     const { useCheckpointStore } = await import('@/stores/checkpoints')
     const checkpointStore = useCheckpointStore()
+    const { useDesignVersionStore } = await import('@/stores/designVersions')
+    const designVersionStore = useDesignVersionStore()
     if (!isBgNotification) {
-      await checkpointStore.createCheckpoint(tab.id, tab.conversationId, tab.messages.length, text)
+      if (!tab.isDesignTab) {
+        await checkpointStore.createCheckpoint(tab.id, tab.conversationId, tab.messages.length, text)
+      }
     }
 
     // ── Create/update conversation ────────────────────────────────────────
@@ -218,7 +226,11 @@ export function createSendMessage(
           source: 'auto',
           onPersist: async payload => {
             if (tab.conversationId) {
+              const before = tab.messages.length
+              if (payload.deletedMessageIds.length)
+                await dbDeleteMessages(payload.deletedMessageIds).catch(() => {})
               await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+              await dbUpdateConversationMsgCount(tab.conversationId, before - payload.deletedMessageIds.length + payload.insertedMessages.length).catch(() => {})
             }
           },
         })
@@ -269,6 +281,12 @@ export function createSendMessage(
     const assistantCreatedAt = Date.now()
     await dbInsertMessage({ id: assistantId, conversation_id: tab.conversationId!, role: 'assistant', content: '', created_at: assistantCreatedAt, is_complete: 0, model_uid: resolvedModelUid ?? null, model_name: activeModel?.name ?? null })
       .catch(e => console.error('[sendMessage] Failed to pre-insert assistant row:', e))
+
+    // ── Design version pending (init before streaming) ─────────────────────
+    if (tab.isDesignTab) {
+      try { designVersionStore.initPending(tab.id, tab, assistantId) }
+      catch {}
+    }
 
     const interceptedStepMessages: ModelMessage[] = []
 
@@ -427,7 +445,7 @@ export function createSendMessage(
       return
     }
 
-    const { model, activeModel: resolvedModel, systemPrompt, apiMessages, maxOutputTokens, providerOptions, replayId } = runCtx
+    const { model, activeModel: resolvedModel, systemPrompt, apiMessages, maxOutputTokens, temperature, topP, topK, frequencyPenalty, presencePenalty, seed, stopSequences, providerOptions, replayId } = runCtx as typeof runCtx & { temperature?: number; topP?: number; topK?: number; frequencyPenalty?: number; presencePenalty?: number; seed?: number; stopSequences?: string[] }
     const streamStartedAt = Date.now()
     const liveMsg = tab.messages.find(m => m.id === assistantId)!
     let replayFinished = false
@@ -643,10 +661,21 @@ export function createSendMessage(
             tab.activeDesignProject = project
             if (tab.conversationId)
               dbUpdateConversationDesigns(tab.conversationId, JSON.stringify({ project, designs: tab.designs })).catch(() => {})
+            // Keep versioning pending in sync — scaffold may happen after initPending (which had empty project)
+            try { designVersionStore.updatePendingProject(tab.id, project) }
+            catch {}
+            try { designVersionStore.ensurePending(tab.id, tab, assistantId) }
+            catch {}
           },
           getActiveDesignProject: () => tab.activeDesignProject ?? null,
           onFilesChanged: () => {
             tab.projectVersion = (tab.projectVersion ?? 0) + 1
+          },
+          onDesignVersionAccumulate: files => {
+            try { designVersionStore.ensurePending(tab.id, tab, assistantId) }
+            catch {}
+            try { designVersionStore.accumulateFiles(tab.id, files) }
+            catch {}
           },
           onPreviewUrl: url => {
             tab.previewUrl = url ?? undefined
@@ -747,6 +776,23 @@ export function createSendMessage(
     async function onFinish({ fullText, usage }: { fullText: string; usage: import('ai').LanguageModelUsage }) {
       streamHandlers.flushLive()
       liveMsg.content = fullText
+      // ── L1 intra pruning before persistence — keep last 2 tool pairs, collapse reasoning ──
+      const intraFinish = sanitizeLiveMessage(liveMsg)
+      if (intraFinish) {
+        if (intraFinish.pruned.toolEvents)
+          liveMsg.toolEvents = intraFinish.pruned.toolEvents
+        else
+          delete (liveMsg as unknown as Record<string, unknown>).toolEvents
+        if (intraFinish.pruned.parts)
+          liveMsg.parts = intraFinish.pruned.parts
+        else
+          delete (liveMsg as unknown as Record<string, unknown>).parts
+        console.warn('[compaction] L1 pruned live turn at finish', {
+          tabId,
+          reclaimedTokens: intraFinish.reclaimedTokens,
+          keptIds: intraFinish.keptIds,
+        })
+      }
       const usageStats = extractUsageStats(usage, resolvedModel.providerId)
       if (usageStats)
         liveMsg.cacheStats = usageStats
@@ -773,7 +819,23 @@ export function createSendMessage(
       }
       await resolveConversationFailures(tab.conversationId).catch(() => {})
       await saveConversationTurnMemory({ settings: settings.memory, workspace: finalWorkspace, userMessage: userMsg, assistantMessage: liveMsg }).catch(() => {})
-      await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => {})
+      if (!tab.isDesignTab) {
+        await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => {})
+      }
+      else {
+        // Design versioning: coalesced snapshot at turn end (crash-safe: only if dirty)
+        try {
+          const version = await designVersionStore.finalize(tab, assistantId)
+          if (version) {
+            // Ensure liveMsg reflects version for immediate UI (reactive)
+            liveMsg.designVersionId = version.id
+            // Persist design_version_id already done in finalize, but ensure is_complete row is consistent
+          }
+        }
+        catch (e) {
+          console.warn('[sendMessage] design version finalize failed', e)
+        }
+      }
       // ── TurnEnd hook ────────────────────────────────────────────────────
       fireHooks('TurnEnd', {
         event: 'TurnEnd',
@@ -796,7 +858,11 @@ export function createSendMessage(
             source: 'auto',
             onPersist: async payload => {
               if (tab.conversationId) {
+                const before = tab.messages.length
+                if (payload.deletedMessageIds.length)
+                  await dbDeleteMessages(payload.deletedMessageIds).catch(() => {})
                 await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+                await dbUpdateConversationMsgCount(tab.conversationId, before - payload.deletedMessageIds.length + payload.insertedMessages.length).catch(() => {})
               }
             },
           })
@@ -855,7 +921,13 @@ export function createSendMessage(
           toolCallsCount: liveMsg.toolEvents?.length ?? 0,
         })
       }
-      checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => {})
+      if (!tab.isDesignTab) {
+        checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => {})
+      }
+      else {
+        try { designVersionStore.discardPending(tab.id) }
+        catch {}
+      }
       // ── TurnEnd hook (error path) ──────────────────────────────────────────
       fireHooks('TurnEnd', {
         event: 'TurnEnd',
@@ -876,65 +948,168 @@ export function createSendMessage(
 
     setStatus(tab, STATUS_STREAMING)
 
-    try {
-      await streamChat({
-        model: model as LanguageModel,
-        messages: apiMessages,
-        systemPrompt,
-        supportsToolCalls: resolvedModel.supportsToolCalls,
-        maxOutputTokens,
-        onDelta: streamHandlers.onDelta,
-        onReasoningDelta: streamHandlers.onReasoningDelta,
-        onToolCall: streamHandlers.onToolCall,
-        onToolResult: streamHandlers.onToolResult,
-        onFinish,
-        onError,
-        prepareStep: async ({ stepNumber, messages }) => {
-          const nextMessages = await consumePendingRequestMessages()
-          if (nextMessages.length > 0)
-            interceptedStepMessages.push(...nextMessages)
-          const preparedMessages = appendMissingInterceptedMessages(messages)
-          debugStreamInterceptor('prepareStep', {
-            tabId,
-            stepNumber,
-            incomingMessageCount: messages.length,
-            newlyInterceptedCount: nextMessages.length,
-            retainedInterceptedCount: interceptedStepMessages.length,
-            outgoingMessageCount: preparedMessages.length,
-            appended: preparedMessages !== messages,
-          })
-          return preparedMessages === messages ? undefined : { messages: preparedMessages }
-        },
-        signal: ac.signal,
-        ...(providerOptions ? { providerOptions: providerOptions as Record<string, Record<string, import('ai').JSONValue>> } : {}),
-        ...(tools ? { tools } : {}),
-      })
-    }
-    catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error))
-
-      // ── Overflow compaction ───────────────────────────────────────────────
-      if (APICallError.isInstance(err) && err.statusCode === 413) {
-        try {
-          setStatus(tab, { type: 'compacting' })
-          await compactConversationSession({
-            tab,
-            settings: settings as unknown as SettingsSnapshot,
-            source: 'auto',
-            onPersist: async payload => {
-              if (tab.conversationId) {
-                await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+    // ── shared prepareStep with mid-stream L1 ─────────────────────────────
+    const sharedPrepareStep = async ({ stepNumber, messages }: { stepNumber: number; messages: ModelMessage[] }) => {
+      streamHandlers.flushLive()
+      const isToolRunning = tab.agentStatus.type === 'tool-running'
+      let sanitized: ModelMessage[] | null = null
+      let reclaimed = 0
+      if (!isToolRunning) {
+        const shouldMid = shouldCompactSession(tab, settings.agent.sessionCompaction?.thresholdPercent ?? 90)
+          || (() => {
+            const effective = getEffectiveContextLimit(tab, settings as unknown as SettingsSnapshot) ?? 200000
+            let t = 0
+            try {
+              if (liveMsg.toolEvents?.length) {
+                for (const te of liveMsg.toolEvents) {
+                  if (te.result)
+                    t += String(typeof te.result === 'string' ? te.result : JSON.stringify(te.result)).length / 4
+                }
               }
-            },
-          })
-          err.message = 'Context was too large. Auto-compacted history. Please retry your request.'
-        }
-        catch (cErr) {
-          console.error('[sendMessage] Overflow compaction failed:', cErr)
+              if (liveMsg.parts?.length) {
+                for (const p of liveMsg.parts) {
+                  if (p.type === 'reasoning')
+                    t += p.text.length / 4
+                }
+              }
+            }
+            catch { /* ignore */ }
+            return t > effective * 0.30
+          })()
+        if (shouldMid) {
+          const res = sanitizeModelMessages(messages, { keepPairs: 2 })
+          if (res.didCompact) {
+            sanitized = res.sanitized
+            reclaimed = res.reclaimedTokens
+            console.warn('[compaction] mid-stream L1 sanitized outbound', { tabId, reclaimedTokens: reclaimed, keptPairs: 2 })
+          }
+          else {
+            const intra = sanitizeLiveMessage(liveMsg)
+            if (intra)
+              console.warn('[compaction] mid-stream L1 live prune available', { tabId, reclaimedTokens: intra.reclaimedTokens })
+          }
         }
       }
+      const nextMessages = await consumePendingRequestMessages()
+      if (nextMessages.length > 0)
+        interceptedStepMessages.push(...nextMessages)
+      const baseMessages = sanitized ?? messages
+      const preparedMessages = appendMissingInterceptedMessages(baseMessages)
+      const didChange = preparedMessages !== messages || sanitized !== null
+      debugStreamInterceptor('prepareStep', {
+        tabId,
+        stepNumber,
+        incomingMessageCount: messages.length,
+        newlyInterceptedCount: nextMessages.length,
+        retainedInterceptedCount: interceptedStepMessages.length,
+        outgoingMessageCount: preparedMessages.length,
+        appended: didChange,
+      })
+      if (reclaimed > 0)
+        console.warn('[compaction] prepareStep reclaimed', { tabId, reclaimed })
+      return didChange ? { messages: preparedMessages } : undefined
+    }
 
-      onError(err)
+    let hasRetried413 = false
+    let currentModel = model
+    let currentResolvedModel = resolvedModel
+    let currentSystemPrompt = systemPrompt
+    let currentApiMessages = apiMessages
+    let currentMaxOutputTokens = maxOutputTokens
+    let currentProviderOptions: typeof providerOptions = providerOptions as typeof providerOptions
+    const currentTools = tools
+    let currentTemperature = temperature
+    let currentTopP = topP
+    let currentTopK = topK
+    let currentFrequencyPenalty = frequencyPenalty
+    let currentPresencePenalty = presencePenalty
+    let currentSeed = seed
+    let currentStopSequences = stopSequences
+
+    while (true) {
+      try {
+        await streamChat({
+          model: currentModel as LanguageModel,
+          messages: currentApiMessages,
+          systemPrompt: currentSystemPrompt,
+          supportsToolCalls: currentResolvedModel.supportsToolCalls,
+          maxOutputTokens: currentMaxOutputTokens,
+          ...(currentTemperature !== undefined ? { temperature: currentTemperature } : {}),
+          ...(currentTopP !== undefined ? { topP: currentTopP } : {}),
+          ...(currentTopK !== undefined ? { topK: currentTopK } : {}),
+          ...(currentFrequencyPenalty !== undefined ? { frequencyPenalty: currentFrequencyPenalty } : {}),
+          ...(currentPresencePenalty !== undefined ? { presencePenalty: currentPresencePenalty } : {}),
+          ...(currentSeed !== undefined ? { seed: currentSeed } : {}),
+          ...(currentStopSequences !== undefined ? { stopSequences: currentStopSequences } : {}),
+          onDelta: streamHandlers.onDelta,
+          onReasoningDelta: streamHandlers.onReasoningDelta,
+          onToolCall: streamHandlers.onToolCall,
+          onToolResult: streamHandlers.onToolResult,
+          onFinish,
+          onError,
+          prepareStep: sharedPrepareStep,
+          signal: ac.signal,
+          ...(currentProviderOptions ? { providerOptions: currentProviderOptions as Record<string, Record<string, import('ai').JSONValue>> } : {}),
+          ...(currentTools ? { tools: currentTools } : {}),
+        })
+        break
+      }
+      catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error))
+
+        // ── Overflow compaction with auto-retry once ────────────────────
+        if (APICallError.isInstance(err) && err.statusCode === 413 && !hasRetried413) {
+          try {
+            setStatus(tab, { type: 'compacting' })
+            await compactConversationSession({
+              tab,
+              settings: settings as unknown as SettingsSnapshot,
+              source: 'auto',
+              onPersist: async payload => {
+                if (tab.conversationId) {
+                  const before = tab.messages.length
+                  if (payload.deletedMessageIds.length)
+                    await dbDeleteMessages(payload.deletedMessageIds).catch(() => {})
+                  await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+                  await dbUpdateConversationMsgCount(tab.conversationId, before - payload.deletedMessageIds.length + payload.insertedMessages.length).catch(() => {})
+                }
+              },
+            })
+            console.warn('[compaction] 413 overflow compacted, auto-retrying once', { tabId })
+            // Rebuild run context from compacted history for retry
+            try {
+              const refreshed = await buildRunContext({ tab, settings: settings as import('@/stores/chat/agent/runContext').SettingsForContext, requestText: text, mentionContext, modelOverride: modelOverride ?? null, ...(osInfo ? { osInfo: osInfo as { shell?: 'sh' | 'powershell' } } : {}) })
+              currentModel = refreshed.model
+              currentResolvedModel = refreshed.activeModel
+              currentSystemPrompt = refreshed.systemPrompt
+              currentApiMessages = refreshed.apiMessages
+              currentMaxOutputTokens = refreshed.maxOutputTokens
+              currentProviderOptions = refreshed.providerOptions as typeof currentProviderOptions
+              // sampling overrides may have changed; re-extract
+              const anyRef = refreshed as unknown as Record<string, unknown>
+              currentTemperature = anyRef.temperature as typeof currentTemperature
+              currentTopP = anyRef.topP as typeof currentTopP
+              currentTopK = anyRef.topK as typeof currentTopK
+              currentFrequencyPenalty = anyRef.frequencyPenalty as typeof currentFrequencyPenalty
+              currentPresencePenalty = anyRef.presencePenalty as typeof currentPresencePenalty
+              currentSeed = anyRef.seed as typeof currentSeed
+              currentStopSequences = anyRef.stopSequences as typeof currentStopSequences
+            }
+            catch (rebuildErr) {
+              console.error('[sendMessage] 413 retry rebuild failed', rebuildErr)
+            }
+            hasRetried413 = true
+            setStatus(tab, STATUS_STREAMING)
+            continue
+          }
+          catch (cErr) {
+            console.error('[sendMessage] Overflow compaction failed:', cErr)
+          }
+        }
+
+        onError(err)
+        break
+      }
     }
 
     setStatus(tab, STATUS_IDLE)
@@ -942,7 +1117,14 @@ export function createSendMessage(
     if (!replayFinished && replayId) {
       await finishReplayCapture({ id: replayId, startedAt: now, status: ac.signal.aborted ? 'aborted' : 'error', ...(liveMsg.toolEvents ? { toolEvents: liveMsg.toolEvents } : {}) }).catch(() => {})
     }
-    await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => {})
+    if (!tab.isDesignTab) {
+      await checkpointStore.finalizeCheckpoint(tab.conversationId).catch(() => {})
+    }
+    else {
+      // crash/abort path: discard pending version buffer (no snapshot)
+      try { designVersionStore.discardPending(tab.id) }
+      catch {}
+    }
   }
 
   return { sendMessage }

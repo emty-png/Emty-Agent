@@ -21,23 +21,38 @@ interface BodyChunk {
   groups: ProcessedGroup[]
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   items: ProcessedGroup[]
   streaming: boolean
   isOpen: boolean
   statusLabel?: string
   hasRestContent?: boolean
-}>()
+  providerId?: string | null
+  hideThinking?: boolean
+  disableThinkingMarkdown?: boolean
+  disableAssistantMarkdown?: boolean
+}>(), {
+  providerId: null,
+  hideThinking: false,
+  disableThinkingMarkdown: false,
+  disableAssistantMarkdown: false,
+})
 
 const emit = defineEmits<{
   toggle: []
 }>()
 
+const visibleItems = computed(() => {
+  if (!props.hideThinking)
+    return props.items
+  return props.items.filter(g => g.type !== 'reasoning')
+})
+
 const bodyChunks = computed<BodyChunk[]>(() => {
   const chunks: BodyChunk[] = []
   let currentChunk: BodyChunk | null = null
 
-  for (const group of props.items) {
+  for (const group of visibleItems.value) {
     const isWork = group.type === 'tools' || group.type === 'reasoning'
     const chunkType = isWork ? 'actions' : 'text'
 
@@ -208,7 +223,10 @@ function expandFromPreview() {
 
     <div v-if="wasInterrupted && !isOpen && !streaming && (lastText || lastActionsSummary.length > 0)" class="flex flex-col gap-2 pl-2">
       <div v-if="lastText" class="max-h-[80px] overflow-hidden text-[14px] leading-[1.6] text-[var(--color-text)]">
-        <MarkdownMessage :content="lastText" :streaming="false" />
+        <MarkdownMessage v-if="!disableAssistantMarkdown" :content="lastText" :streaming="false" />
+        <div v-else class="whitespace-pre-wrap break-words text-[13.5px] leading-[1.65] text-[var(--color-text-primary)]">
+          {{ lastText }}
+        </div>
       </div>
       <button
         v-if="lastActionsSummary.length > 0"
@@ -234,12 +252,16 @@ function expandFromPreview() {
         >
           <template v-for="(chunk, chunkIdx) in bodyChunks" :key="chunkIdx">
             <template v-if="chunk.type === 'text'">
-              <MarkdownMessage
-                v-for="group in chunk.groups"
-                :key="group.key"
-                :content="group.text"
-                :streaming="group.streaming"
-              />
+              <template v-for="group in chunk.groups" :key="group.key">
+                <MarkdownMessage
+                  v-if="!disableAssistantMarkdown"
+                  :content="group.text"
+                  :streaming="group.streaming"
+                />
+                <div v-else class="whitespace-pre-wrap break-words text-[13.5px] leading-[1.65] text-[var(--color-text-primary)]">
+                  {{ group.text }}
+                </div>
+              </template>
             </template>
 
             <div v-else class="flex flex-col gap-[2px]">
@@ -300,7 +322,10 @@ function expandFromPreview() {
                         <ToolCallBlock v-for="ev in group.events" :key="ev.id" :event="ev" />
                       </div>
                       <div v-else-if="group.type === 'reasoning'" class="block text-[13px] leading-[1.6]">
-                        <ThinkingMarkdown :content="group.text" :streaming="streaming" />
+                        <ThinkingMarkdown v-if="!disableThinkingMarkdown" :content="group.text" :streaming="streaming" />
+                        <div v-else class="whitespace-pre-wrap break-words text-[13px] leading-[1.6] text-[var(--color-text-tertiary)]">
+                          {{ group.text }}
+                        </div>
                       </div>
                     </template>
                   </div>

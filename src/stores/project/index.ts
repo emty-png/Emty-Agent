@@ -6,6 +6,8 @@ export const useProjectStore = defineStore(
   () => {
     const projectPath = ref<string | null>(null)
     const openProjects = ref<string[]>([])
+    /** Paths that were opened via the design canvas "show code" action (read-only intent). */
+    const designProjects = ref<string[]>([])
     const splitPercent = ref(30)
 
     // derive the folder name from the full path — works on both / and \ separators
@@ -18,6 +20,12 @@ export const useProjectStore = defineStore(
           .split(/[/\\]/)
           .pop() ?? null
       )
+    })
+
+    const isDesignProject = computed(() => {
+      if (!projectPath.value)
+        return false
+      return designProjects.value.includes(projectPath.value)
     })
 
     function setProject(path: string) {
@@ -33,7 +41,7 @@ export const useProjectStore = defineStore(
       projectPath.value = null
     }
 
-    function addProject(path: string) {
+    function addProject(path: string, isDesign = false) {
       const trimmed = path.trim()
       if (!trimmed)
         return
@@ -41,17 +49,20 @@ export const useProjectStore = defineStore(
       const normalized = trimmed.replace(/[/\\]+$/, '')
       if (!openProjects.value.includes(normalized))
         openProjects.value.push(normalized)
+      if (isDesign && !designProjects.value.includes(normalized))
+        designProjects.value.push(normalized)
       setProject(normalized)
     }
 
     function removeProject(path: string) {
       const normalized = path.trim().replace(/[/\\]+$/, '')
       openProjects.value = openProjects.value.filter(p => p !== normalized)
+      designProjects.value = designProjects.value.filter(p => p !== normalized)
       if (projectPath.value === normalized)
         projectPath.value = openProjects.value[openProjects.value.length - 1] ?? null
     }
 
-    return { projectPath, openProjects, projectName, splitPercent, setProject, clearProject, addProject, removeProject }
+    return { projectPath, openProjects, designProjects, projectName, isDesignProject, splitPercent, setProject, clearProject, addProject, removeProject }
   },
   { persist: true },
 )

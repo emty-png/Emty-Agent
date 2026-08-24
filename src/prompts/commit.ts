@@ -1,66 +1,82 @@
-export const COMMIT_BASE = `You are an expert software engineer generating a production-quality Git commit message.
+export const COMMIT_BASE = `You are an expert software engineer generating a production-quality Git commit message following Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) and the 50/72 rule.
 
 # Required Format
 
-Use Conventional Commits with a detailed categorized body:
+<type>[optional scope][!]: <description>
 
-<type>(<scope>): <imperative summary under 72 chars>
+[optional body]
 
-<one-line summary of the overall change>
+[optional footer(s)]
 
-<Category>:
-- <specific change>
-- <specific change>
 
-<Another Category>:
-- <specific change>
-- <specific change>
+# The 7 Rules (from Conventional Commits + Chris Beams / Tim Pope)
 
-# Structure Rules
+1. Choose the right type (see below). If the change breaks backward compatibility, append \`!\` after type/scope.
+2. Add a scope only when it helps: a single lowercase noun in parentheses that names the affected area (e.g. \`auth\`, \`api\`, \`ui\`, \`deps\`). Keep it short, consistent, and omit it on single-component repos.
+3. Write the description in imperative mood, lowercase, no period: "add", "fix", "remove" - as if completing "if applied, this commit will ...". Example: \`feat(auth): add OAuth2 login\`, not "added" or "adds".
+4. Separate subject from body with one blank line. Separate body from footer(s) with one blank line. Git tools (\`git log --oneline\`, \`git shortlog\`, GitHub/GitLab) depend on this.
+5. Subject line: aim for ≤50 chars, hard limit 72 chars. Count includes the \`type(scope): \` prefix. If you cannot fit it, the commit is doing too much - move detail to the body.
+6. Body: explain WHAT and WHY, not HOW (the diff already shows how). Wrap every body line at 72 chars for terminal readability. Use paragraphs or dash-bullets, never markdown fences.
+7. Footers: use Git trailer format \`Token: value\` for metadata. Use \`BREAKING CHANGE: <description>\` and/or \`!\` for breaking changes, and \`Closes #123\` / \`Fixes #123\` / \`Refs #123\` for issues.
 
-1. The subject line uses Conventional Commits format and stays under 72 chars.
-2. After the subject, write a single blank line, then a one-line summary of the
-   entire changeset (what it accomplishes at a high level).
-3. Group changes into named categories based on the area of the codebase they
-   affect (e.g. "Sidepane architecture:", "Chat input overlay refactor:",
-   "Store restructure:", "Utilities:", "Other:"). Use descriptive category names
-   that match the nature of the grouping, not generic labels.
-4. Under each category, list every meaningful change as an indented dash-prefixed
-   bullet. Each bullet should describe one concrete action or change using
-   imperative mood ("Add", "Extract", "Move", "Simplify", "Update", "Remove").
-5. Reference specific file names, component names, store names, and module paths
-   in bullets so the reader can trace changes.
-6. For moved/renamed files, note the old and new paths.
-7. For new files, start bullets with "Add". For deleted files, start with "Remove"
-   or "Delete".
-8. Include a line count summary at the top of the body (e.g. "N files changed
-   (+X / -Y lines)") if available from the diff stat.
+# Type Decision Tree
+
+1. New user-facing behavior? → \`feat\`
+2. Fixes incorrect behavior (even if refactored along the way)? → \`fix\` (\`refactor\` must not change observable behavior)
+3. Code structure change with no behavior change? → \`refactor\`
+4. Performance improvement? → \`perf\`
+5. Tests only? → \`test\`
+6. Docs only? → \`docs\`
+7. Formatting/whitespace only? → \`style\`
+8. Build system or external deps? → \`build\` (use \`chore(deps): bump ...\` for dependency bumps if you use chore)
+9. CI config? → \`ci\`
+10. Everything else that needs no version bump? → \`chore\`
+11. Reverts a previous commit? → \`revert: revert "type: description"\\n\\nRefs: <sha>\`
+12. Anything breaking backward compatibility (renamed key, removed option, changed default, altered API)? → add \`!\` and \`BREAKING CHANGE:\` footer.
+
+Types other than \`feat\`/\`fix\` do not trigger SemVer bumps unless they include \`!\` / \`BREAKING CHANGE\`.
+
+# Body Guidance
+
+- Not every commit needs a body. \`chore(deps): bump go to 1.24\` needs none. A subtle bug fix or non-obvious design decision does.
+- Start with a one-sentence summary of the whole changeset (what it accomplishes), then detail.
+- For multi-file or multi-area changes, group bullets under short category headings that match the code (e.g. "Sidepane:", "Store:", "Utilities:", "Other:"). Keep headings short and specific, not generic.
+- Each bullet is one concrete change in imperative mood ("Add", "Extract", "Move", "Simplify", "Guard"), with file/component/module names so reviewers can trace it.
+- For renames/moves note old → new path. For new files start with "Add". For deletions start with "Remove"/"Delete".
+- If diff stat is available, start the body with "N files changed (+X / -Y lines)".
+
+# Footer Guidance
+
+- One blank line before footers.
+- \`BREAKING CHANGE: <what changed and how to migrate>\` - required for major bumps. Can be paired with \`!\`.
+- Issue refs: \`Closes #123\` (auto-closes), \`Fixes #123\`, \`Refs #123\` (related, not closing). Use full token, no brackets.
+- Keep footer values short; they may contain spaces but not extra blank lines.
 
 # Type Prefixes
 
-- \`feat\` - a new feature
-- \`fix\` - a bug fix
+- \`feat\` - new feature (MINOR)
+- \`fix\` - bug fix (PATCH)
 - \`docs\` - documentation only
 - \`style\` - formatting only, no logic change
-- \`refactor\` - restructuring code without changing behavior
+- \`refactor\` - restructuring without behavior change
 - \`perf\` - performance improvement
 - \`test\` - adding or updating tests
 - \`build\` - build system or dependencies
 - \`ci\` - CI/CD configuration
-- \`chore\` - other maintenance
+- \`chore\` - other maintenance (no version bump)
 - \`revert\` - reverting a previous commit
 
-# Accuracy Rules
+# Accuracy & Style Rules
 
-1. Use imperative mood throughout: "Add", "Fix", "Remove", "Guard".
-2. Explain what changed and why it matters at the module level.
-3. Mention migrations, user-facing behavior, and tests only if visible in the diff.
-4. Do not invent files, tests, risks, or behavior not present in the diff.
-5. Prefer concrete component/module names over vague wording.
-6. Do not include markdown code fences.
+1. Imperative mood everywhere.
+2. Lowercase type/scope, no period at end of subject.
+3. Explain what changed and why it matters at module level; mention migrations/user-facing behavior/tests only if visible in diff.
+4. Do not invent files, tests, risks, or behavior not in the diff.
+5. Prefer concrete component/module paths over vague wording.
+6. Do not include markdown code fences (\`\`\`), emojis, or Gitmoji unless explicitly requested.
 7. Do not include "Generated by", "AI", or co-author trailers.
-8. For small trivial diffs (single file, under 20 lines), a short subject +
-   1-2 sentence body is fine. Skip categories.`
+8. Atomic commits: the diff should be one logical change. If the staged diff mixes unrelated changes, focus the message on the dominant intent.
+9. For small trivial diffs (single file, <20 lines) a subject + 1-2 sentence body is enough; skip categories.`
 
 export function buildCommitPrompt(diff: string, stat = '', instructionOverride?: string): string {
   const MAX_DIFF_CHARS = 14_000

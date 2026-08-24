@@ -10,17 +10,26 @@ Create reusable instruction packages that enhance the agent's capabilities for t
 
 ## How Skills Work
 
-Skills are modular guidance files that extend what the agent can do. Each skill is a directory containing a `SKILL.md` file and optional resources.
+Skills are modular guidance files that extend what the agent can do. Each `SKILL.md` file maps to **one** slash command. To group related commands, put multiple `SKILL.md` files in subfolders of a single skill folder.
 
 ## Directory Structure
 
 ```
 <skill-root>/
-  SKILL.md          — definition (YAML frontmatter + markdown body)
-  scripts/          — runnable automation
-  references/       — docs loaded on demand
-  assets/           — non-text resources
+  SKILL.md          — single-command skill, invoked as /skill-<name>
+  scripts/          — runnable automation (shared)
+  references/       — docs loaded on demand (shared)
+  assets/           — non-text resources (shared)
+
+# Grouped commands — one folder, one slash command per SKILL.md
+responsive-design/
+  build/
+    SKILL.md        — invoked as /build
+  audit/
+    SKILL.md        — invoked as /audit
 ```
+
+A file at `responsive-design/build/SKILL.md` with `name: build` becomes `/build` (nested skills expose as `/<name>`). A file at `<skill-root>/SKILL.md` becomes `/skill-<name>`. No `commands:` array — one file = one command.
 
 ### SKILL.md
 
@@ -31,25 +40,21 @@ Required YAML frontmatter:
 name: skill-name
 description: What the skill does
 tags: keyword1, keyword2
+# optional: restrict to specific modes (comma-separated)
+modes: design, build
 ---
 ```
 
-Optional frontmatter for multi-command skills:
+For a grouped command, the subfolder's `SKILL.md` defines its own slash command:
 
 ```yaml
 ---
-name: git-workflow
-description: Git workflow automation
-tags: git, commit, branch
-commands:
-  - name: commit
-    description: Create a conventional commit
-  - name: branch
-    description: Create a feature branch
+name: build
+description: Build a new component with responsive behavior
+tags: responsive, css
+modes: design
 ---
 ```
-
-When `commands` is defined, each command becomes a separate slash command in the dropdown (e.g., `/commit`, `/branch`). When omitted, the skill is invoked as `/skill-<name>`.
 
 ## Resource Directories
 
@@ -57,34 +62,40 @@ When `commands` is defined, each command becomes a separate slash command in the
 - **references/** — supplementary docs to load on demand
 - **assets/** — non-text resources (images, binaries)
 
-Reference resources in your SKILL.md by relative path (e.g., `references/checklist.md`). The agent loads them with `load_skill_resource`.
+Reference resources in your SKILL.md by relative path (e.g., `references/checklist.md`). The agent loads them with `load_skill_resource`. Resources in the parent folder are shared by all sub-commands.
 
 ## Scope
 
 - **Project** (default): `.emty/skills/` — only available in this project
 - **Global**: `~/.emty/skills/` — available across all projects
 
-Project skills override global skills with the same name.
+Project skills override global skills with the same name. For grouped skills, the override key is the full sub-path (e.g. `responsive-design/build`).
 
 ## Workflow
 
 1. Understand what the user is trying to build
 2. Ask clarifying questions about scope, triggers, and resources
-3. Use the `create_skill` tool to scaffold the skill:
+3. Use the `create_skill` tool to scaffold each command as its own `SKILL.md`:
 
 ```
 create_skill({
-  name: "api-review",
-  description: "Review REST API design and implementation",
-  tags: ["api", "review", "rest"],
+  name: "responsive-design/build",
+  description: "Build a new component with responsive behavior",
+  tags: ["responsive", "css"],
   scope: "project",
   content: `## Workflow
-1. Read the API route definitions
-2. Check for REST conventions...`,
-  commands: [
-    { name: "review-endpoint", description: "Review a single endpoint" },
-    { name: "review-api", description: "Review the entire API surface" }
-  ]
+1. Check container queries...
+2. Use clamp() for fluid sizing...`
+})
+
+create_skill({
+  name: "responsive-design/audit",
+  description: "Review an existing UI against responsive anti-patterns",
+  tags: ["responsive", "audit"],
+  scope: "project",
+  content: `## Workflow
+1. Check for fixed pixel widths...
+2. Verify touch targets...`
 })
 ```
 
@@ -93,8 +104,9 @@ create_skill({
 
 ## Guidelines
 
+- **One file per command** — never put multiple slash commands in one `SKILL.md`; create `subfolder/SKILL.md` instead
 - **Be specific** — write instructions a junior developer could follow
 - **Include examples** — show the expected input/output
 - **Describe resources** — explain when and how to use scripts/, references/, and assets/
 - **Decide scope** — use project for team-specific skills, global for personal cross-project skills
-- **Use commands** — expose multiple related operations as separate slash commands
+- **Group related commands** — use a parent folder (`my-feature/build`, `my-feature/audit`) to keep them discoverable

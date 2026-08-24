@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronLeft, ChevronRight, Globe, Palette, Plus, X } from 'lucide-vue-next'
+import { ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Globe, Palette, Plus, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBrowserStore } from '@/stores/browser'
@@ -17,7 +17,28 @@ const gitPane = useGitPaneStore()
 const project = useProjectStore()
 const terminal = useTerminalStore()
 const settings = useSettingsStore()
-const { tabs, activeId } = storeToRefs(chat)
+const { tabs, activeId, unseenErrorIds } = storeToRefs(chat)
+
+function hasUnseenError(tabId: string): boolean {
+  return unseenErrorIds.value.has(tabId)
+}
+
+function isErrorTab(tab: { id: string; agentStatus: { type: string; message?: string } }): boolean {
+  return hasUnseenError(tab.id) || (tab.agentStatus.type === 'error' && tab.id !== activeId.value)
+}
+
+function getErrorMessage(tab: { agentStatus: { type: string; message?: string } }): string {
+  return tab.agentStatus.type === 'error' && typeof (tab.agentStatus as { message?: string }).message === 'string'
+    ? (tab.agentStatus as { message: string }).message
+    : 'Streaming failed'
+}
+
+function handleTabClick(tabId: string): void {
+  if (hasUnseenError(tabId) || tabs.value.find(t => t.id === tabId)?.agentStatus.type === 'error')
+    chat.clearUnseenError(tabId)
+
+  activeId.value = tabId
+}
 
 const activeTab = computed(() => tabs.value.find(t => t.id === activeId.value))
 const isDesignTab = computed(() => activeTab.value?.isDesignTab === true)
@@ -206,9 +227,12 @@ onUnmounted(() => {
           :key="tab.id"
           class="group/tab flex h-[30px] w-[140px] min-w-[140px] shrink-0 items-center gap-[5px] whitespace-nowrap rounded-t-[var(--radius-sm)] border-b border-l border-r border-t pl-[10px] pr-[8px] text-[12px] font-[450] transition-[background,color,border-color] duration-[120ms] ease-[ease]"
           :class="tab.id === activeId ? 'cursor-default border-b-[var(--color-bg-base)] border-l-[var(--color-border-subtle)] border-r-[var(--color-border-subtle)] border-t-[var(--color-border-subtle)] bg-[var(--color-bg-base)] text-[var(--color-text-primary)]' : 'cursor-pointer border-b-[var(--color-border-subtle)] border-l-transparent border-r-transparent border-t-transparent bg-transparent text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]'"
-          @click="activeId = tab.id"
+          @click="handleTabClick(tab.id)"
         >
-          <span v-if="tab.pendingPermissions && tab.pendingPermissions.length > 0" class="gp-wrap">
+          <span v-if="isErrorTab(tab)" class="ge-wrap" :title="getErrorMessage(tab)">
+            <CircleAlert :size="14" :stroke-width="1.9" />
+          </span>
+          <span v-else-if="tab.pendingPermissions && tab.pendingPermissions.length > 0" class="gp-wrap">
             <svg viewBox="0 0 28 28" width="14" height="14">
               <defs>
                 <linearGradient :id="`gp-${tab.id}`" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -411,6 +435,15 @@ onUnmounted(() => {
   animation: gsSpin 1.8s linear infinite;
   transform-origin: center;
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-accent) 30%, transparent));
+}
+
+.ge-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-danger);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-danger) 35%, transparent));
 }
 
 @keyframes gpRotate {

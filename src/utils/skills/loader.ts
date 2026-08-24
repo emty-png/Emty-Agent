@@ -5,7 +5,7 @@ import { parseSkillMarkdown } from './parser'
 import { getGlobalSkillsRoot, joinSkillPath, normalizeRelativePath, toTitleCase, trimInlineResource } from './utils'
 
 const BUILTIN_SKILL_FILES = import.meta.glob<string>(
-  '/src/skills/builtin/*/SKILL.md',
+  '/src/skills/builtin/**/SKILL.md',
   { eager: true, query: '?raw', import: 'default' },
 )
 
@@ -260,18 +260,20 @@ function buildBuiltinSkillCatalog(): SkillDefinition[] {
   const skills: SkillDefinition[] = []
 
   for (const [path, content] of Object.entries(BUILTIN_SKILL_FILES)) {
-    const match = path.match(/^\/src\/skills\/builtin\/([^/]+)\/SKILL\.md$/)
+    const match = path.match(/^\/src\/skills\/builtin\/(.+)\/SKILL\.md$/)
     if (!match)
       continue
 
     const slug = match[1]!
+    // Derive fallback slug from last path segment for nested skills (e.g. responsive-design/build -> build)
+    const fallbackSlug = slug.includes('/') ? slug.split('/').pop()! : slug
     const resources = listBuiltinSkillResources(slug)
     skills.push(parseSkillMarkdown({
       id: `builtin:${slug}`,
       content,
       source: 'builtin',
       location: `src/skills/builtin/${slug}/SKILL.md`,
-      fallbackTitle: toTitleCase(slug),
+      fallbackTitle: toTitleCase(fallbackSlug),
       resources,
     }))
   }

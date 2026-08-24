@@ -4,6 +4,7 @@ import type { LanguageModel } from '@/utils/ai'
 import { generateText } from 'ai'
 import { countTokens as countTextTokens } from 'gpt-tokenizer'
 import { dbInsertMessage } from '@/db/database'
+import { sanitizeLiveMessage } from '@/stores/chat/context/intraCompaction'
 import { BG_TASK_COMPLETED_DIVIDER, SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from '@/stores/chat/core/constants'
 import { makeId } from '@/stores/chat/utils/tabFactory'
 import { buildLanguageModel, buildProviderOptions } from '@/utils/ai'
@@ -25,7 +26,7 @@ interface ActiveModelSnapshot {
   id: string
   providerId: string
   supportsThinking: boolean
-  thinkingEffort: 'low' | 'medium' | 'high'
+  thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   sdkType?: 'openai' | 'anthropic' | 'google' | null
 }
 
@@ -82,7 +83,7 @@ function renderToolEvent(event: ToolEvent): string {
 }
 
 // Phase 1: Cheap Pre-pass
-function prePassMessages(messages: Message[]): Message[] {
+export function prePassMessages(messages: Message[]): Message[] {
   return messages
     .filter(m => {
       // Strip blank platform-echo user rows
@@ -119,7 +120,7 @@ function prePassMessages(messages: Message[]): Message[] {
     })
 }
 
-function renderMessageForCompaction(message: Message): string {
+export function renderMessageForCompaction(message: Message): string {
   const blocks: string[] = []
   const prefix = message.role === 'user' ? 'User' : 'Assistant'
   const content = message.content.trim()
@@ -139,7 +140,7 @@ function renderMessageForCompaction(message: Message): string {
   return blocks.join('\n\n').trim()
 }
 
-function estimateTokens(text: string): number {
+export function estimateTokens(text: string): number {
   try {
     return countTextTokens(text)
   }
@@ -148,7 +149,7 @@ function estimateTokens(text: string): number {
   }
 }
 
-function estimateFullMessageTokens(message: Message): number {
+export function estimateFullMessageTokens(message: Message): number {
   let tokens = estimateTokens(message.content || '')
   if (message.mentionContext)
     tokens += estimateTokens(message.mentionContext)
@@ -164,7 +165,7 @@ function estimateFullMessageTokens(message: Message): number {
 }
 
 // Phase 2: Determine Boundaries
-function calculateCompactionBoundaries(messages: Message[], budgetTokens: number): { head: Message[]; toCompact: Message[]; tail: Message[] } {
+export function calculateCompactionBoundaries(messages: Message[], budgetTokens: number): { head: Message[]; toCompact: Message[]; tail: Message[] } {
   const realMessages = messages.filter(m => m.content !== SESSION_COMPACTED_DIVIDER && m.content !== SESSION_COMPACTING_DIVIDER && m.content !== BG_TASK_COMPLETED_DIVIDER)
 
   // Head protection
@@ -207,6 +208,25 @@ function resolveActiveModel(tab: ChatTab, settings: SettingsSnapshot): ActiveMod
   return settings.enabledModels.find(model => model.uid === resolvedUid) ?? settings.activeModel
 }
 
+function resolveCompactionModel(tab: ChatTab, settings: SettingsSnapshot): ActiveModelSnapshot | null {
+  const compactionUid = (settings.agent.sessionCompaction as unknown as { modelUid?: string | null })?.modelUid ?? null
+  if (compactionUid) {
+    const m = settings.enabledModels.find(model => model.uid === compactionUid)
+    if (m)
+      return m
+  }
+  return resolveActiveModel(tab, settings)
+}
+
+export function getCompactionModelUid(settings: SettingsSnapshot): string | null {
+  return (settings.agent.sessionCompaction as unknown as { modelUid?: string | null })?.modelUid ?? null
+}
+
+export function setCompactionModelUidPatch(tab: ChatTab, _uid: string | null): void {
+  // placeholder for future picker wiring — actual persistence via settings store
+  void tab
+}
+
 function buildCompactionModel(activeModel: ActiveModelSnapshot, settings: SettingsSnapshot): LanguageModel {
   if (activeModel.providerId === 'openai') {
     return buildLanguageModel({ type: 'openai', apiKey: settings.openai.apiKey, baseURL: settings.openai.baseURL, organizationId: settings.openai.organizationId }, activeModel.id)
@@ -221,6 +241,25 @@ function buildCompactionModel(activeModel: ActiveModelSnapshot, settings: Settin
   if (!compatible)
     throw new Error(`Provider "${activeModel.providerId}" not found`)
   return buildLanguageModel({ type: activeModel.sdkType ?? 'compatible', apiKey: compatible.apiKey, baseURL: compatible.baseURL, name: compatible.name, headers: compatible.headers }, activeModel.id)
+}
+
+export function getEffectiveContextLimit(tab: ChatTab, settings?: SettingsSnapshot): number | null {
+  const est = tab.estimator.estimate
+  if (est) {
+    if (est.modelContextLimit != null)
+      return est.modelContextLimit
+    if (est.contextLimit != null)
+      return est.contextLimit
+  }
+  if (settings) {
+    const maybeProvider = resolveCompactionModel(tab, settings) ?? resolveActiveModel(tab, settings)
+    if (maybeProvider) {
+      const maybeCtx = (maybeProvider as unknown as { contextLimit?: number | null }).contextLimit
+      if (maybeCtx != null)
+        return maybeCtx
+    }
+  }
+  return null
 }
 
 export const COMPACTION_SYSTEM = `You are compressing earlier turns from a coding-agent session into durable working context.
@@ -270,7 +309,7 @@ async function summarizeChunk(options: { model: LanguageModel; providerOptions?:
 }
 
 async function buildSessionSummary(messagesToCompact: Message[], tab: ChatTab, settings: SettingsSnapshot, previousSummary?: string, focusTopic?: string): Promise<CompactionSummaryResult> {
-  const activeModel = resolveActiveModel(tab, settings)
+  const activeModel = resolveCompactionModel(tab, settings) ?? resolveActiveModel(tab, settings)
   if (!activeModel)
     throw new Error('No active model selected for session compaction')
   const model = buildCompactionModel(activeModel, settings)
@@ -279,16 +318,70 @@ async function buildSessionSummary(messagesToCompact: Message[], tab: ChatTab, s
   const chunks = messagesToCompact.map(renderMessageForCompaction).filter(Boolean)
   const fullText = chunks.join('\n\n---\n\n')
 
+  // Build live snapshot context if this is a live-heavy compaction (preserve intra-turn intent)
+  let enrichedRequest = `Session to compact:\n\n${fullText}`
+  const liveSnapshot = buildLiveTurnSnapshot(tab)
+  if (liveSnapshot && messagesToCompact.length === 0) {
+    // No history to compact but live snapshot provides continuity
+    enrichedRequest += `\n\n---\n\nLive turn snapshot (preserve this):\n${liveSnapshot}`
+  }
+  else if (liveSnapshot) {
+    enrichedRequest += `\n\n---\n\nLive turn snapshot (active turn to preserve for next step):\n${liveSnapshot}`
+  }
+
   const merged = await summarizeChunk({
     model,
     ...(providerOptions ? { providerOptions } : {}),
-    request: `Session to compact:\n\n${fullText}`,
+    request: enrichedRequest,
     ...(previousSummary ? { previousSummary } : {}),
     ...(focusTopic ? { focusTopic } : {}),
     ...(settings.promptOverrides?.['prompt-compaction'] ? { systemOverride: settings.promptOverrides['prompt-compaction'] } : {}),
   })
 
   return { summary: merged, compactedCount: messagesToCompact.length }
+}
+
+/** Build a concise live turn snapshot from todos + last messages + tool events — never compacted itself. */
+function buildLiveTurnSnapshot(tab: ChatTab): string | null {
+  const lastUser = [...tab.messages].reverse().find(m => m.role === 'user')
+  const live = [...tab.messages].reverse().find(m => m.role === 'assistant' && m.toolEvents?.length)
+  const todos = tab.todos ?? []
+  const pendingTodos = todos.filter(t => t.status !== 'completed')
+  const doneTodos = todos.filter(t => t.status === 'completed')
+
+  const parts: string[] = []
+  if (lastUser?.content.trim())
+    parts.push(`Active intent (last user): ${truncateText(lastUser.content.trim(), 800)}`)
+  if (tab.title)
+    parts.push(`Conversation title: ${tab.title}`)
+  if (pendingTodos.length || doneTodos.length) {
+    const todoLines = todos.map(t => `- [${t.status}] ${(t as unknown as { subject?: string; label?: string }).subject ?? (t as unknown as { label?: string }).label ?? t.id}${t.activeForm ? ` (${t.activeForm})` : ''}`).join('\n')
+    parts.push(`Todos:\n${todoLines}`)
+  }
+  if (live?.toolEvents?.length) {
+    const recent = live.toolEvents.slice(-6).map(e => `${e.toolName} (${e.status}) — ${e.label}`).join('\n')
+    parts.push(`Recent tool activity (last 6):\n${recent}`)
+    const filesTouched = [...new Set(live.toolEvents.filter(e => ['write_file', 'edit_files', 'read_files', 'read_file'].includes(e.toolName)).map(e => e.label))].slice(0, 12)
+    if (filesTouched.length)
+      parts.push(`Files touched this turn: ${filesTouched.join(', ')}`)
+    const errors = live.toolEvents.filter(e => e.status === 'error').map(e => `${e.toolName}: ${stringifyCompact(e.result).slice(0, 300)}`)
+    if (errors.length)
+      parts.push(`Unresolved errors:\n${errors.join('\n')}`)
+  }
+  const lastReasoning = live?.parts?.filter(p => p.type === 'reasoning').at(-1)
+  if (lastReasoning?.text.trim())
+    parts.push(`Last thinking (tail 600): ${truncateText(lastReasoning.text.trim(), 600)}`)
+
+  return parts.length ? parts.join('\n\n') : null
+}
+
+function stringifyCompact(v: unknown): string {
+  if (v == null)
+    return ''
+  if (typeof v === 'string')
+    return v
+  try { return JSON.stringify(v) }
+  catch { return String(v) }
 }
 
 export function shouldCompactSession(tab: ChatTab, thresholdPercent: number): boolean {
@@ -315,8 +408,65 @@ export async function compactConversationSession(options: {
   const budgetTokens = (options.tab.estimator.estimate?.inputTokens ?? 20000) * 0.2
   const { head, toCompact, tail } = calculateCompactionBoundaries(options.tab.messages, budgetTokens)
 
-  if (toCompact.length === 0)
+  // ── Live-heavy fallback: single-turn with large tool/reasoning payload but no history to compact ──
+  // Deterministic L1 pruning first (keep last 2 pairs, collapse reasoning) — no LLM cost.
+  if (toCompact.length === 0) {
+    const liveCandidate = [...options.tab.messages].reverse().find(m => m.role === 'assistant' && (m.toolEvents?.length || m.parts?.some(p => p.type === 'reasoning')))
+    if (liveCandidate) {
+      const liveTokens = estimateFullMessageTokens(liveCandidate)
+      const effective = options.tab.estimator.estimate?.modelContextLimit ?? options.tab.estimator.estimate?.contextLimit ?? getEffectiveContextLimit(options.tab, options.settings) ?? 200000
+      if (liveTokens > effective * 0.30) {
+        const intra = sanitizeLiveMessage(liveCandidate)
+        if (intra) {
+          const idx = options.tab.messages.findIndex(m => m.id === liveCandidate.id)
+          if (idx >= 0) {
+            options.tab.messages[idx] = intra.pruned
+            try {
+              const { dbUpdateMessage } = await import('@/db/database')
+              await dbUpdateMessage(liveCandidate.id, {
+                content: intra.pruned.content,
+                parts: intra.pruned.parts ? JSON.stringify(intra.pruned.parts) : null,
+                tool_events: intra.pruned.toolEvents ? JSON.stringify(intra.pruned.toolEvents) : null,
+              })
+            }
+            catch { /* best effort */ }
+          }
+          if (!options.tab.compactionStats)
+            options.tab.compactionStats = { lastSavingsPct: 0, lastCompactedAt: 0 }
+          options.tab.compactionStats.lastSavingsPct = intra.originalTokens > 0 ? ((intra.originalTokens - intra.prunedTokens) / intra.originalTokens) * 100 : 0
+          options.tab.compactionStats.lastCompactedAt = Date.now()
+          await options.onPersist({ deletedMessageIds: [], insertedMessages: [] })
+          return { summary: `[L1 intra compaction pruned ${intra.prunedIds.length} tool results, kept ${intra.keptIds.length}]`, compactedCount: 0 }
+        }
+        // L1 found nothing to prune but still heavy — fall back to LLM snapshot of live turn
+        const pseudo = [liveCandidate]
+        const previousSummary = extractPreviousSummary(head)
+        const prePassed = prePassMessages(pseudo)
+        const summaryResultLive = await buildSessionSummary(prePassed, options.tab, options.settings, previousSummary, options.focusTopic)
+        const firstTimestamp = liveCandidate.timestamp.getTime()
+        const summaryHeaderLive = ['## Compacted Session Summary', `Compacted ${options.source === 'auto' ? 'automatically' : 'manually'} to reclaim context budget. Date: ${new Date().toISOString()}`, 'Note: intra-turn compaction (single heavy turn) — history preserved.'].join('\n\n')
+        const summaryMessageLive: Message = {
+          id: makeId(),
+          role: 'assistant',
+          content: `${summaryHeaderLive}\n\n${summaryResultLive.summary}\n---\n[CONTEXT COMPACTION — REFERENCE ONLY] End of compaction summary...`.trim(),
+          timestamp: new Date(firstTimestamp),
+        }
+        await options.onPersist({
+          deletedMessageIds: [],
+          insertedMessages: [summaryMessageLive],
+        })
+        const liveIdx = options.tab.messages.findIndex(m => m.id === liveCandidate.id)
+        if (liveIdx >= 0)
+          options.tab.messages.splice(liveIdx, 0, summaryMessageLive)
+        if (!options.tab.compactionStats)
+          options.tab.compactionStats = { lastSavingsPct: 0, lastCompactedAt: 0 }
+        options.tab.compactionStats.lastSavingsPct = 0
+        options.tab.compactionStats.lastCompactedAt = Date.now()
+        return summaryResultLive
+      }
+    }
     throw new Error('Not enough conversation history to compact')
+  }
 
   const previousSummary = extractPreviousSummary(head)
   const prePassed = prePassMessages(toCompact)

@@ -71,34 +71,6 @@ export interface ReadRegistryEntry {
 
 export type FileReadRegistry = Map<string, ReadRegistryEntry>
 
-// ---------------------------------------------------------------------------
-// Per-file async lock (prevents concurrent edit/write races)
-// ---------------------------------------------------------------------------
-
-/**
- * Serializes async operations on the same key (file path).
- * When the AI model issues parallel tool calls targeting the same file,
- * this ensures they execute one-at-a-time instead of racing.
- */
-export class FileLockManager {
-  private locks = new Map<string, Promise<void>>()
-
-  async withLock<T>(key: string, fn: () => Promise<T>, forced: boolean = false): Promise<T> {
-    if (forced)
-      return fn()
-
-    const prev = this.locks.get(key) ?? Promise.resolve()
-    const current = prev.then(() => fn(), () => fn())
-    const tail = current.then(() => {}, () => {})
-    this.locks.set(key, tail)
-    void tail.then(() => {
-      if (this.locks.get(key) === tail)
-        this.locks.delete(key)
-    })
-    return current
-  }
-}
-
 /**
  * Optional callback invoked BEFORE any file mutation so the checkpoint
  * system can capture the file's pre-mutation content.

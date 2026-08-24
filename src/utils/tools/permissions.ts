@@ -173,6 +173,21 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
       }
     }
 
+    case 'read_design': {
+      const paths = Array.isArray(args.file_paths)
+        ? args.file_paths.filter((p): p is string => typeof p === 'string')
+        : []
+      const offset = typeof args.offset === 'number' ? args.offset : 1
+      const limit = typeof args.limit === 'number' ? args.limit : 300
+      return {
+        actionTitle: `Read ${paths.length === 1 ? paths[0] : `${paths.length} design files`}`,
+        actionDetails: [
+          `Files: ${paths.length > 0 ? formatList(paths) : 'none specified'}`,
+          `Line range per file: ${offset}-${offset + limit - 1}`,
+        ],
+      }
+    }
+
     case 'write_files':
     case 'write_file': {
       if (toolName === 'write_file') {

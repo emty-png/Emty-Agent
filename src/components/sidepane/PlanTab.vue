@@ -32,12 +32,54 @@ const conversationId = computed(() => {
   return chat.tabs.find(tab => tab.id === props.tabId)?.conversationId ?? null
 })
 
+const workspacePath = computed(() => {
+  return chat.tabs.find(tab => tab.id === props.tabId)?.workspacePath ?? null
+})
+
+function safePathSegment(value: string, fallback: string): string {
+  const sanitized = value
+    .trim()
+    .split('')
+    .map(char => char.charCodeAt(0) < 32 ? '-' : char)
+    .join('')
+    .replace(/[<>:"/\\|?*]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/^\.+/, '')
+    .replace(/\.+$/, '')
+    .replace(/-+/g, '-')
+  return sanitized || fallback
+}
+
+function projectNameFromPath(path: string | null): string | null {
+  if (!path)
+    return null
+  return path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? null
+}
+
+const projectSegment = computed(() => {
+  const fromPath = projectNameFromPath(workspacePath.value)
+  if (fromPath)
+    return safePathSegment(fromPath, 'global')
+  if (conversationId.value)
+    return safePathSegment(conversationId.value, 'global')
+  return 'global'
+})
+
 function handleGlobalPlanCreated(e: Event) {
-  const detail = (e as CustomEvent<{ filepath: string; tabId?: string; conversationId?: string }>).detail
+  const detail = (e as CustomEvent<{ filepath: string; tabId?: string; conversationId?: string; projectName?: string | null; workspacePath?: string | null }>).detail
   if (!detail?.filepath)
     return
 
-  if (detail.tabId === props.tabId || (detail.conversationId && detail.conversationId === conversationId.value))
+  if (detail.tabId === props.tabId) {
+    void loadPlans()
+    return
+  }
+  // plans are now per-project, so any tab in same project should refresh
+  const incomingProject = detail.projectName ?? (detail.workspacePath ? projectNameFromPath(detail.workspacePath) : null)
+  const incomingSegment = incomingProject ? safePathSegment(incomingProject, 'global') : detail.conversationId ? safePathSegment(detail.conversationId, 'global') : null
+  if (incomingSegment && incomingSegment === projectSegment.value)
+    void loadPlans()
+  else if (detail.conversationId && detail.conversationId === conversationId.value)
     void loadPlans()
 }
 
@@ -263,7 +305,7 @@ const planLines = computed<PlanLine[]>(() => {
 async function loadPlans() {
   loading.value = true
   try {
-    if (!conversationId.value) {
+    if (!conversationId.value && !workspacePath.value) {
       plans.value = []
       selectedPlanPath.value = null
       planContent.value = ''
@@ -271,7 +313,8 @@ async function loadPlans() {
     }
 
     const home = await homeDir()
-    const plansDir = await join(home, '.emty', 'plans', conversationId.value)
+    const segment = projectSegment.value
+    const plansDir = await join(home, '.emty', 'plans', segment)
 
     try {
       const entries = await readDir(plansDir)
@@ -400,7 +443,7 @@ onUnmounted(() => {
   window.removeEventListener('emty:plan-created', handleGlobalPlanCreated)
 })
 
-watch(conversationId, () => {
+watch([conversationId, workspacePath, projectSegment], () => {
   void loadPlans()
 })
 </script>

@@ -20,6 +20,7 @@ export async function buildProfile(ctx: ToolRegistryContext): Promise<ToolSet> {
 
   const planTools = createPlanTools({
     conversationId: ctx.conversationId,
+    workspacePath: ctx.workspacePath ?? null,
     onPlanCreated: event => {
       window.dispatchEvent(new CustomEvent('emty:plan-created', { detail: { ...event, tabId: ctx.tabId } }))
     },

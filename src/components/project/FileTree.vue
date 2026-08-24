@@ -360,11 +360,11 @@ const FileTreeNode = defineComponent({
         :style="{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }"
         @click.stop
       >
-        <button class="ctx-item" @click="handleContextAction">
+        <button v-if="!project.isDesignProject" class="ctx-item" @click="handleContextAction">
           <File :size="13" :stroke-width="1.8" />
           New File
         </button>
-        <button class="ctx-item" @click="handleContextAction">
+        <button v-if="!project.isDesignProject" class="ctx-item" @click="handleContextAction">
           <Folder :size="13" :stroke-width="1.8" />
           New Folder
         </button>

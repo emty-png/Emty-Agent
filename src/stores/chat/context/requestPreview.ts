@@ -125,12 +125,16 @@ export async function buildChatRequestPreview(options: {
   const effectiveMcpServers = getEffectiveMcpServers(tab, settings.mcpServers)
 
   const text = content.trim()
-  const maxOutputTokens = activeModel.supportsThinking
-    ? activeModel.thinkingEffort === 'high'
-      ? 16000
-      : activeModel.thinkingEffort === 'low'
-        ? 2048
-        : 8000
+  const maxOutputTokens = activeModel.supportsThinking && activeModel.thinkingEffort !== 'off'
+    ? activeModel.thinkingEffort === 'low'
+      ? 2048
+      : activeModel.thinkingEffort === 'high'
+        ? 16000
+        : activeModel.thinkingEffort === 'xhigh'
+          ? 24000
+          : activeModel.thinkingEffort === 'max'
+            ? 32000
+            : 8000
     : 4096
 
   const cacheRuntime = {
@@ -474,7 +478,7 @@ function getReasoningBudgetTokens(
   activeModel: DiscoveredModel,
   providerOptions: Record<string, Record<string, unknown>> | undefined,
 ): number {
-  if (!activeModel.supportsThinking)
+  if (!activeModel.supportsThinking || activeModel.thinkingEffort === 'off')
     return 0
 
   const anthropicBudget = providerOptions?.anthropic?.thinking
@@ -492,12 +496,18 @@ function getReasoningBudgetTokens(
     : fallbackThinkingBudgetTokens(activeModel.thinkingEffort)
 }
 
-function fallbackThinkingBudgetTokens(effort: 'low' | 'medium' | 'high'): number {
+function fallbackThinkingBudgetTokens(effort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'): number {
   switch (effort) {
+    case 'off':
+      return 0
     case 'low':
       return 2048
     case 'high':
       return 32000
+    case 'xhigh':
+      return 48000
+    case 'max':
+      return 100000
     default:
       return 16000
   }

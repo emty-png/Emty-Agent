@@ -56,6 +56,7 @@ export const useChatStore = defineStore('chat', () => {
   /** Keyed by requestId (not tabId) so parallel tool calls get separate resolvers. */
   const permissionResolvers = new Map<string, (decision: ToolPermissionDecision) => void>()
   const sessionToolApprovals = ref<string[]>([])
+  const unseenErrorIds = ref<Set<string>>(new Set<string>())
 
   const conversationStateCache = ref<Record<string, {
     modelUid: string | null
@@ -106,6 +107,40 @@ export const useChatStore = defineStore('chat', () => {
     if (project.projectPath !== tab.workspacePath)
       project.setProject(tab.workspacePath)
   }, { immediate: true })
+
+  // ── Unseen error indicator (background streaming errors) ────────────────────
+
+  function clearUnseenError(tabId: string): void {
+    unseenErrorIds.value.delete(tabId)
+    const tab = tabs.value.find(t => t.id === tabId)
+    if (tab?.agentStatus.type === 'error')
+      setTabStatus(tab, STATUS_IDLE)
+  }
+
+  watch(activeId, id => {
+    if (unseenErrorIds.value.has(id))
+      clearUnseenError(id)
+  })
+
+  // Synchronous fallback for error detection before async bus is ready
+  watch(() => tabs.value.map(t => ({ id: t.id, type: t.agentStatus.type })), () => {
+    for (const tab of tabs.value) {
+      if (tab.agentStatus.type === 'error' && tab.id !== activeId.value && !unseenErrorIds.value.has(tab.id))
+        unseenErrorIds.value.add(tab.id)
+      else if ((tab.agentStatus.type === 'streaming' || tab.agentStatus.type === 'initializing') && unseenErrorIds.value.has(tab.id))
+        unseenErrorIds.value.delete(tab.id)
+    }
+  })
+
+  import('./chat/agent/lifecycle').then(({ agentBus: errorBus }) => {
+    errorBus.on('status-change', event => {
+      if (event.next.type === 'error' && event.tabId !== activeId.value)
+        unseenErrorIds.value.add(event.tabId)
+
+      else if ((event.next.type === 'streaming' || event.next.type === 'initializing') && unseenErrorIds.value.has(event.tabId))
+        unseenErrorIds.value.delete(event.tabId)
+    })
+  })
 
   // ── Idle compaction ───────────────────────────────────────────────────────
 
@@ -170,6 +205,13 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function closeTab(id: string): void {
+    unseenErrorIds.value.delete(id)
+    import('@/stores/gitLogs').then(({ useGitLogsStore }) => {
+      try {
+        useGitLogsStore().disposeOwner(id)
+      }
+      catch {}
+    }).catch(() => {})
     const tab = tabs.value.find(t => t.id === id)
     if (tab)
       snapshotConversationState(tab)
@@ -201,12 +243,6 @@ export const useChatStore = defineStore('chat', () => {
       stopTasksForTab(id)
     }).catch(() => {})
     cleanupBgTaskNotifications(id)
-    if (tab?.activeDesignProject?.path) {
-      const projectPath = tab.activeDesignProject.path
-      import('../utils/tools/designProject').then(({ stopDevServer }) => {
-        stopDevServer(projectPath)
-      }).catch(() => {})
-    }
 
     if (tab?.agentStatus.type !== 'idle' && tab?.agentStatus.type !== 'error')
       markInterruptedAssistantMessage(tab!, 'Interrupted during generation.')
@@ -235,6 +271,10 @@ export const useChatStore = defineStore('chat', () => {
       void checkpoints.finalizeCheckpoint(tab?.conversationId ?? null).finally(() => {
         checkpoints.clearTab(id, useProjectStore().projectPath ?? undefined)
       })
+    }).catch(() => {})
+    import('./designVersions').then(({ useDesignVersionStore }) => {
+      try { useDesignVersionStore().clearForTab(id) }
+      catch {}
     }).catch(() => {})
 
     const idx = tabs.value.findIndex(t => t.id === id)
@@ -269,6 +309,8 @@ export const useChatStore = defineStore('chat', () => {
     mode?: ChatMode
     designs?: ChatTab['designs']
     activeDesignId?: string | null
+    activeDesignProject?: ChatTab['activeDesignProject']
+    designVersions?: ChatTab['designVersions']
   }): void {
     const existing = tabs.value.find(t => t.conversationId === payload.conversationId)
     if (existing) {
@@ -296,7 +338,16 @@ export const useChatStore = defineStore('chat', () => {
       pendingQuestions: null,
       pendingPermissions: [],
       readRegistry: new Map(),
-      ...(payload.isDesignTab ? { isDesignTab: true, mode: 'design' as ChatMode, designs: payload.designs ?? [], activeDesignId: payload.activeDesignId ?? null } : {}),
+      ...(payload.isDesignTab
+        ? {
+            isDesignTab: true,
+            mode: 'design' as ChatMode,
+            designs: payload.designs ?? [],
+            activeDesignId: payload.activeDesignId ?? null,
+            ...(payload.activeDesignProject ? { activeDesignProject: payload.activeDesignProject } : {}),
+            ...(payload.designVersions ? { designVersions: payload.designVersions } : {}),
+          }
+        : {}),
       messageQueue: [],
     }
 
@@ -461,7 +512,7 @@ export const useChatStore = defineStore('chat', () => {
           google: settings.google,
           compatibleProviders: settings.compatibleProviders,
           agent: settings.agent,
-        },
+        } as any, // eslint-disable-line ts/no-explicit-any -- settings type widened, requires any for compatibility
         source,
         onPersist: async ({ deletedMessageIds, insertedMessages }) => {
           const persistedCurrentCount = tab.messages.filter(m => m.content.trim() !== SESSION_COMPACTING_DIVIDER).length
@@ -655,6 +706,8 @@ export const useChatStore = defineStore('chat', () => {
     activeId,
     activeTab,
     conversationStateCache,
+    unseenErrorIds,
+    clearUnseenError,
     addTab,
     addDesignTab,
     closeTab,

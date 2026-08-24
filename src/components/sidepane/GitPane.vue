@@ -7,6 +7,7 @@ import {
   ChevronRight,
   FileText,
   Plus,
+  ScrollText,
   Terminal,
   Wrench,
   X,
@@ -19,6 +20,7 @@ import { hooksConfigExists } from '@/utils/hooks'
 import { commandTasks } from '@/utils/tools/shell'
 import BackgroundTasksReview from './BackgroundTasksTab.vue'
 import DiffViewer from './DiffTab.vue'
+import GitLogsTab from './GitLogsTab.vue'
 import GitChangesReview from './GitTab.vue'
 import HooksTab from './HookResultsTab.vue'
 import PlanReview from './PlanTab.vue'
@@ -32,7 +34,7 @@ const props = defineProps<{
 }>()
 defineEmits<{ close: [] }>()
 
-type PaneType = 'review' | 'tools' | 'plan' | 'tasks' | 'skillsMcp' | 'diffViewer' | 'hooks'
+type PaneType = 'review' | 'tools' | 'plan' | 'tasks' | 'skillsMcp' | 'diffViewer' | 'hooks' | 'gitLogs'
 
 interface TabMenuItem {
   id: PaneType
@@ -42,6 +44,7 @@ interface TabMenuItem {
 
 const ALL_PANES: TabMenuItem[] = [
   { id: 'review', label: 'Review', icon: FileText },
+  { id: 'gitLogs', label: 'Git logs', icon: ScrollText },
   { id: 'skillsMcp', label: 'Skills & MCP', icon: Blocks },
   { id: 'tools', label: 'Tools', icon: Wrench },
   { id: 'plan', label: 'Plan', icon: FileText },
@@ -125,14 +128,21 @@ watch(() => workspace.isRepo.value, visible => {
   }
 }, { immediate: true })
 
+watch(activePane, pane => {
+  if (pane === 'review' && workspace.isRepo.value)
+    void workspace.refresh({ background: true }).catch(() => {})
+})
+
 async function checkHooksConfig() {
   showHooksTab.value = await hooksConfigExists(props.cwd)
 }
 
 const availablePanes = computed(() => {
   const panes: TabMenuItem[] = []
-  if (workspace.isRepo.value)
+  if (workspace.isRepo.value) {
     panes.push(ALL_PANES.find(p => p.id === 'review')!)
+    panes.push(ALL_PANES.find(p => p.id === 'gitLogs')!)
+  }
   panes.push(ALL_PANES.find(p => p.id === 'skillsMcp')!)
   if (showToolsTab.value)
     panes.push(ALL_PANES.find(p => p.id === 'tools')!)
@@ -179,6 +189,19 @@ function handleOpenDiffViewer(e: Event) {
   if (!openedTabs.value.includes('diffViewer'))
     openedTabs.value.push('diffViewer')
   activePane.value = 'diffViewer'
+}
+
+function handleOpenGitLogs(e: Event) {
+  const detail = (e as CustomEvent<{ tabId?: string }>).detail
+  if (detail?.tabId !== props.tabId)
+    return
+  gitPaneStore.openPanel(props.tabId)
+  if (!openedTabs.value.includes('gitLogs'))
+    openedTabs.value.push('gitLogs')
+  activePane.value = 'gitLogs'
+  const closed = gitPaneOwner.value.closedPanes
+  if (closed.includes('gitLogs'))
+    gitPaneStore.setClosedPanes(props.tabId, closed.filter(t => t !== 'gitLogs'))
 }
 
 watch(() => gitPaneOwner.value.diffViewerData, data => {
@@ -231,6 +254,7 @@ onMounted(() => {
   checkHooksConfig()
   window.addEventListener('emty:plan-created', handlePlanCreated)
   window.addEventListener('emty:open-diff-viewer', handleOpenDiffViewer)
+  window.addEventListener('emty:open-git-logs', handleOpenGitLogs)
 
   requestAnimationFrame(updatePaneScrollState)
   const el = paneTabListRef.value
@@ -252,6 +276,7 @@ onUnmounted(() => {
   workspace.dispose()
   window.removeEventListener('emty:plan-created', handlePlanCreated)
   window.removeEventListener('emty:open-diff-viewer', handleOpenDiffViewer)
+  window.removeEventListener('emty:open-git-logs', handleOpenGitLogs)
 })
 
 const iconBtnClass = 'inline-flex items-center justify-center w-[26px] h-[26px] border border-transparent rounded-[var(--radius-sm)] bg-transparent text-[var(--color-text-dim)] cursor-pointer transition-all duration-100 ease-in-out shrink-0 hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-30 disabled:cursor-not-allowed active:not(:disabled):scale-[0.92]'
@@ -282,6 +307,7 @@ const iconBtnClass = 'inline-flex items-center justify-center w-[26px] h-[26px] 
           >
             <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
               <template v-if="tab === 'review'">Review</template>
+              <template v-else-if="tab === 'gitLogs'">Git logs</template>
               <template v-else-if="tab === 'skillsMcp'">Skills &amp; MCP</template>
               <template v-else-if="tab === 'tools'">Tools</template>
               <template v-else-if="tab === 'plan'">Plan</template>
@@ -397,9 +423,15 @@ const iconBtnClass = 'inline-flex items-center justify-center w-[26px] h-[26px] 
       :removed="gitPaneOwner.diffViewerData.removed"
     />
 
+    <GitLogsTab
+      v-if="activePane === 'gitLogs'"
+      :tab-id="tabId"
+      :cwd="cwd"
+    />
+
     <div v-if="activePane === null" class="flex flex-col items-center justify-center gap-2 py-12 px-6 flex-1 text-center">
-      <div class="w-[38px] h-[38px] rounded-[var(--radius-lg)] flex items-center justify-center bg-[var(--color-bg-elevated)] text-[var(--color-text-dim)] border border-[var(--color-border-subtle)] mb-1">
-        <Plus :size="18" :stroke-width="1.5" />
+      <div class="w-[38px] h-[38px] rounded-[var(--radius-lg)] flex items-center justify-center bg-[var(--color-accent-muted)] text-[var(--color-accent)] border border-[color-mix(in_srgb,var(--color-accent)_22%,transparent)] mb-1">
+        <Plus :size="18" :stroke-width="2" />
       </div>
       <p class="m-0 text-[13px] font-medium text-[var(--color-text-secondary)]">
         Nothing to see here…

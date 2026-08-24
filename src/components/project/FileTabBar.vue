@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, File, FileCode, FileImage, FileText, X } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useFileTabsStore } from '@/stores/fileTabs'
@@ -66,18 +66,6 @@ function onMouseDown(e: MouseEvent, id: string) {
     ft.closeTab(id)
   }
 }
-
-// ── file icon by extension ────────────────────────────────────────────────────
-function getFileIcon(name: string) {
-  const ext = name.split('.').pop()?.toLowerCase() ?? ''
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'].includes(ext))
-    return FileImage
-  if (['ts', 'tsx', 'js', 'jsx', 'vue', 'css', 'scss', 'py', 'rs', 'go', 'java'].includes(ext))
-    return FileCode
-  if (['md', 'mdx', 'txt', 'rst'].includes(ext))
-    return FileText
-  return File
-}
 </script>
 
 <template>
@@ -104,7 +92,6 @@ function getFileIcon(name: string) {
           @click="ft.setActive(tab.id)"
           @mousedown="onMouseDown($event, tab.id)"
         >
-          <component :is="getFileIcon(tab.name)" :size="12" :stroke-width="1.6" class="shrink-0" />
           <span class="min-w-0 flex-1 overflow-hidden text-ellipsis">{{ tab.name }}</span>
           <span
             class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-[opacity,background] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-primary)]"

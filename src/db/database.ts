@@ -192,6 +192,23 @@ const MIGRATIONS: string[] = [
   // v14 — pinned conversations
   'ALTER TABLE conversations ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0',
   'CREATE INDEX IF NOT EXISTS idx_conv_pinned ON conversations (is_pinned, updated_at DESC)',
+
+  // v15 — design versioning
+  `CREATE TABLE IF NOT EXISTS design_versions (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL,
+    message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    project_path TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    files_changed TEXT,
+    snapshot_path TEXT NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_dv_conv_ver ON design_versions (conversation_id, version_number ASC)',
+  'CREATE INDEX IF NOT EXISTS idx_dv_msg ON design_versions (message_id)',
+  'ALTER TABLE messages ADD COLUMN design_version_id TEXT REFERENCES design_versions(id)',
 ]
 
 // ── column existence helper ───────────────────────────────────────────────────
@@ -251,6 +268,7 @@ async function migrate(instance: Database): Promise<void> {
     { name: 'model_uid', definition: 'TEXT' },
     { name: 'model_name', definition: 'TEXT' },
     { name: 'is_bg_notification', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'design_version_id', definition: 'TEXT REFERENCES design_versions(id)' },
   ])
 
   await ensureColumns(instance, 'conversations', [
@@ -324,6 +342,20 @@ export interface MessageRow {
   model_name?: string | null
   /** 1 = injected by the bg-task notification system; hidden in the UI. */
   is_bg_notification?: number
+  design_version_id?: string | null
+}
+
+export interface DesignVersionRow {
+  id: string
+  conversation_id: string
+  version_number: number
+  message_id: string
+  project_path: string
+  project_name: string
+  created_at: number
+  label: string
+  files_changed: string | null
+  snapshot_path: string
 }
 
 export interface CheckpointRow {
@@ -611,8 +643,8 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
   await d.execute(
     `INSERT INTO messages
         (id, conversation_id, role, content, created_at,
-         mention_context, tool_events, parts, attachments, cache_stats, is_complete, elapsed_sec, model_uid, model_name, is_bg_notification)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         mention_context, tool_events, parts, attachments, cache_stats, is_complete, elapsed_sec, model_uid, model_name, is_bg_notification, design_version_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       msg.id,
       msg.conversation_id,
@@ -629,6 +661,7 @@ export async function dbInsertMessage(msg: MessageRow): Promise<void> {
       msg.model_uid ?? null,
       msg.model_name ?? null,
       msg.is_bg_notification ?? 0,
+      msg.design_version_id ?? null,
     ],
   )
 }
@@ -653,6 +686,7 @@ export async function dbUpdateMessage(
     cache_stats?: string | null
     is_complete?: number
     elapsed_sec?: number | null
+    design_version_id?: string | null
   },
 ): Promise<void> {
   if (!id)
@@ -684,6 +718,10 @@ export async function dbUpdateMessage(
   if ('elapsed_sec' in patch) {
     sets.push('elapsed_sec = ?')
     values.push(patch.elapsed_sec ?? null)
+  }
+  if ('design_version_id' in patch) {
+    sets.push('design_version_id = ?')
+    values.push(patch.design_version_id ?? null)
   }
 
   if (sets.length === 0)
@@ -1212,6 +1250,48 @@ export async function dbCountConversationsByWorkspace(
      WHERE workspace_path = ? AND is_subagent = 0 AND (is_pinned IS NULL OR is_pinned = 0)`,
     [workspacePath],
   )
+  return rows[0]?.cnt ?? 0
+}
+
+// ── design version helpers ─────────────────────────────────────────────────────
+
+export async function dbInsertDesignVersion(row: DesignVersionRow): Promise<void> {
+  const d = await getDb()
+  await d.execute(
+    `INSERT INTO design_versions
+      (id, conversation_id, version_number, message_id, project_path, project_name, created_at, label, files_changed, snapshot_path)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [row.id, row.conversation_id, row.version_number, row.message_id, row.project_path, row.project_name, row.created_at, row.label, row.files_changed, row.snapshot_path],
+  )
+}
+
+export async function dbLoadDesignVersions(conversationId: string): Promise<DesignVersionRow[]> {
+  if (!conversationId)
+    throw new Error('dbLoadDesignVersions: conversationId is required')
+  const d = await getDb()
+  return d.select<DesignVersionRow[]>(
+    'SELECT * FROM design_versions WHERE conversation_id = ? ORDER BY version_number ASC',
+    [conversationId],
+  )
+}
+
+export async function dbDeleteDesignVersions(ids: string[]): Promise<void> {
+  if (!ids.length)
+    return
+  const d = await getDb()
+  const placeholders = ids.map(() => '?').join(', ')
+  await d.execute(`DELETE FROM design_versions WHERE id IN (${placeholders})`, ids)
+}
+
+export async function dbGetDesignVersion(id: string): Promise<DesignVersionRow | undefined> {
+  const d = await getDb()
+  const rows = await d.select<DesignVersionRow[]>('SELECT * FROM design_versions WHERE id = ? LIMIT 1', [id])
+  return rows[0]
+}
+
+export async function dbCountDesignVersions(conversationId: string): Promise<number> {
+  const d = await getDb()
+  const rows = await d.select<{ cnt: number }[]>('SELECT COUNT(*) as cnt FROM design_versions WHERE conversation_id = ?', [conversationId])
   return rows[0]?.cnt ?? 0
 }
 

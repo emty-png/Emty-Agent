@@ -5,7 +5,7 @@ import type { Attachment } from '@/stores/chat/core/attachmentTypes'
 import type { AgentStatus } from '@/stores/chat/core/types'
 import type { DictationContext } from '@/utils/voicePostProcess'
 import type { VoiceStreamSession } from '@/utils/voiceStreamApi'
-import { ArrowUp, ListPlus, Mic, Plus, Square } from 'lucide-vue-next'
+import { AlertTriangle, ArrowUp, Eye, ListPlus, Mic, Plus, Square } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { INIT_PROMPT } from '@/composables/chat/initPrompt'
 import { useAtMention } from '@/composables/chat/useAtMention'
@@ -89,12 +89,38 @@ const slash = useSlashCommand(textareaRef, text, projectPath, activeTab)
 const restoreOverlay = useRestoreOverlay()
 
 const settings = useSettingsStore()
-const { attachments, previewAttachment, onPaste, removeAttachment, handleOpenFileDialog } = useChatAttachments()
+const {
+  attachments,
+  previewAttachment,
+  activeModelSupportsAttachments,
+  hasImageAttachments,
+  onPaste,
+  removeAttachment,
+  handleOpenFileDialog,
+  handleDomDrop,
+  handleDomDragOver,
+} = useChatAttachments()
 const { isDragging, dragPreviews, isReading } = useDragDrop({
   onFilesDropped(dropped) {
+    // Allow dropping for any model — including text-only ones — and warn
+    // via showVisionWarning instead of blocking.
     attachments.value = [...attachments.value, ...dropped]
   },
 })
+
+// Vision warning: images attached while active model is text-only. We still
+// allow the images (requirement) and the serializer will fall back to text.
+const showVisionWarning = computed(() => hasImageAttachments.value && !activeModelSupportsAttachments.value)
+
+// For DOM drag fallback we also want to warn while dragging images over a
+// non-vision model. Track the current drag's image presence.
+const dragHasImages = computed(() =>
+  dragPreviews.value.some(p => {
+    const ext = p.name.split('.').pop()?.toLowerCase() ?? ''
+    return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif', 'ico', 'tiff', 'heic', 'heif'].includes(ext)
+  }),
+)
+const showDragVisionWarning = computed(() => isDragging.value && dragHasImages.value && !activeModelSupportsAttachments.value)
 const voice = useVoiceRecorder()
 const voiceOverlayOpen = ref(false)
 const voiceTranscribing = ref(false)
@@ -454,6 +480,8 @@ function onKeydown(e: KeyboardEvent) {
   }
 
   if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.repeat)
+      return
     e.preventDefault()
     if (isStreaming.value) {
       queueMessage()
@@ -588,7 +616,12 @@ const sendBtnClasses = computed(() => {
 </script>
 
 <template>
-  <div ref="inputRootRef" class="chat-input-root relative w-full flex flex-col overflow-visible">
+  <div
+    ref="inputRootRef"
+    class="chat-input-root relative w-full flex flex-col overflow-visible"
+    @dragover="handleDomDragOver"
+    @drop="handleDomDrop"
+  >
     <Transition v-bind="overlayTransitions">
       <PermissionOverlay v-if="hasPermissionPrompt" />
     </Transition>
@@ -657,6 +690,28 @@ const sendBtnClasses = computed(() => {
 
     <Transition v-bind="overlayTransitions">
       <DragOverlay v-if="isDragging" :previews="dragPreviews" :reading="isReading" />
+    </Transition>
+
+    <!-- Drag vision warning: image dragged over text-only model -->
+    <Transition v-bind="overlayTransitions">
+      <div
+        v-if="showDragVisionWarning"
+        class="flex items-center gap-2 rounded-(--radius-md) border border-[color-mix(in_srgb,var(--color-warning,#f59e0b)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-warning,#f59e0b)_12%,transparent)] px-3 py-2 mb-2"
+      >
+        <AlertTriangle :size="13" :stroke-width="2" class="shrink-0 text-[var(--color-warning,#f59e0b)]" />
+        <span class="text-[12px] leading-tight text-(--color-text-secondary)">This model doesn’t support images — drop will still attach, but image will be sent as text fallback. Switch to a vision model (<Eye :size="11" :stroke-width="2" class="inline align-[-1px] text-(--color-info-text)" />) for analysis.</span>
+      </div>
+    </Transition>
+
+    <!-- Attached vision warning: images present for non-vision model -->
+    <Transition v-bind="overlayTransitions">
+      <div
+        v-if="showVisionWarning && !isDragging"
+        class="flex items-center gap-2 rounded-(--radius-md) border border-[color-mix(in_srgb,var(--color-warning,#f59e0b)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-warning,#f59e0b)_10%,transparent)] px-3 py-2 mb-2"
+      >
+        <AlertTriangle :size="13" :stroke-width="2" class="shrink-0 text-[var(--color-warning,#f59e0b)]" />
+        <span class="text-[12px] leading-tight text-(--color-text-secondary)">Images attached — current model doesn’t support vision. They’ll be sent as text context (image not analyzed). Use the model picker to switch to a vision model.</span>
+      </div>
     </Transition>
 
     <div :class="shellClasses">

@@ -76,10 +76,10 @@ export function createGrepTool(projectPath: string) {
         ? (inputPath === '.' ? projectPath : isAbsolute(inputPath) ? inputPath : `${projectPath}/${inputPath}`)
         : projectPath
 
-      // Path security
+      // Path security — search inside allowed roots, sensitive files still blocked
       let basePath: string
       try {
-        basePath = await safePath(projectPath, rawPath, { kind: 'read' })
+        basePath = await safePath(projectPath, rawPath, { kind: 'search' })
       }
       catch (e) {
         return { message: `Error: ${e instanceof Error ? e.message : String(e)}`, numMatches: 0 }

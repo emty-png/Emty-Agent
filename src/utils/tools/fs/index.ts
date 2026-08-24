@@ -6,11 +6,11 @@
 
 import type { BeforeFileWriteCallback, FileReadRegistry } from './shared'
 import { createEditFilesTool } from './edit'
+import { FileLockManager } from './fileLock'
 import { createGlobTool } from './glob'
 import { createGrepTool } from './grep'
 import { createListDirectoryTool } from './list'
 import { createReadFilesTool } from './read'
-import { FileLockManager } from './shared'
 import { createWriteFileTool } from './write'
 
 export { createEditFilesTool } from './edit'

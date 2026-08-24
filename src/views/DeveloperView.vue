@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { RotateCcw, Save, X } from 'lucide-vue-next'
+import { Pencil, RotateCcw, Save, X } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { useSettingsStore } from '@/stores/settings'
@@ -8,10 +8,12 @@ import { DEFAULT_TOOL_DESCRIPTIONS } from '@/utils/tools/toolDescriptions'
 import DeveloperPopup from '../components/developer/DeveloperPopup.vue'
 import DeveloperSidebar from '../components/developer/DeveloperSidebar.vue'
 import ProvidersModelsPanel from '../components/developer/ProvidersModelsPanel.vue'
+import SecurityPanel from '../components/developer/SecurityPanel.vue'
 
 const settings = useSettingsStore()
 
 const selectedItem = ref('prompt')
+const selectedProviderId = ref<string | null>('global')
 const popupOpen = ref(false)
 
 interface ToolInfo {
@@ -210,7 +212,7 @@ watch(editingTabId, v => {
     <div ref="containerRef" class="split" :class="{ 'split--dragging': dragging }">
       <!-- left: sidebar -->
       <div class="split-panel split-panel--left" :style="{ width: `${splitPercent}%` }">
-        <DeveloperSidebar v-model="selectedItem" />
+        <DeveloperSidebar v-model="selectedItem" v-model:selected-provider="selectedProviderId" />
       </div>
 
       <!-- drag handle -->
@@ -223,7 +225,10 @@ watch(editingTabId, v => {
       <!-- right: content area -->
       <div class="split-panel split-panel--right">
         <template v-if="selectedItem === 'providers-models'">
-          <ProvidersModelsPanel />
+          <ProvidersModelsPanel :selected-provider-id="selectedProviderId ?? 'global'" />
+        </template>
+        <template v-else-if="selectedItem === 'security'">
+          <SecurityPanel />
         </template>
         <template v-else>
           <!-- tab bar -->
@@ -252,7 +257,7 @@ watch(editingTabId, v => {
               </button>
             </div>
 
-            <div class="flex shrink-0 items-center pb-[4px] pl-[2px]">
+            <div class="flex shrink-0 items-center gap-1 pb-[4px] pl-2">
               <button
                 class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border-none bg-transparent text-[var(--color-text-tertiary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
                 aria-label="Open developer tools"
@@ -260,36 +265,51 @@ watch(editingTabId, v => {
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="7" y1="2" x2="7" y2="12" /><line x1="2" y1="7" x2="12" y2="7" /></svg>
               </button>
-            </div>
-          </div>
-
-          <!-- toolbar -->
-          <div v-if="activeTabId" class="dev-toolbar">
-            <div class="flex items-center gap-[6px]">
-              <template v-if="editingTabId === activeTabId">
-                <button type="button" class="dev-toolbar-btn dev-toolbar-btn--primary" @click="saveEdit">
-                  <Save :size="12" :stroke-width="2" />
-                  <span>Save</span>
-                </button>
-                <button type="button" class="dev-toolbar-btn" @click="cancelEdit">
-                  <span>Cancel</span>
-                </button>
+              <template v-if="activeTabId">
+                <div class="mx-1 h-4 w-px shrink-0 bg-[var(--color-border-subtle)]" />
+                <template v-if="editingTabId === activeTabId">
+                  <button
+                    type="button"
+                    class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-accent-dim)] bg-[var(--color-accent-muted)] text-[var(--color-accent-text)] transition-[background,color,border-color] duration-[120ms] ease-[ease] hover:brightness-105"
+                    aria-label="Save"
+                    title="Save (Ctrl+S)"
+                    @click="saveEdit"
+                  >
+                    <Save :size="13" :stroke-width="2" />
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border-none bg-transparent text-[var(--color-text-tertiary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
+                    aria-label="Cancel"
+                    title="Cancel (Esc)"
+                    @click="cancelEdit"
+                  >
+                    <X :size="13" :stroke-width="2" />
+                  </button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border-none bg-transparent text-[var(--color-text-tertiary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                    aria-label="Edit"
+                    title="Edit"
+                    @click="enterEdit"
+                  >
+                    <Pencil :size="13" :stroke-width="1.8" />
+                  </button>
+                  <button
+                    v-if="hasOverride"
+                    type="button"
+                    class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border-none bg-transparent text-[var(--color-text-tertiary)] transition-[background,color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger-text)]"
+                    aria-label="Reset to default"
+                    title="Reset to default"
+                    @click="resetToDefault"
+                  >
+                    <RotateCcw :size="13" :stroke-width="1.8" />
+                  </button>
+                </template>
               </template>
-              <template v-else>
-                <button type="button" class="dev-toolbar-btn" @click="enterEdit">
-                  <span>Edit</span>
-                </button>
-              </template>
             </div>
-            <button
-              v-if="hasOverride && editingTabId !== activeTabId"
-              type="button"
-              class="dev-toolbar-btn dev-toolbar-btn--reset"
-              @click="resetToDefault"
-            >
-              <RotateCcw :size="11" :stroke-width="2" />
-              <span>Reset to default</span>
-            </button>
           </div>
 
           <!-- content area -->
@@ -343,6 +363,8 @@ watch(editingTabId, v => {
 .split {
   display: flex;
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   height: 100%;
   overflow: hidden;
 }
@@ -363,12 +385,15 @@ watch(editingTabId, v => {
 .split-panel--left {
   width: 220px;
   min-width: 160px;
+  min-height: 0;
   border-right: none;
 }
 
 .split-panel--right {
   flex: 1;
   min-width: 200px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .split-handle {

@@ -38,6 +38,7 @@
  */
 
 import { exists, readDir } from '@tauri-apps/plugin-fs'
+import { computeRelativePath, normalizePath } from '@/utils/security/pathUtils'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -678,37 +679,11 @@ export function extractGitRestoreFiles(segment: string): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Path utilities
+// Path utilities — canonical implementations now in @/utils/security/pathUtils
+// Re-exported here for back-compat; new code should import from pathUtils.
 // ---------------------------------------------------------------------------
 
-/** Convert any path to forward-slash form and collapse `./` and `//`. */
-export function normalizePath(p: string): string {
-  const forward = p.replace(/\\/g, '/')
-  const isAbsolute = forward.startsWith('/')
-  const hasDrive = /^[A-Z]:/i.test(forward)
-  const drive = hasDrive ? forward.slice(0, 2) : ''
-  const rest = hasDrive ? forward.slice(2) : forward
-
-  const segments = rest.split('/').filter(Boolean)
-  const parts: string[] = []
-  for (const seg of segments) {
-    if (seg === '.')
-      continue
-    if (seg === '..') {
-      if (parts.length > 0)
-        parts.pop()
-      continue
-    }
-    parts.push(seg)
-  }
-
-  const joined = parts.join('/')
-  if (hasDrive)
-    return drive + (joined ? `/${joined}` : '')
-  if (isAbsolute)
-    return `/${joined}`
-  return joined
-}
+export { computeRelativePath, normalizePath } from '@/utils/security/pathUtils'
 
 /** True when `absolute` equals `base` or sits under `base`. Case-insensitive. */
 export function isWithinPath(absolute: string, base: string): boolean {
@@ -717,17 +692,6 @@ export function isWithinPath(absolute: string, base: string): boolean {
   if (a === b)
     return true
   return a.startsWith(`${b}/`)
-}
-
-/** Forward-slash path of `absolute` relative to `base`. Empty string when equal. */
-export function computeRelativePath(absolute: string, base: string): string {
-  const a = normalizePath(absolute)
-  const b = normalizePath(base)
-  if (a.toLowerCase() === b.toLowerCase())
-    return ''
-  if (a.toLowerCase().startsWith(`${b.toLowerCase()}/`))
-    return a.slice(b.length + 1)
-  return a
 }
 
 export function shouldIgnoreAbsolutePath(absolute: string): boolean {

@@ -24,6 +24,7 @@ import {
   dbListProjectsWithLatestChat,
 } from '@/db/database'
 import { useChatStore } from '@/stores/chat'
+import { isStreamingStatus } from '@/stores/chat/agent/status'
 import { useHistoryStore } from '@/stores/history'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
@@ -112,13 +113,18 @@ async function loadProjects() {
     const latest = await dbListProjectsWithLatestChat(50)
     const byPath = new Map<string, ProjectItem>()
 
-    const projectPromises = latest.map(async p => {
-      const [conversations, totalCount] = await Promise.all([
-        dbListConversationsByWorkspace(p.workspace_path, PROJECT_CHAT_LIMIT),
-        dbCountConversationsByWorkspace(p.workspace_path),
-      ])
-      return { p, conversations, totalCount }
-    })
+    // design folders opened via the canvas "show code" action are not real projects
+    const designPaths = new Set(projectStore.designProjects)
+
+    const projectPromises = latest
+      .filter(p => !designPaths.has(p.workspace_path))
+      .map(async p => {
+        const [conversations, totalCount] = await Promise.all([
+          dbListConversationsByWorkspace(p.workspace_path, PROJECT_CHAT_LIMIT),
+          dbCountConversationsByWorkspace(p.workspace_path),
+        ])
+        return { p, conversations, totalCount }
+      })
 
     const results = await Promise.all(projectPromises)
 
@@ -133,6 +139,8 @@ async function loadProjects() {
 
     // ensure all openProjects appear (even if no conversations yet)
     for (const path of projectStore.openProjects) {
+      if (designPaths.has(path))
+        continue
       if (!byPath.has(path)) {
         const name = path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? path
         byPath.set(path, {
@@ -154,6 +162,11 @@ async function loadProjects() {
 async function openConversation(conv: ConversationRow) {
   await history.openInTab(conv)
   emit('selectView', 'chat')
+}
+
+// true when any open tab of this conversation is actively working (same condition as the tab spinner)
+function isConvStreaming(convId: string): boolean {
+  return chat.tabs.some(t => t.conversationId === convId && isStreamingStatus(t.agentStatus))
 }
 
 function selectProject(path: string) {
@@ -435,7 +448,10 @@ function labelClasses(_isActive: boolean) {
               @click="openConversation(conv)"
             >
               <Pin :size="10" :stroke-width="2" class="shrink-0 text-(--color-text-dim) rotate-45" />
-              <span class="text-[11.5px] whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0">{{ conv.title }}</span>
+              <span
+                class="text-[11.5px] whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0"
+                :class="{ 'sidebar-conv-title--gloss': isConvStreaming(conv.id) }"
+              >{{ conv.title }}</span>
             </button>
             <span class="sidebar-conv-time">{{ relativeTime(conv.updated_at) }}</span>
             <button
@@ -497,7 +513,10 @@ function labelClasses(_isActive: boolean) {
                   :class="{ 'sidebar-conv-item--active': chat.tabs.some(t => t.conversationId === conv.id) }"
                   @click="openConversation(conv)"
                 >
-                  <span class="text-[11.5px] whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0">{{ conv.title }}</span>
+                  <span
+                    class="text-[11.5px] whitespace-nowrap overflow-hidden text-ellipsis flex-1 min-w-0"
+                    :class="{ 'sidebar-conv-title--gloss': isConvStreaming(conv.id) }"
+                  >{{ conv.title }}</span>
                 </button>
                 <span class="sidebar-conv-time">{{ relativeTime(conv.updated_at) }}</span>
                 <button
@@ -723,6 +742,32 @@ function labelClasses(_isActive: boolean) {
 
 .sidebar-conv-item--active {
   color: var(--color-text-dim);
+}
+
+/* streaming title gloss — same accent sweep cadence as the tab spinner (gsSpin) */
+.sidebar-conv-title--gloss {
+  background: linear-gradient(
+    110deg,
+    var(--color-text-dim) 0%,
+    var(--color-text-dim) 40%,
+    var(--color-accent-text) 50%,
+    var(--color-text-dim) 60%,
+    var(--color-text-dim) 100%
+  );
+  background-size: 200% auto;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: sidebarGlossSweep 1.8s linear infinite;
+}
+
+@keyframes sidebarGlossSweep {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: 0% center;
+  }
 }
 
 .sidebar-pinned-item {

@@ -17,6 +17,11 @@ const projectName = computed(() => {
   return project.projectPath.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? null
 })
 
+// design folders opened via the canvas "show code" action are not selectable projects
+const selectableProjects = computed(() =>
+  project.openProjects.filter(path => !project.designProjects.includes(path)),
+)
+
 function togglePicker() {
   pickerOpen.value = !pickerOpen.value
 }
@@ -121,10 +126,10 @@ function itemClasses(isActive: boolean, variant?: 'new' | 'danger') {
             <span>New Project</span>
           </button>
 
-          <template v-if="project.openProjects.length > 0">
+          <template v-if="selectableProjects.length > 0">
             <div class="h-px bg-(--color-border-mid) mx-1 my-0.5" />
             <button
-              v-for="path in project.openProjects"
+              v-for="path in selectableProjects"
               :key="path"
               :class="itemClasses(project.projectPath === path)"
               @click="selectProject(path)"

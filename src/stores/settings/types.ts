@@ -3,7 +3,7 @@ import type { SkillMetadata } from '@/utils/skills'
 import type { ToolPermissionMode } from '@/utils/tools/permissions'
 
 export type ConnectionStatus = 'idle' | 'testing' | 'ok' | 'error'
-export type ThinkingEffort = 'low' | 'medium' | 'high'
+export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface OpenAIConfig {
   apiKey: string
@@ -183,6 +183,8 @@ export interface AgentSessionCompactionConfig {
   auto: boolean
   thresholdPercent: number
   showManualButton: boolean
+  /** Optional model override for compaction LLM calls. Null = follow active model. Exposed for future picker UI. */
+  modelUid?: string | null
 }
 
 export interface AgentConfig {
@@ -211,4 +213,66 @@ export interface SoundConfig {
 export interface TestResult {
   ok: boolean
   message: string
+}
+
+export interface ProviderAppearanceOverride {
+  hideThinking?: boolean
+  disableThinkingMarkdown?: boolean
+  disableAssistantMarkdown?: boolean
+}
+
+export interface ProviderAppearanceConfig {
+  global: {
+    hideThinking: boolean
+    disableThinkingMarkdown: boolean
+    disableAssistantMarkdown: boolean
+  }
+  perProvider: Record<string, ProviderAppearanceOverride>
+}
+
+export type ResponseFormat = 'text' | 'json_object' | 'json_schema'
+
+export interface ProviderSamplingOverride {
+  temperature?: number
+  topP?: number
+  topK?: number
+  maxTokens?: number
+  frequencyPenalty?: number
+  presencePenalty?: number
+  seed?: number
+  stopSequences?: string[]
+  responseFormat?: ResponseFormat
+  parallelToolCalls?: boolean
+}
+
+export interface ProviderSamplingConfig {
+  global: ProviderSamplingOverride
+  perProvider: Record<string, ProviderSamplingOverride>
+}
+
+export interface ModelSamplingOverride extends ProviderSamplingOverride {
+  contextLimit?: number
+}
+
+export type ModelSamplingConfig = Record<string, ModelSamplingOverride>
+
+export type TruncationStrategy = 'auto' | 'truncate' | 'compact'
+
+export interface ProviderContextOverride {
+  contextLimit?: number
+  truncationStrategy?: TruncationStrategy
+}
+
+export interface ProviderContextConfig {
+  global: ProviderContextOverride
+  perProvider: Record<string, ProviderContextOverride>
+}
+
+export interface ProviderReasoningOverride {
+  customBudgetTokens?: number
+}
+
+export interface ProviderReasoningConfig {
+  global: ProviderReasoningOverride
+  perProvider: Record<string, ProviderReasoningOverride>
 }

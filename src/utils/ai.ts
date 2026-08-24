@@ -20,7 +20,7 @@ import { repairJson } from '@/utils/repairJson'
 
 export type { LanguageModel, ToolSet }
 export type ChatMode = 'build' | 'plan' | 'chat' | 'design'
-export type ThinkingEffort = 'low' | 'medium' | 'high'
+export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 // ── Provider credentials ──────────────────────────────────────────────────────
 
@@ -96,8 +96,12 @@ export function buildLanguageModel(credentials: ProviderCredentials, modelId: st
 
 export function thinkingBudgetTokens(effort: ThinkingEffort): number {
   switch (effort) {
+    case 'off': return 0
     case 'low': return 2048
+    case 'medium': return 16_000
     case 'high': return 32_000
+    case 'xhigh': return 48_000
+    case 'max': return 100_000
     default: return 16_000
   }
 }
@@ -118,6 +122,8 @@ export function buildProviderOptions(
 ): Record<string, Record<string, JSONValue>> | undefined {
   if (!config.supportsThinking)
     return undefined
+  if (config.thinkingEffort === 'off')
+    return undefined
 
   const id = config.modelId.toLowerCase()
 
@@ -127,9 +133,10 @@ export function buildProviderOptions(
     const needsDisplay = /claude-opus-4-(?:[7-9]|\d{2,})/.test(id)
 
     if (isAdaptive) {
+      const effortMap: Record<string, string> = { low: 'low', medium: 'medium', high: 'high', xhigh: 'max', max: 'max' }
       const anthropicOpts: Record<string, JSONValue> = {
         thinking: needsDisplay ? { type: 'adaptive', display: 'summarized' } : { type: 'adaptive' },
-        effort: config.thinkingEffort === 'high' ? 'max' : config.thinkingEffort,
+        effort: effortMap[config.thinkingEffort] ?? config.thinkingEffort,
       }
       return { anthropic: anthropicOpts }
     }
@@ -140,26 +147,27 @@ export function buildProviderOptions(
   // Google: Gemini 3+ uses level-based, Gemini 2.5 uses budget-based
   if (config.providerId === 'google') {
     if (/gemini-3/.test(id)) {
+      const levelMap: Record<string, string> = { low: 'low', medium: 'medium', high: 'high', xhigh: 'high', max: 'high' }
       return {
         google: {
           thinkingConfig: {
-            thinkingLevel: config.thinkingEffort === 'low' ? 'low' : config.thinkingEffort === 'high' ? 'high' : 'medium',
+            thinkingLevel: levelMap[config.thinkingEffort] ?? 'medium',
             includeThoughts: true,
           },
         },
       }
     }
-    const budgetMap: Record<ThinkingEffort, number> = { low: 2048, medium: 8192, high: 32_768 }
+    const budgetMap: Record<ThinkingEffort, number> = { off: 0, low: 2048, medium: 8192, high: 32_768, xhigh: 48_000, max: 100_000 }
     return { google: { thinkingConfig: { thinkingBudget: budgetMap[config.thinkingEffort], includeThoughts: true } } }
   }
 
-  // OpenAI: o-series and GPT-5 codex reasoning models
-  const isReasoningModel = /^o[1-9]/.test(id) || id.startsWith('o3') || id.startsWith('o4') || /gpt-5[\d.]*-codex/.test(id)
+  // OpenAI: o-series and GPT-5 codex reasoning models - also support xhigh/max directly
+  const isReasoningModel = /^o[1-9]/.test(id) || id.startsWith('o3') || id.startsWith('o4') || /gpt-5[\d.]*-codex/.test(id) || /thinking|reasoning/i.test(id)
   if (config.providerId === 'openai' && isReasoningModel) {
     return { openai: { reasoningEffort: config.thinkingEffort, reasoningSummary: 'auto' } }
   }
-
-  return undefined
+  // Fallback for any provider that supports thinking - pass through effort
+  return { openai: { reasoningEffort: config.thinkingEffort } } as unknown as Record<string, Record<string, JSONValue>>
 }
 
 export function mergeProviderOptions(
@@ -211,6 +219,13 @@ export interface StreamChatOptions {
   onError?: (error: Error) => void
   signal?: AbortSignal
   maxOutputTokens?: number
+  temperature?: number
+  topP?: number
+  topK?: number
+  frequencyPenalty?: number
+  presencePenalty?: number
+  seed?: number
+  stopSequences?: string[]
   debugRaw?: boolean
 }
 
@@ -315,6 +330,13 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     onError,
     signal,
     maxOutputTokens = 16_384,
+    temperature,
+    topP,
+    topK,
+    frequencyPenalty,
+    presencePenalty,
+    seed,
+    stopSequences,
     debugRaw = false,
   } = opts
 
@@ -350,6 +372,13 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
           }
         : {}),
       maxOutputTokens,
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(topP !== undefined ? { topP } : {}),
+      ...(topK !== undefined ? { topK } : {}),
+      ...(frequencyPenalty !== undefined ? { frequencyPenalty } : {}),
+      ...(presencePenalty !== undefined ? { presencePenalty } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+      ...(stopSequences !== undefined ? { stopSequences } : {}),
       ...(prepareStep ? { prepareStep } : {}),
       ...(providerOptions ? { providerOptions } : {}),
       ...(signal ? { abortSignal: signal } : {}),
@@ -399,7 +428,9 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     }
 
     const [usage, providerMetadata] = await Promise.all([result.usage, result.providerMetadata])
-    onFinish?.({ fullText, usage, ...(providerMetadata ? { providerMetadata } : {}) })
+    // Await onFinish so callers' turn-finalization (e.g. design version snapshot)
+    // completes before post-stream cleanup (e.g. discardPending) can run.
+    await onFinish?.({ fullText, usage, ...(providerMetadata ? { providerMetadata } : {}) })
   }
   catch (error: unknown) {
     if (isAbortError(error)) {

@@ -69,14 +69,40 @@ export interface GitStashEntry {
   message: string
 }
 
+// ── logging helpers ────────────────────────────────────────────────────────────
+
+const LOG_OUTPUT_LIMIT = 2000
+
+function truncateForLog(value: string, limit = LOG_OUTPUT_LIMIT): string | undefined {
+  const trimmed = value.trim()
+  if (!trimmed)
+    return undefined
+  if (trimmed.length > limit)
+    return `${trimmed.slice(0, limit)}\n… truncated ${trimmed.length - limit} chars`
+  return trimmed
+}
+
+function isSilentGitCommand(args: string[]): boolean {
+  const sub = args[0]
+  if (sub === 'status' || sub === 'rev-parse' || sub === 'diff' || sub === 'log')
+    return true
+  if (sub === 'stash' && args[1] === 'list')
+    return true
+  return false
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 async function runGit(
   cwd: string,
   args: string[],
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  tabId?: string,
+  opts: { silent?: boolean } = {},
 ): Promise<GitCommandResult> {
+  const start = Date.now()
   const cmd = Command.create('git', args, { cwd })
+  let result: GitCommandResult
   try {
     const output = timeoutMs <= 0
       ? await cmd.execute()
@@ -89,7 +115,7 @@ async function runGit(
             ),
           ),
         ])
-    return {
+    result = {
       ok: output.code === 0,
       stdout: output.stdout.trim(),
       stderr: output.stderr.trim(),
@@ -97,7 +123,7 @@ async function runGit(
     }
   }
   catch (error) {
-    return {
+    result = {
       ok: false,
       stdout: '',
       stderr: error instanceof Error ? error.message : String(error),
@@ -105,6 +131,45 @@ async function runGit(
       timedOut: error instanceof Error && error.message.startsWith('Git timed out after'),
     }
   }
+
+  const durationMs = Date.now() - start
+  // Explicit silent (fallback path) → never log. Implicit silent (read-only) → still log failures.
+  if (opts.silent === true)
+    return result
+  if (isSilentGitCommand(args) && result.ok)
+    return result
+
+  const cmdStr = `git ${args.join(' ')}`
+  // Resolve tabId: explicit > active chat tab > _global
+  let resolvedTabId = tabId ?? null
+  if (!resolvedTabId) {
+    try {
+      const { useChatStore } = await import('@/stores/chat')
+      const chat = useChatStore()
+      resolvedTabId = chat.activeId ?? null
+    }
+    catch { /* ignore — Pinia not ready */ }
+  }
+  if (resolvedTabId) {
+    import('@/stores/gitLogs').then(({ useGitLogsStore }) => {
+      try {
+        const store = useGitLogsStore()
+        store.push({
+          tabId: resolvedTabId!,
+          cwd,
+          timestamp: start,
+          command: cmdStr,
+          durationMs,
+          exitCode: result.exitCode,
+          stdout: truncateForLog(result.stdout),
+          stderr: truncateForLog(result.stderr),
+        })
+      }
+      catch { /* ignore */ }
+    }).catch(() => {})
+  }
+
+  return result
 }
 
 // ── status label mapping ──────────────────────────────────────────────────────
@@ -264,8 +329,8 @@ function parsePorcelainV2(raw: string): GitStatusResult {
 // ── public API ────────────────────────────────────────────────────────────────
 
 /** Get full repository status with branch info and file lists. */
-export async function gitStatus(cwd: string): Promise<GitStatusResult> {
-  const result = await runGit(cwd, ['status', '--porcelain=v2', '--branch'])
+export async function gitStatus(cwd: string, tabId?: string): Promise<GitStatusResult> {
+  const result = await runGit(cwd, ['status', '--porcelain=v2', '--branch'], undefined, tabId)
   if (!result.ok) {
     return {
       branch: null,
@@ -288,11 +353,12 @@ export async function gitDiff(
   cwd: string,
   file: string,
   staged = false,
+  tabId?: string,
 ): Promise<string> {
   const args = staged
     ? ['diff', '--cached', '--', file]
     : ['diff', '--', file]
-  const result = await runGit(cwd, args)
+  const result = await runGit(cwd, args, undefined, tabId)
   return result.stdout
 }
 
@@ -303,50 +369,51 @@ export async function gitDiff(
 export async function gitDiffNoIndex(
   cwd: string,
   file: string,
+  tabId?: string,
 ): Promise<string> {
   // Compare against /dev/null so the output looks like a new file diff.
   // `--no-index` allows diffing arbitrary files even outside a git repo.
   const args = ['diff', '--no-index', '--', '/dev/null', file]
-  const result = await runGit(cwd, args)
+  const result = await runGit(cwd, args, undefined, tabId)
   return result.stdout
 }
 
 /** Get diff stat summary for the working tree. */
-export async function gitDiffStat(cwd: string): Promise<string> {
-  const result = await runGit(cwd, ['diff', '--stat'])
+export async function gitDiffStat(cwd: string, tabId?: string): Promise<string> {
+  const result = await runGit(cwd, ['diff', '--stat'], undefined, tabId)
   return result.stdout
 }
 
 /** Get the diff of all staged files. */
-export async function gitDiffStaged(cwd: string): Promise<string> {
-  const result = await runGit(cwd, ['diff', '--cached'], 60_000)
+export async function gitDiffStaged(cwd: string, tabId?: string): Promise<string> {
+  const result = await runGit(cwd, ['diff', '--cached'], 60_000, tabId)
   return result.stdout
 }
 
 /** Get a compact staged diff stat for commit review and prompt context. */
-export async function gitDiffStagedStat(cwd: string): Promise<string> {
-  const result = await runGit(cwd, ['diff', '--cached', '--stat'], 60_000)
+export async function gitDiffStagedStat(cwd: string, tabId?: string): Promise<string> {
+  const result = await runGit(cwd, ['diff', '--cached', '--stat'], 60_000, tabId)
   return result.stdout
 }
 
 /** Stage specific files. */
-export async function gitStage(cwd: string, files: string[]): Promise<GitCommandResult> {
-  return runGit(cwd, ['add', '--', ...files])
+export async function gitStage(cwd: string, files: string[], tabId?: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['add', '--', ...files], undefined, tabId)
 }
 
 /** Unstage specific files. */
-export async function gitUnstage(cwd: string, files: string[]): Promise<GitCommandResult> {
-  return runGit(cwd, ['restore', '--staged', '--', ...files])
+export async function gitUnstage(cwd: string, files: string[], tabId?: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['restore', '--staged', '--', ...files], undefined, tabId)
 }
 
 /** Stage all changes (including untracked). */
-export async function gitStageAll(cwd: string): Promise<GitCommandResult> {
-  return runGit(cwd, ['add', '-A'])
+export async function gitStageAll(cwd: string, tabId?: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['add', '-A'], undefined, tabId)
 }
 
 /** Unstage all staged changes. */
-export async function gitUnstageAll(cwd: string): Promise<GitCommandResult> {
-  return runGit(cwd, ['reset', 'HEAD'])
+export async function gitUnstageAll(cwd: string, tabId?: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['reset', 'HEAD'], undefined, tabId)
 }
 
 /** Commit staged changes. */
@@ -354,6 +421,7 @@ export async function gitCommit(
   cwd: string,
   message: string,
   options: GitCommitOptions | boolean = {},
+  tabId?: string,
 ): Promise<GitCommandResult> {
   const normalized: GitCommitOptions = typeof options === 'boolean'
     ? { amend: options }
@@ -363,7 +431,7 @@ export async function gitCommit(
     args.push('--amend')
   if (normalized.skipHooks)
     args.push('--no-verify')
-  return runGit(cwd, args, normalized.timeoutMs ?? COMMIT_TIMEOUT_MS)
+  return runGit(cwd, args, normalized.timeoutMs ?? COMMIT_TIMEOUT_MS, tabId)
 }
 
 /**
@@ -372,11 +440,12 @@ export async function gitCommit(
  * Uses `git restore -- <files>` where available, and falls back to
  * `git checkout -- <files>` on older Git versions for compatibility.
  */
-export async function gitDiscard(cwd: string, files: string[]): Promise<GitCommandResult> {
+export async function gitDiscard(cwd: string, files: string[], tabId?: string): Promise<GitCommandResult> {
   // Prefer `git restore` (introduced in Git 2.23). If it fails, fallback.
-  let res = await runGit(cwd, ['restore', '--', ...files])
+  // First attempt is silent — a failure is expected on older Git and handled via fallback.
+  let res = await runGit(cwd, ['restore', '--', ...files], undefined, tabId, { silent: true })
   if (!res.ok) {
-    res = await runGit(cwd, ['checkout', '--', ...files])
+    res = await runGit(cwd, ['checkout', '--', ...files], undefined, tabId)
   }
   return res
 }
@@ -387,44 +456,44 @@ export async function gitDiscard(cwd: string, files: string[]): Promise<GitComma
  * `includeDirs` controls whether untracked directories are removed as well
  * (passes `-d` to `git clean`). Default is `false` to be conservative.
  */
-export async function gitDiscardUntracked(cwd: string, files: string[], includeDirs = false): Promise<GitCommandResult> {
+export async function gitDiscardUntracked(cwd: string, files: string[], includeDirs = false, tabId?: string): Promise<GitCommandResult> {
   const args = includeDirs ? ['clean', '-fd', '--', ...files] : ['clean', '-f', '--', ...files]
-  return runGit(cwd, args)
+  return runGit(cwd, args, undefined, tabId)
 }
 
 /** Push to upstream. */
-export async function gitPush(cwd: string): Promise<GitCommandResult> {
-  return runGit(cwd, ['push'], REMOTE_TIMEOUT_MS)
+export async function gitPush(cwd: string, tabId?: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['push'], REMOTE_TIMEOUT_MS, tabId)
 }
 
 /** Pull from upstream. */
-export async function gitPull(cwd: string): Promise<GitCommandResult> {
-  return runGit(cwd, ['pull', '--ff-only'], REMOTE_TIMEOUT_MS)
+export async function gitPull(cwd: string, tabId?: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['pull', '--ff-only'], REMOTE_TIMEOUT_MS, tabId)
 }
 
 /** Fetch remote refs and prune deleted upstream branches. */
-export async function gitFetch(cwd: string): Promise<GitCommandResult> {
-  return runGit(cwd, ['fetch', '--prune'], REMOTE_TIMEOUT_MS)
+export async function gitFetch(cwd: string, tabId?: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['fetch', '--prune'], REMOTE_TIMEOUT_MS, tabId)
 }
 
 /** Stash working changes. */
-export async function gitStash(cwd: string, message?: string, includeUntracked = true): Promise<GitCommandResult> {
+export async function gitStash(cwd: string, message?: string, includeUntracked = true, tabId?: string): Promise<GitCommandResult> {
   const args = ['stash', 'push']
   if (includeUntracked)
     args.push('--include-untracked')
   if (message)
     args.push('-m', message)
-  return runGit(cwd, args)
+  return runGit(cwd, args, undefined, tabId)
 }
 
 /** Pop the most recent stash. */
-export async function gitStashPop(cwd: string): Promise<GitCommandResult> {
-  return runGit(cwd, ['stash', 'pop'])
+export async function gitStashPop(cwd: string, tabId?: string): Promise<GitCommandResult> {
+  return runGit(cwd, ['stash', 'pop'], undefined, tabId)
 }
 
 /** List recent stashes. */
-export async function gitStashList(cwd: string): Promise<GitStashEntry[]> {
-  const result = await runGit(cwd, ['stash', 'list', '--format=%gd%x09%gs'], 10_000)
+export async function gitStashList(cwd: string, tabId?: string): Promise<GitStashEntry[]> {
+  const result = await runGit(cwd, ['stash', 'list', '--format=%gd%x09%gs'], 10_000, tabId)
   if (!result.ok)
     return []
 
@@ -447,8 +516,8 @@ export async function gitStashList(cwd: string): Promise<GitStashEntry[]> {
 }
 
 /** Get recent commit log. */
-export async function gitLog(cwd: string, n = 5): Promise<GitLogEntry[]> {
-  const result = await runGit(cwd, ['log', '--oneline', `-${n}`])
+export async function gitLog(cwd: string, n = 5, tabId?: string): Promise<GitLogEntry[]> {
+  const result = await runGit(cwd, ['log', '--oneline', `-${n}`], undefined, tabId)
   if (!result.ok)
     return []
   return result.stdout
@@ -464,7 +533,7 @@ export async function gitLog(cwd: string, n = 5): Promise<GitLogEntry[]> {
 }
 
 /** Check if a directory is inside a git repository. */
-export async function isGitRepo(cwd: string): Promise<boolean> {
-  const result = await runGit(cwd, ['rev-parse', '--is-inside-work-tree'], 5000)
+export async function isGitRepo(cwd: string, tabId?: string): Promise<boolean> {
+  const result = await runGit(cwd, ['rev-parse', '--is-inside-work-tree'], 5000, tabId)
   return result.ok && result.stdout === 'true'
 }

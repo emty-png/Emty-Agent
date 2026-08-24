@@ -55,10 +55,10 @@ export function createGlobTool(projectPath: string) {
         ? (inputPath === '.' ? projectPath : isAbsolute(inputPath) ? inputPath : `${projectPath}/${inputPath}`)
         : projectPath
 
-      // Path security — validate against allowed roots + sensitive-file blocklist
+      // Path security — search inside allowed roots, sensitive files still blocked
       let basePath: string
       try {
-        basePath = await safePath(projectPath, rawPath, { kind: 'read' })
+        basePath = await safePath(projectPath, rawPath, { kind: 'search' })
       }
       catch (e) {
         return { message: `Error: ${e instanceof Error ? e.message : String(e)}`, numFiles: 0 }

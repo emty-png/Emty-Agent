@@ -22,6 +22,7 @@ const {
   includeUnstaged,
   skipCommitHooks,
   amendCommit,
+  includeCoAuthor,
   commitDisabledReason,
   result,
   commit,
@@ -126,6 +127,18 @@ async function submit() {
                   <div class="flex flex-col min-w-0">
                     <span class="text-[12.5px] font-medium text-[var(--color-text-primary)] leading-tight">Skip hooks</span>
                     <span class="text-[10.5px] text-[var(--color-text-dim)] leading-tight mt-0.5">Run commit with --no-verify flag</span>
+                  </div>
+                </label>
+                <div class="mx-4 h-px bg-(--color-border-subtle)" />
+                <label class="flex items-center gap-2.5 px-3.5 py-2 cursor-pointer [transition:background_100ms_cubic-bezier(0.4,0,0.2,1)] hover:bg-[var(--color-state-hover)] group/toggle">
+                  <span class="relative shrink-0 w-9 h-5 cursor-pointer">
+                    <input v-model="includeCoAuthor" type="checkbox" class="peer absolute inset-0 w-full h-full m-0 opacity-0 cursor-pointer">
+                    <span class="absolute inset-0 bg-(--color-bg-base) border border-(--color-border-bright) rounded-full shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] [transition:background_150ms_cubic-bezier(0.4,0,0.2,1),border-color_150ms_cubic-bezier(0.4,0,0.2,1)] peer-checked:bg-(--color-accent) peer-checked:border-(--color-accent) peer-focus-visible:ring-2 peer-focus-visible:ring-[var(--color-accent-muted)]" />
+                    <span class="absolute top-[2px] left-[2px] w-4 h-4 bg-(--color-text-primary) rounded-full shadow-[0_1px_2px_rgba(0,0,0,0.5)] [transition:transform_150ms_cubic-bezier(0.4,0,0.2,1)] peer-checked:translate-x-[14px]" />
+                  </span>
+                  <div class="flex flex-col min-w-0">
+                    <span class="text-[12.5px] font-medium text-[var(--color-text-primary)] leading-tight">Add co-author</span>
+                    <span class="text-[10.5px] text-[var(--color-text-dim)] leading-tight mt-0.5">Include Emty Agent trailer</span>
                   </div>
                 </label>
               </div>

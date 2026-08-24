@@ -1,6 +1,5 @@
 import type {
   BeforeFileWriteCallback,
-  FileLockManager,
   FileReadRegistry,
   LineEnding,
   TextEncoding,
@@ -10,6 +9,7 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { DEFAULT_TOOL_DESCRIPTIONS } from '../toolDescriptions'
 import { hasBinaryExtension, safePath } from './allowedPaths'
+import { ConcurrencyLimitError, FileLockManager } from './fileLock'
 import {
   applyLineEnding,
   createUnifiedDiff,
@@ -78,7 +78,7 @@ export function createWriteFileTool(
   projectPath: string,
   registry: FileReadRegistry,
   onBeforeFileWrite: BeforeFileWriteCallback | undefined,
-  lockManager: FileLockManager,
+  lockManager: FileLockManager = new FileLockManager(),
 ) {
   return tool({
     description: DEFAULT_TOOL_DESCRIPTIONS.write_file,
@@ -128,203 +128,210 @@ export function createWriteFileTool(
           return 'Error: Cannot write binary file paths with this text tool.'
         }
 
-        return await lockManager.withLock(fullPath, async () => {
-          let existingLineEnding: LineEnding = 'lf'
-          let existingEncoding: TextEncoding = 'utf8'
-          let existingContent: string | null = null
-          let fileExists = false
+        try {
+          return await lockManager.withWriteLock(fullPath, async () => {
+            let existingLineEnding: LineEnding = 'lf'
+            let existingEncoding: TextEncoding = 'utf8'
+            let existingContent: string | null = null
+            let fileExists = false
 
-          const info = await stat(fullPath).catch(() => null)
+            const info = await stat(fullPath).catch(() => null)
 
-          if (info) {
-            if (!info.isFile) {
-              console.warn(`[write_file] rejected: ${file_path} is not a regular file`)
-              return `Error: ${file_path} is not a regular file.`
-            }
+            if (info) {
+              if (!info.isFile) {
+                console.warn(`[write_file] rejected: ${file_path} is not a regular file`)
+                return `Error: ${file_path} is not a regular file.`
+              }
 
-            fileExists = true
+              fileExists = true
 
-            const registryEntry = registry.get(fullPath)
+              const registryEntry = registry.get(fullPath)
 
-            if (!registryEntry) {
-              const action = isAppend ? 'appending to' : 'overwriting'
-              console.warn(`[write_file] rejected: no read registry entry for ${file_path} (append=${isAppend})`)
-              return `Error: File has not been read yet. Call read_files first before ${action} an existing file.`
-            }
+              if (!registryEntry) {
+                const action = isAppend ? 'appending to' : 'overwriting'
+                console.warn(`[write_file] rejected: no read registry entry for ${file_path} (append=${isAppend})`)
+                return `Error: File has not been read yet. Call read_files first before ${action} an existing file.`
+              }
 
-            if (registryEntry.complete === false) {
+              if (registryEntry.complete === false) {
               // Appending always touches the unread tail – keep blocked.
-              if (isAppend) {
-                console.warn(`[write_file] rejected: incomplete read registry entry for ${file_path} (append)`)
-                return `Error: ${file_path} has only been partially read. Call read_files with a complete read before appending.`
+                if (isAppend) {
+                  console.warn(`[write_file] rejected: incomplete read registry entry for ${file_path} (append)`)
+                  return `Error: ${file_path} has only been partially read. Call read_files with a complete read before appending.`
+                }
+
+                // Rewrite: read disk and verify the unread region is preserved.
+                let diskSnapshot: Awaited<ReturnType<typeof readTextSnapshot>>
+                try {
+                  diskSnapshot = await readTextSnapshot(fullPath)
+                }
+                catch (error) {
+                  const detail = errorMessage(error)
+                  console.warn(`[write_file] failed to read existing file for partial-read check ${file_path}: ${detail}`)
+                  return `Error: Cannot read existing ${file_path}: ${detail}`
+                }
+
+                // registryEntry.offset is 1-based; registryEntry.limit is line count.
+                // If either is missing (shouldn't happen for a partial read) fall back to
+                // treating the whole file as unread, which will always block.
+                const readOffset = registryEntry.offset ?? 1
+                const readLimit = registryEntry.limit ?? 0
+                // 0-based index of the first line that was NOT shown to the agent.
+                const unreadStartIdx = readOffset - 1 + readLimit
+
+                const diskLines = diskSnapshot.content === '' ? [] : diskSnapshot.content.split('\n')
+                const newLines = normalizedContent === '' ? [] : normalizedContent.split('\n')
+
+                const diskUnread = diskLines.slice(unreadStartIdx)
+                const newUnread = newLines.slice(unreadStartIdx)
+
+                if (diskUnread.join('\n') !== newUnread.join('\n')) {
+                  const readEndLine = Math.min(unreadStartIdx, diskLines.length)
+                  console.warn(
+                    `[write_file] rejected: partial read but unread region (lines ${unreadStartIdx + 1}+) `
+                    + `was modified for ${file_path}`,
+                  )
+                  return (
+                    `Error: ${file_path} was only partially read (lines 1–${readEndLine}). `
+                    + `The unread region (lines ${unreadStartIdx + 1}–${diskLines.length}) must not be changed. `
+                    + 'Re-read the full file with read_files before overwriting.'
+                  )
+                }
+
+                // Unread region is intact – allow the write using the snapshot we already have.
+                existingContent = diskSnapshot.content
+                existingLineEnding = diskSnapshot.lineEnding
+                existingEncoding = diskSnapshot.encoding
               }
-
-              // Rewrite: read disk and verify the unread region is preserved.
-              let diskSnapshot: Awaited<ReturnType<typeof readTextSnapshot>>
-              try {
-                diskSnapshot = await readTextSnapshot(fullPath)
-              }
-              catch (error) {
-                const detail = errorMessage(error)
-                console.warn(`[write_file] failed to read existing file for partial-read check ${file_path}: ${detail}`)
-                return `Error: Cannot read existing ${file_path}: ${detail}`
-              }
-
-              // registryEntry.offset is 1-based; registryEntry.limit is line count.
-              // If either is missing (shouldn't happen for a partial read) fall back to
-              // treating the whole file as unread, which will always block.
-              const readOffset = registryEntry.offset ?? 1
-              const readLimit = registryEntry.limit ?? 0
-              // 0-based index of the first line that was NOT shown to the agent.
-              const unreadStartIdx = readOffset - 1 + readLimit
-
-              const diskLines = diskSnapshot.content === '' ? [] : diskSnapshot.content.split('\n')
-              const newLines = normalizedContent === '' ? [] : normalizedContent.split('\n')
-
-              const diskUnread = diskLines.slice(unreadStartIdx)
-              const newUnread = newLines.slice(unreadStartIdx)
-
-              if (diskUnread.join('\n') !== newUnread.join('\n')) {
-                const readEndLine = Math.min(unreadStartIdx, diskLines.length)
-                console.warn(
-                  `[write_file] rejected: partial read but unread region (lines ${unreadStartIdx + 1}+) `
-                  + `was modified for ${file_path}`,
-                )
-                return (
-                  `Error: ${file_path} was only partially read (lines 1–${readEndLine}). `
-                  + `The unread region (lines ${unreadStartIdx + 1}–${diskLines.length}) must not be changed. `
-                  + 'Re-read the full file with read_files before overwriting.'
-                )
-              }
-
-              // Unread region is intact – allow the write using the snapshot we already have.
-              existingContent = diskSnapshot.content
-              existingLineEnding = diskSnapshot.lineEnding
-              existingEncoding = diskSnapshot.encoding
-            }
-            else {
+              else {
               // Complete read: normal snapshot + stale check.
-              let existingSnapshot: Awaited<ReturnType<typeof readTextSnapshot>>
+                let existingSnapshot: Awaited<ReturnType<typeof readTextSnapshot>>
 
+                try {
+                  existingSnapshot = await readTextSnapshot(fullPath)
+                }
+                catch (error) {
+                  const detail = errorMessage(error)
+                  console.warn(`[write_file] failed to read existing file ${file_path}: ${detail}`)
+                  return `Error: Cannot read existing ${file_path}: ${detail}`
+                }
+
+                existingContent = existingSnapshot.content
+                existingLineEnding = existingSnapshot.lineEnding
+                existingEncoding = existingSnapshot.encoding
+
+                const mtimesMatch = registryEntry.mtimeMs !== null
+                  && existingSnapshot.mtimeMs !== null
+                  && registryEntry.mtimeMs === existingSnapshot.mtimeMs
+
+                if (!mtimesMatch && registryEntry.hash !== existingSnapshot.hash) {
+                  console.warn(
+                    '[write_file] rejected: file modified since last read. '
+                    + `registry.mtime=${registryEntry.mtimeMs} `
+                    + `disk.mtime=${existingSnapshot.mtimeMs} `
+                    + `registry.hash=${registryEntry.hash.slice(0, 12)}… `
+                    + `disk.hash=${existingSnapshot.hash.slice(0, 12)}…`,
+                  )
+
+                  return `Error: ${file_path} has been modified since last read. Re-read with read_files before writing.`
+                }
+              }
+            }
+
+            const parentDir = parentDirPath(fullPath)
+
+            if (parentDir) {
               try {
-                existingSnapshot = await readTextSnapshot(fullPath)
+                await ensureDir(parentDir)
               }
               catch (error) {
                 const detail = errorMessage(error)
-                console.warn(`[write_file] failed to read existing file ${file_path}: ${detail}`)
-                return `Error: Cannot read existing ${file_path}: ${detail}`
-              }
-
-              existingContent = existingSnapshot.content
-              existingLineEnding = existingSnapshot.lineEnding
-              existingEncoding = existingSnapshot.encoding
-
-              const mtimesMatch = registryEntry.mtimeMs !== null
-                && existingSnapshot.mtimeMs !== null
-                && registryEntry.mtimeMs === existingSnapshot.mtimeMs
-
-              if (!mtimesMatch && registryEntry.hash !== existingSnapshot.hash) {
-                console.warn(
-                  '[write_file] rejected: file modified since last read. '
-                  + `registry.mtime=${registryEntry.mtimeMs} `
-                  + `disk.mtime=${existingSnapshot.mtimeMs} `
-                  + `registry.hash=${registryEntry.hash.slice(0, 12)}… `
-                  + `disk.hash=${existingSnapshot.hash.slice(0, 12)}…`,
-                )
-
-                return `Error: ${file_path} has been modified since last read. Re-read with read_files before writing.`
+                console.warn(`[write_file] ensureDir failed for ${parentDir}: ${detail}`)
+                return `Error: Failed to create directories for ${file_path}: ${detail}`
               }
             }
-          }
 
-          const parentDir = parentDirPath(fullPath)
+            if (onBeforeFileWrite) {
+              try {
+                await onBeforeFileWrite(file_path, fullPath, existingContent)
+              }
+              catch (error) {
+                const detail = errorMessage(error)
+                console.warn(`[write_file] checkpoint failed for ${file_path}: ${detail}`)
+                return `Error: Failed to checkpoint ${file_path}: ${detail}`
+              }
+            }
 
-          if (parentDir) {
+            const finalContent = isAppend && existingContent !== null
+              ? existingContent + normalizedContent
+              : normalizedContent
+
+            const { added, removed } = diffLineStats(existingContent ?? '', finalContent)
+            const changedLines = added + removed
+
+            const diskContent = existingContent !== null
+              ? applyLineEnding(finalContent, existingLineEnding)
+              : finalContent
+
             try {
-              await ensureDir(parentDir)
+              await writeEncodedTextFile(fullPath, diskContent, existingEncoding)
             }
             catch (error) {
               const detail = errorMessage(error)
-              console.warn(`[write_file] ensureDir failed for ${parentDir}: ${detail}`)
-              return `Error: Failed to create directories for ${file_path}: ${detail}`
+              console.warn(`[write_file] disk write failed for ${fullPath} (${existingEncoding}): ${detail}`)
+              return `Error writing ${file_path}: ${detail}`
             }
-          }
 
-          if (onBeforeFileWrite) {
             try {
-              await onBeforeFileWrite(file_path, fullPath, existingContent)
+              const newInfo = await stat(fullPath)
+              const hash = await sha256Text(finalContent)
+
+              updateReadRegistry(registry, fullPath, {
+                hash,
+                complete: true,
+                sizeBytes: newInfo.size,
+                mtimeMs: newInfo.mtime?.getTime() ?? null,
+              })
             }
             catch (error) {
-              const detail = errorMessage(error)
-              console.warn(`[write_file] checkpoint failed for ${file_path}: ${detail}`)
-              return `Error: Failed to checkpoint ${file_path}: ${detail}`
+              console.warn(`[write_file] registry update failed for ${fullPath} (non-fatal): ${errorMessage(error)}`)
             }
-          }
 
-          const finalContent = isAppend && existingContent !== null
-            ? existingContent + normalizedContent
-            : normalizedContent
+            const operation = fileExists
+              ? isAppend ? 'append' : 'rewrite'
+              : 'create'
 
-          const { added, removed } = diffLineStats(existingContent ?? '', finalContent)
-          const changedLines = added + removed
+            const { diff, diffTruncated } = buildSafeDiff(
+              file_path,
+              existingContent ?? '',
+              finalContent,
+              changedLines,
+            )
 
-          const diskContent = existingContent !== null
-            ? applyLineEnding(finalContent, existingLineEnding)
-            : finalContent
+            console.warn(`[write_file] success ${operation} ${file_path} (+${added}/-${removed})`)
 
-          try {
-            await writeEncodedTextFile(fullPath, diskContent, existingEncoding)
-          }
-          catch (error) {
-            const detail = errorMessage(error)
-            console.warn(`[write_file] disk write failed for ${fullPath} (${existingEncoding}): ${detail}`)
-            return `Error writing ${file_path}: ${detail}`
-          }
+            const message = operation === 'create'
+              ? `The file ${file_path} has been created successfully.`
+              : operation === 'append'
+                ? `Successfully appended to ${file_path}.`
+                : `The file ${file_path} has been updated successfully.`
 
-          try {
-            const newInfo = await stat(fullPath)
-            const hash = await sha256Text(finalContent)
-
-            updateReadRegistry(registry, fullPath, {
-              hash,
-              complete: true,
-              sizeBytes: newInfo.size,
-              mtimeMs: newInfo.mtime?.getTime() ?? null,
-            })
-          }
-          catch (error) {
-            console.warn(`[write_file] registry update failed for ${fullPath} (non-fatal): ${errorMessage(error)}`)
-          }
-
-          const operation = fileExists
-            ? isAppend ? 'append' : 'rewrite'
-            : 'create'
-
-          const { diff, diffTruncated } = buildSafeDiff(
-            file_path,
-            existingContent ?? '',
-            finalContent,
-            changedLines,
-          )
-
-          console.warn(`[write_file] success ${operation} ${file_path} (+${added}/-${removed})`)
-
-          const message = operation === 'create'
-            ? `The file ${file_path} has been created successfully.`
-            : operation === 'append'
-              ? `Successfully appended to ${file_path}.`
-              : `The file ${file_path} has been updated successfully.`
-
-          return {
-            message,
-            file: file_path,
-            operation,
-            added,
-            removed,
-            diff,
-            diffTruncated,
-          }
-        })
+            return {
+              message,
+              file: file_path,
+              operation,
+              added,
+              removed,
+              diff,
+              diffTruncated,
+            }
+          })
+        }
+        catch (e) {
+          if (e instanceof ConcurrencyLimitError)
+            return `Error: ${e.message}. Too many parallel tool calls — wait for some to finish and retry.`
+          throw e
+        }
       }
       catch (error) {
         const detail = errorMessage(error)

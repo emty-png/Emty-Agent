@@ -34,6 +34,7 @@ export interface ToolRegistryContext {
   onProjectScaffold?: (project: { path: string; name: string; type: DesignProjectType }) => void
   getActiveDesignProject?: () => { path: string; name: string; type: DesignProjectType } | null
   onFilesChanged?: () => void
+  onDesignVersionAccumulate?: (files: Array<{ path: string; content: string }>) => void
   onPreviewUrl?: (url: string | null) => void
   onDevServerTaskId?: (id: string | null) => void
   stopPreview?: () => Promise<void>

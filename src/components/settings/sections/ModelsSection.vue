@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DiscoveredModel } from '@/stores/settings/types'
+import type { DiscoveredModel, ThinkingEffort } from '@/stores/settings/types'
 import { Brain, Code, Eye, Info, Loader, Search, Wrench, Zap } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, ref } from 'vue'
@@ -127,44 +127,26 @@ function getBudgetOption(model: DiscoveredModel): { type: 'budget_tokens'; min: 
   return model.reasoningOptions?.find((o): o is { type: 'budget_tokens'; min: number } => o.type === 'budget_tokens') ?? null
 }
 
-function getEffortLevels(model: DiscoveredModel): Array<'low' | 'medium' | 'high'> {
-  const effort = getEffortOption(model)
-  if (effort) {
-    const levels: Array<'low' | 'medium' | 'high'> = []
-    if (effort.values.includes('low'))
-      levels.push('low')
-    if (effort.values.includes('medium'))
-      levels.push('medium')
-    if (effort.values.includes('high'))
-      levels.push('high')
-    return levels.length > 0 ? levels : ['low', 'medium', 'high']
-  }
-  return ['low', 'medium', 'high']
+function getEffortLevels(model: DiscoveredModel): ThinkingEffort[] {
+  return s.getEffectiveThinkingLevels(model)
 }
 
 function shouldShowEffort(model: DiscoveredModel): boolean {
-  if (!model.supportsThinking)
+  if (!model.enabled)
     return false
-
-  // Data-driven: show if reasoning_options exist
-  if (model.reasoningOptions?.length)
-    return true
-
-  // Fallback: show for known reasoning providers
-  if (model.providerId === 'anthropic' || model.providerId === 'google')
-    return true
-
-  const pName = model.providerName.toLowerCase()
-  const isOllama = model.providerId === 'compatible'
-    && (model.mdevProviderId === 'ollama' || pName === 'ollama' || pName.includes('ollama'))
-  if (isOllama && !model.id.toLowerCase().includes('gpt-oss'))
+  const levels = getEffortLevels(model)
+  if (levels.length === 1 && levels[0] === 'off' && !model.supportsThinking)
     return false
-
   return true
 }
 
-function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'): string {
-  // Data-driven: effort type from reasoning_options
+function getEffortLabel(model: DiscoveredModel, lvl: ThinkingEffort): string {
+  if (lvl === 'off')
+    return 'Off'
+  if (lvl === 'xhigh')
+    return 'XHigh'
+  if (lvl === 'max')
+    return 'Max'
   const effort = getEffortOption(model)
   if (effort) {
     const hasMax = effort.values.includes('max')
@@ -172,20 +154,20 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
       return 'Max'
     return lvl === 'low' ? 'Low' : lvl === 'medium' ? 'Med' : 'High'
   }
-
-  // Data-driven: budget_tokens type from reasoning_options
   const budget = getBudgetOption(model)
   if (budget) {
-    // Map effort levels to token budgets
     const minBudget = budget.min
-    return lvl === 'low'
-      ? `${Math.round(minBudget / 1024)}K`
-      : lvl === 'medium'
-        ? `${Math.round(minBudget * 10 / 1024)}K`
-        : `${Math.round(minBudget * 32 / 1024)}K`
+    if (lvl === 'low')
+      return `${Math.round(minBudget / 1024)}K`
+    if (lvl === 'medium')
+      return `${Math.round(minBudget * 10 / 1024)}K`
+    if (lvl === 'high')
+      return `${Math.round(minBudget * 32 / 1024)}K`
+    if (lvl === 'xhigh')
+      return `${Math.round(minBudget * 48 / 1024)}K`
+    if (lvl === 'max')
+      return `${Math.round(minBudget * 100 / 1024)}K`
   }
-
-  // Fallback for providers without reasoning_options
   return lvl === 'low' ? 'Low' : lvl === 'medium' ? 'Med' : 'High'
 }
 </script>
@@ -233,117 +215,114 @@ function getEffortLabel(model: DiscoveredModel, lvl: 'low' | 'medium' | 'high'):
         </div>
 
         <div class="model-list">
-          <div
-            v-for="model in group.models"
-            :key="model.uid"
-            class="model-card"
-            :class="{ 'model-card--disabled': !model.enabled }"
-          >
-            <!-- LEFT: Core Info & Icons -->
-            <div class="model-main">
-              <!-- Info Trigger & Custom Tooltip -->
-              <div class="tt-trigger">
-                <Info :size="14" class="info-icon" />
-                <div class="tt-panel">
-                  <header class="pb-2 mb-1 border-b border-(--color-border-mid)">
-                    <div class="text-xs font-semibold text-(--color-text-primary)">
-                      {{ model.name }}
-                    </div>
-                    <div v-if="model.contextLimit" class="mt-1 text-[11px] text-(--color-text-tertiary) leading-[1.4]">
-                      Context limit {{ formatExact(model.contextLimit) }}
-                    </div>
-                  </header>
-
-                  <main class="grid gap-1.5 pt-2">
-                    <div v-if="model.inputModalities?.length" class="flex items-center justify-between gap-3">
-                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Input</span>
-                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.inputModalities.join(', ') }}</span>
-                    </div>
-                    <div v-if="getCapabilitiesText(model)" class="flex items-center justify-between gap-3">
-                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Capabilities</span>
-                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ getCapabilitiesText(model) }}</span>
-                    </div>
-
-                    <template v-if="model.costTiers?.length || model.costContextOver200k">
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Cost / 1M</span>
-                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums text-right">
-                          <span v-for="(line, i) in formatTieredCost(model)" :key="i" class="tt-tier-line">{{ line }}</span>
-                        </span>
+          <template v-for="model in group.models" :key="model.uid">
+            <div class="model-card" :class="{ 'model-card--disabled': !model.enabled }">
+              <!-- LEFT: Core Info & Icons -->
+              <div class="model-main">
+                <!-- Info Trigger & Custom Tooltip -->
+                <div class="tt-trigger">
+                  <Info :size="14" class="info-icon" />
+                  <div class="tt-panel">
+                    <header class="pb-2 mb-1 border-b border-(--color-border-mid)">
+                      <div class="text-xs font-semibold text-(--color-text-primary)">
+                        {{ model.name }}
                       </div>
-                    </template>
-                    <template v-else-if="model.costInput !== null">
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Cost / 1M</span>
-                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ formatPrice(model.costInput) }} in / {{ formatPrice(model.costOutput) }} out</span>
+                      <div v-if="model.contextLimit" class="mt-1 text-[11px] text-(--color-text-tertiary) leading-[1.4]">
+                        Context limit {{ formatExact(model.contextLimit) }}
                       </div>
-                    </template>
+                    </header>
 
-                    <div v-if="model.family" class="flex items-center justify-between gap-3">
-                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Family</span>
-                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.family }}</span>
-                    </div>
+                    <main class="grid gap-1.5 pt-2">
+                      <div v-if="model.inputModalities?.length" class="flex items-center justify-between gap-3">
+                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Input</span>
+                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.inputModalities.join(', ') }}</span>
+                      </div>
+                      <div v-if="getCapabilitiesText(model)" class="flex items-center justify-between gap-3">
+                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Capabilities</span>
+                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ getCapabilitiesText(model) }}</span>
+                      </div>
 
-                    <div v-if="model.releaseDate" class="flex items-center justify-between gap-3">
-                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Released</span>
-                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ formatDate(model.releaseDate) }}</span>
-                    </div>
+                      <template v-if="model.costTiers?.length || model.costContextOver200k">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Cost / 1M</span>
+                          <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums text-right">
+                            <span v-for="(line, i) in formatTieredCost(model)" :key="i" class="tt-tier-line">{{ line }}</span>
+                          </span>
+                        </div>
+                      </template>
+                      <template v-else-if="model.costInput !== null">
+                        <div class="flex items-center justify-between gap-3">
+                          <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Cost / 1M</span>
+                          <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ formatPrice(model.costInput) }} in / {{ formatPrice(model.costOutput) }} out</span>
+                        </div>
+                      </template>
 
-                    <div v-if="model.mdevProviderId" class="flex items-center justify-between gap-3">
-                      <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Catalog</span>
-                      <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.mdevProviderId }}</span>
-                    </div>
-                  </main>
+                      <div v-if="model.family" class="flex items-center justify-between gap-3">
+                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Family</span>
+                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.family }}</span>
+                      </div>
+
+                      <div v-if="model.releaseDate" class="flex items-center justify-between gap-3">
+                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Released</span>
+                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ formatDate(model.releaseDate) }}</span>
+                      </div>
+
+                      <div v-if="model.mdevProviderId" class="flex items-center justify-between gap-3">
+                        <span class="text-[11.5px] text-(--color-text-secondary) font-normal">Catalog</span>
+                        <span class="text-[11.5px] font-semibold text-(--color-text-primary) tabular-nums">{{ model.mdevProviderId }}</span>
+                      </div>
+                    </main>
+                  </div>
+                </div>
+
+                <h3 class="model-name">
+                  {{ model.name }}
+                </h3>
+                <span class="model-id">{{ model.id }}</span>
+
+                <!-- Capability icon pills with tooltips (like picker) -->
+                <div class="picker-caps">
+                  <span v-if="model.supportsThinking" class="cap-icon-wrap" data-tooltip="Reasoning">
+                    <Brain :size="13" :stroke-width="2" class="cap-icon cap-icon--thinking" />
+                  </span>
+                  <span v-if="model.supportsToolCalls" class="cap-icon-wrap" data-tooltip="Tools">
+                    <Wrench :size="13" :stroke-width="2" class="cap-icon cap-icon--tools" />
+                  </span>
+                  <span v-if="model.supportsAttachments" class="cap-icon-wrap" data-tooltip="Vision">
+                    <Eye :size="13" :stroke-width="2" class="cap-icon cap-icon--vision" />
+                  </span>
+                  <span v-if="model.supportsStructuredOutput" class="cap-icon-wrap" data-tooltip="Structured">
+                    <Code :size="13" :stroke-width="2" class="cap-icon cap-icon--structured" />
+                  </span>
+                  <span v-if="model.contextLimit" class="cap-badge cap-badge--ctx">{{ formatContext(model.contextLimit) }} ctx</span>
+                  <span v-if="model.status" class="cap-badge cap-badge--status">{{ model.status }}</span>
                 </div>
               </div>
 
-              <h3 class="model-name">
-                {{ model.name }}
-              </h3>
-              <span class="model-id">{{ model.id }}</span>
-
-              <!-- Capability icon pills with tooltips (like picker) -->
-              <div class="picker-caps">
-                <span v-if="model.supportsThinking" class="cap-icon-wrap" data-tooltip="Reasoning">
-                  <Brain :size="13" :stroke-width="2" class="cap-icon cap-icon--thinking" />
-                </span>
-                <span v-if="model.supportsToolCalls" class="cap-icon-wrap" data-tooltip="Tools">
-                  <Wrench :size="13" :stroke-width="2" class="cap-icon cap-icon--tools" />
-                </span>
-                <span v-if="model.supportsAttachments" class="cap-icon-wrap" data-tooltip="Vision">
-                  <Eye :size="13" :stroke-width="2" class="cap-icon cap-icon--vision" />
-                </span>
-                <span v-if="model.supportsStructuredOutput" class="cap-icon-wrap" data-tooltip="Structured">
-                  <Code :size="13" :stroke-width="2" class="cap-icon cap-icon--structured" />
-                </span>
-                <span v-if="model.contextLimit" class="cap-badge cap-badge--ctx">{{ formatContext(model.contextLimit) }} ctx</span>
-                <span v-if="model.status" class="cap-badge cap-badge--status">{{ model.status }}</span>
-              </div>
-            </div>
-
-            <!-- RIGHT: Controls -->
-            <div class="model-controls">
-              <div v-if="model.enabled && shouldShowEffort(model)" class="effort-seg">
+              <!-- RIGHT: Controls -->
+              <div class="model-controls">
+                <div v-if="shouldShowEffort(model)" class="effort-seg">
+                  <button
+                    v-for="lvl in getEffortLevels(model)"
+                    :key="lvl"
+                    class="effort-btn"
+                    :class="{ 'effort-btn--active': model.thinkingEffort === lvl }"
+                    @click="s.setModelThinking(model.uid, lvl)"
+                  >
+                    {{ getEffortLabel(model, lvl) }}
+                  </button>
+                </div>
                 <button
-                  v-for="lvl in getEffortLevels(model)"
-                  :key="lvl"
-                  class="effort-btn"
-                  :class="{ 'effort-btn--active': model.thinkingEffort === lvl }"
-                  @click="s.setModelThinking(model.uid, lvl)"
+                  class="custom-toggle"
+                  :class="{ 'custom-toggle--on': model.enabled }"
+                  :aria-label="model.enabled ? 'Disable model' : 'Enable model'"
+                  @click="s.toggleModel(model.uid)"
                 >
-                  {{ getEffortLabel(model, lvl) }}
+                  <span class="custom-toggle-thumb" />
                 </button>
               </div>
-              <button
-                class="custom-toggle"
-                :class="{ 'custom-toggle--on': model.enabled }"
-                :aria-label="model.enabled ? 'Disable model' : 'Enable model'"
-                @click="s.toggleModel(model.uid)"
-              >
-                <span class="custom-toggle-thumb" />
-              </button>
             </div>
-          </div>
+          </template>
         </div>
       </div>
     </div>

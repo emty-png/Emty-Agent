@@ -3,11 +3,15 @@ import type { Message, ToolEvent } from '@/stores/chat'
 import type { AgentStatus } from '@/stores/chat/core/types'
 import { AlertTriangle, Check, Copy } from 'lucide-vue-next'
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
+import { useChatStore } from '@/stores/chat'
 import { isStreamingStatus } from '@/stores/chat/agent/status'
+import { useDesignVersionStore } from '@/stores/designVersions'
+import { useSettingsStore } from '@/stores/settings'
 import ActionGroupBlock from './block/ActionBlock.vue'
 import FileEditChips from './block/FileDiffBlock.vue'
 import ThinkingBlock from './block/ThinkingBlock.vue'
 import ToolCallBlock from './block/ToolCallBlock.vue'
+import DesignVersionCard from './DesignVersionCard.vue'
 import MarkdownMessage from './markdown/AssistantMarkdown.vue'
 import TypingIndicator from './TypingIndicator.vue'
 
@@ -16,7 +20,28 @@ const props = defineProps<{
   agentStatus?: AgentStatus
 }>()
 
+const emit = defineEmits<{
+  previewVersion: [string]
+  compareVersion: [string]
+}>()
+
 const isStreaming = computed(() => props.agentStatus ? isStreamingStatus(props.agentStatus) : false)
+
+const settingsStore = useSettingsStore()
+
+const providerId = computed<string | null>(() => {
+  const uid = props.msg.modelUid
+  if (!uid)
+    return null
+  const idx = uid.indexOf('::')
+  if (idx === -1)
+    return null
+  return uid.slice(0, idx) || null
+})
+
+const hideThinking = computed(() => settingsStore.shouldHideThinking(providerId.value))
+const disableThinkingMarkdown = computed(() => settingsStore.shouldDisableThinkingMarkdown(providerId.value))
+const disableAssistantMarkdown = computed(() => settingsStore.shouldDisableAssistantMarkdown(providerId.value))
 
 function countWords(text: string): number {
   let count = 0
@@ -161,10 +186,17 @@ const layout = computed(() => {
   }
 })
 
+const filteredWork = computed(() => {
+  if (!hideThinking.value)
+    return layout.value.work
+  return layout.value.work.filter(g => g.type !== 'reasoning')
+})
+
 const hasVisibleWork = computed(() => {
-  if (!layout.value.work || layout.value.work.length === 0)
+  const work = filteredWork.value
+  if (!work || work.length === 0)
     return false
-  return layout.value.work.some(g => {
+  return work.some(g => {
     if (g.type === 'tools')
       return g.events && g.events.length > 0
     if (g.type === 'text' || g.type === 'reasoning')
@@ -335,6 +367,46 @@ async function copyLastText() {
 
 const modelName = computed(() => props.msg.modelName ?? null)
 
+const chatStoreForVersion = useChatStore()
+const dvStoreForVersion = useDesignVersionStore()
+
+const designVersion = computed(() => {
+  const id = props.msg.designVersionId
+  if (!id)
+    return null
+  for (const tab of chatStoreForVersion.tabs) {
+    const v = tab.designVersions?.find(x => x.id === id)
+    if (v)
+      return v
+  }
+  const v2 = dvStoreForVersion.getByMessageId(props.msg.id)
+  if (v2)
+    return v2
+  return {
+    id,
+    versionNumber: 0,
+    createdAt: props.msg.timestamp.getTime(),
+    label: 'Version',
+    filesChanged: [] as string[],
+    snapshotPath: '',
+    messageId: props.msg.id,
+    conversationId: '',
+    projectPath: '',
+    projectName: '',
+  }
+})
+
+const designVersionCount = computed(() => {
+  const v = designVersion.value
+  if (!v)
+    return 0
+  for (const tab of chatStoreForVersion.tabs) {
+    if (tab.designVersions?.some(x => x.id === v.id))
+      return tab.designVersions.length
+  }
+  return dvStoreForVersion.versionsByConversation[v.conversationId]?.length ?? 1
+})
+
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
 }
@@ -359,12 +431,16 @@ const finishedTime = computed(() => {
     </div>
 
     <ActionGroupBlock
-      v-if="(hasVisibleWork || isStreaming) && layout.work.length > 0"
-      :items="layout.work"
+      v-if="(hasVisibleWork || isStreaming) && filteredWork.length > 0"
+      :items="filteredWork"
       :streaming="isStreaming"
       :is-open="!isWorkCollapsed"
       :status-label="workLabel"
       :has-rest-content="layout.rest.length > 0"
+      :provider-id="providerId"
+      :hide-thinking="hideThinking"
+      :disable-thinking-markdown="disableThinkingMarkdown"
+      :disable-assistant-markdown="disableAssistantMarkdown"
       @toggle="isWorkCollapsed = !isWorkCollapsed"
     />
 
@@ -373,25 +449,42 @@ const finishedTime = computed(() => {
         <ToolCallBlock v-for="event in group.events" :key="event.id" :event="event" />
       </div>
 
-      <MarkdownMessage
-        v-else-if="group.type === 'text' && (group.hasText || group.streaming)"
-        :content="group.text"
-        :streaming="group.streaming"
-      />
+      <template v-else-if="group.type === 'text' && (group.hasText || group.streaming)">
+        <MarkdownMessage
+          v-if="!disableAssistantMarkdown"
+          :content="group.text"
+          :streaming="group.streaming"
+        />
+        <div
+          v-else
+          class="whitespace-pre-wrap break-words text-[13.5px] leading-[1.65] text-[var(--color-text-primary)]"
+        >
+          {{ group.text }}
+        </div>
+      </template>
 
       <ThinkingBlock
-        v-else-if="group.type === 'reasoning' && (group.hasText || group.streaming)"
+        v-else-if="group.type === 'reasoning' && (group.hasText || group.streaming) && !hideThinking"
         :text="group.text"
         :word-count="group.wordCount"
         :streaming="group.streaming"
         :is-open="isBlockOpen(group.key)"
         :copied="copiedKey === group.key"
+        :disable-markdown="disableThinkingMarkdown"
         @toggle="toggleBlock(group.key)"
         @copy="copyThinking(group.key, group.text)"
       />
     </template>
 
     <FileEditChips v-if="!isStreaming && fileEditEvents.length > 0" :events="fileEditEvents" />
+
+    <DesignVersionCard
+      v-if="!isStreaming && designVersion"
+      :version="designVersion as never"
+      :can-compare="designVersionCount > 1"
+      @preview="emit('previewVersion', designVersion!.id)"
+      @compare="emit('compareVersion', designVersion!.id)"
+    />
 
     <div v-if="!isStreaming" class="mr-1 flex items-center gap-1.5 opacity-0 transition-opacity duration-[150ms] group-hover:opacity-100">
       <button
