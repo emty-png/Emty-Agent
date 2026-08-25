@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Globe, Palette, Plus, Sparkles, X } from 'lucide-vue-next'
+import { ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Globe, Palette, Plus, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useBrowserStore } from '@/stores/browser'
@@ -10,7 +10,6 @@ import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
 import { useTerminalStore } from '@/stores/terminal'
-import { useWelcomeStore } from '@/stores/welcome'
 
 const chat = useChatStore()
 const browser = useBrowserStore()
@@ -18,12 +17,7 @@ const gitPane = useGitPaneStore()
 const project = useProjectStore()
 const terminal = useTerminalStore()
 const settings = useSettingsStore()
-const welcome = useWelcomeStore()
 const { tabs, activeId, unseenErrorIds } = storeToRefs(chat)
-
-function triggerWelcomePreview() {
-  welcome.trigger()
-}
 
 function hasUnseenError(tabId: string): boolean {
   return unseenErrorIds.value.has(tabId)
@@ -336,16 +330,6 @@ onUnmounted(() => {
           </div>
         </Transition>
       </div>
-
-      <!-- DEV: manual welcome+onboarding trigger — remove when done building -->
-      <button
-        class="flex h-[26px] w-[26px] shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border border-dashed border-[var(--color-border-mid)] bg-transparent text-[var(--color-text-tertiary)] transition-[background,color,border-color] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-accent)] hover:border-[var(--color-accent)]"
-        aria-label="Preview welcome + onboarding"
-        title="Preview welcome + onboarding (dev)"
-        @click="triggerWelcomePreview"
-      >
-        <Sparkles :size="13" :stroke-width="1.9" />
-      </button>
 
       <div class="mx-[3px] h-[14px] w-[1px] shrink-0 bg-[var(--color-border-subtle)]" />
 
