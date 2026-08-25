@@ -268,7 +268,7 @@ async function openSubAgentTab() {
     @click="isSubAgent ? openSubAgentTab() : undefined"
   >
     <template v-if="isShellTool && isRunning">
-      <Loader2 :size="10" class="inline-block text-[var(--color-accent-text)]" />
+      <Loader2 :size="10" class="inline-block animate-spin text-[var(--color-accent-text)]" />
       <span v-if="executionStartedAt !== null" class="ml-1 text-[11px] font-medium text-[var(--color-accent-text)] opacity-70">
         Running {{ runningElapsedLabel }}
       </span>

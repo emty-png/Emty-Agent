@@ -85,24 +85,46 @@ export function resolveLanguageModel(
   )
 }
 
+function thinkingBudgetForResolver(effort: NonNullable<ModelSettingsSnapshot['activeModel']>['thinkingEffort']): number {
+  switch (effort) {
+    case 'low': return 2048
+    case 'medium': return 16_000
+    case 'high': return 32_000
+    case 'xhigh': return 48_000
+    case 'max': return 100_000
+    default: return 0
+  }
+}
+
 /**
  * Resolves the maximum output tokens based on the model's thinking effort
  * and base capabilities. Sub-agents may override the default limit.
+ *
+ * IMPORTANT: For thinking models, maxOutputTokens must be **strictly larger**
+ * than the thinking budget (Anthropic requires budget < max_tokens). Previous
+ * values had budget > max (e.g. medium budget 16k but max 8k) which caused
+ * 400/500 invalid_param errors and silent stops after a single thinking step.
  */
 export function resolveMaxTokens(
   activeModel: NonNullable<ModelSettingsSnapshot['activeModel']>,
   defaultMax = 16_384,
 ): number {
   if (activeModel.supportsThinking && activeModel.thinkingEffort !== 'off') {
+    const budget = thinkingBudgetForResolver(activeModel.thinkingEffort)
+    // Ensure max comfortably exceeds budget + room for actual output.
+    // Claude/Gemini need at least budget + 4k. Keep a floor of defaultMax.
+    const required = budget + 8192
     if (activeModel.thinkingEffort === 'low')
-      return 2048
+      return Math.max(defaultMax, required)
+    if (activeModel.thinkingEffort === 'medium')
+      return Math.max(defaultMax, required)
     if (activeModel.thinkingEffort === 'high')
-      return 16_000
+      return Math.max(32_000, required)
     if (activeModel.thinkingEffort === 'xhigh')
-      return 24_000
+      return Math.max(48_000, required)
     if (activeModel.thinkingEffort === 'max')
-      return 32_000
-    return 8000
+      return Math.max(64_000, required)
+    return Math.max(defaultMax, required)
   }
   return defaultMax
 }

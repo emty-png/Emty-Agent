@@ -1,7 +1,7 @@
 import type { HookCommand, HookDecision, HookEvent, HookInput, HookOutput } from './types'
 import { exists } from '@tauri-apps/plugin-fs'
 import { Command } from '@tauri-apps/plugin-shell'
-import { BLOCKABLE_EVENTS } from './types'
+import { BLOCKABLE_EVENTS, isBlockableEvent } from './types'
 
 // ── Shell resolution (ported from src/utils/tools/shell.ts) ──────────────────
 
@@ -132,9 +132,14 @@ async function runSingleHookCommand(
   input: HookInput,
   cwd: string | null,
 ): Promise<HookRunResult> {
+  // Skip disabled commands
+  if (command.enabled === false)
+    return { output: null, exitCode: 0 }
+
   try {
     const timeoutMs = (command.timeoutSec ?? 5) * 1000
     const inputJson = JSON.stringify(input)
+    const effectiveCwd = command.cwd ?? cwd
 
     // Build environment variables
     const env: Record<string, string> = {
@@ -142,21 +147,80 @@ async function runSingleHookCommand(
       EMTY_TAB_ID: input.tabId,
       EMTY_WORKSPACE: input.workspacePath ?? '',
       EMTY_PROJECT_NAME: input.projectName ?? '',
-      EMTY_INPUT: inputJson,
+      EMTY_INPUT: inputJson.length > 28000 ? inputJson.slice(0, 28000) : inputJson,
+      ...(command.env ?? {}),
     }
 
     if ('toolName' in input)
-      env.EMTY_TOOL_NAME = input.toolName
+      env.EMTY_TOOL_NAME = (input as unknown as { toolName: string }).toolName
     if ('filePath' in input)
-      env.EMTY_FILE_PATH = input.filePath
-    if ('command' in input && typeof input.command === 'string')
-      env.EMTY_COMMAND = input.command
+      env.EMTY_FILE_PATH = (input as unknown as { filePath: string }).filePath
+    if ('command' in input && typeof (input as unknown as { command: unknown }).command === 'string')
+      env.EMTY_COMMAND = (input as unknown as { command: string }).command
+    if ('conversationId' in input && typeof (input as unknown as { conversationId: unknown }).conversationId === 'string')
+      env.EMTY_CONVERSATION_ID = (input as unknown as { conversationId: string }).conversationId
+    if ('mode' in input && typeof (input as unknown as { mode: unknown }).mode === 'string')
+      env.EMTY_MODE = (input as unknown as { mode: string }).mode
+    if ('prompt' in input && typeof (input as unknown as { prompt: unknown }).prompt === 'string')
+      env.EMTY_PROMPT = String((input as unknown as { prompt: string }).prompt).slice(0, 8000)
 
-    // Run the user's command directly (no piping — input is in $EMTY_INPUT env var)
-    const shell = await resolveShell()
-    const args = createShellArgs(shell, command.command)
-    const cmd = Command.create(shell, args, {
-      ...(cwd != null ? { cwd } : {}),
+    // Create temp file for full EMTY_INPUT to avoid env limit
+    let inputFilePath: string | null = null
+    try {
+      const { join } = await import('@tauri-apps/api/path')
+      const { writeFile, mkdir } = await import('@tauri-apps/plugin-fs')
+      const { tempDir } = await import('@tauri-apps/api/path')
+      const tmpBase = await tempDir().catch(() => input.workspacePath ?? '')
+      const tmpDir = tmpBase ? await join(tmpBase, 'emty-hooks') : null
+      if (tmpDir) {
+        await mkdir(tmpDir, { recursive: true }).catch(() => {})
+        const fname = `hook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`
+        inputFilePath = await join(tmpDir, fname)
+        await writeFile(inputFilePath, new TextEncoder().encode(inputJson)).catch(() => { inputFilePath = null })
+        if (inputFilePath)
+          env.EMTY_INPUT_FILE = inputFilePath
+      }
+    }
+    catch { /* ignore temp file errors */ }
+
+    let shell: ShellBinary | 'node' = 'sh'
+    let args: string[]
+    let cmdName: string
+
+    if (command.type === 'js') {
+      // Inline JS executed via node -e. Fallback to shell if node missing
+      const jsCode = command.file ?? command.command
+      // Wrap to provide input and allow returning JSON via console.log
+      const wrapped = `
+const input = JSON.parse(process.env.EMTY_INPUT || '{}');
+(async () => {
+  ${jsCode}
+})().then(out => { if(out && typeof out==='object') console.log(JSON.stringify(out)); }).catch(e => { console.error(e && e.message || String(e)); process.exit(1); });
+`
+      cmdName = 'node'
+      args = ['-e', wrapped]
+    }
+    else if (command.type === 'node') {
+      const target = command.file ?? command.command
+      // If target looks like JS code (contains ; or \n or return), use -e, else treat as file path
+      const looksLikeFile = target.trim().endsWith('.js') || target.trim().endsWith('.mjs') || (!target.includes('\n') && !target.includes(';') && !target.includes('return') && target.split(' ').length === 1)
+      if (looksLikeFile && !target.includes('\n')) {
+        cmdName = 'node'
+        args = [target]
+      }
+      else {
+        cmdName = 'node'
+        args = ['-e', target]
+      }
+    }
+    else {
+      shell = await resolveShell()
+      cmdName = shell
+      args = createShellArgs(shell as ShellBinary, command.command)
+    }
+
+    const cmd = Command.create(cmdName as unknown as string, args, {
+      ...(effectiveCwd != null ? { cwd: effectiveCwd } : {}),
       env,
     })
 
@@ -167,26 +231,37 @@ async function runSingleHookCommand(
       ),
     ])
 
+    // Cleanup temp file
+    if (inputFilePath) {
+      try {
+        const { remove } = await import('@tauri-apps/plugin-fs')
+        await remove(inputFilePath).catch(() => {})
+      }
+      catch { /* ignore */ }
+    }
+
     const exitCode = result.code
     const stdout = result.stdout.trim()
+    const stderr = result.stderr.trim()
 
     // Try to parse JSON from stdout
     let output: HookOutput | null = null
-    if (stdout) {
+    const combined = stdout || stderr
+    if (combined) {
       try {
         // Find JSON in stdout (may have non-JSON lines before/after)
-        const jsonStart = stdout.indexOf('{')
-        const jsonEnd = stdout.lastIndexOf('}')
+        const jsonStart = combined.indexOf('{')
+        const jsonEnd = combined.lastIndexOf('}')
         if (jsonStart !== -1 && jsonEnd > jsonStart) {
-          output = JSON.parse(stdout.slice(jsonStart, jsonEnd + 1)) as HookOutput
+          output = JSON.parse(combined.slice(jsonStart, jsonEnd + 1)) as HookOutput
         }
         else {
-          output = { systemMessage: stdout }
+          output = { systemMessage: combined }
         }
       }
       catch {
         // Non-JSON output is treated as a system message
-        output = { systemMessage: stdout }
+        output = { systemMessage: combined }
       }
     }
 
@@ -209,19 +284,21 @@ export interface RunHooksOptions {
   input: HookInput
   workspacePath: string | null
   /** Hook entries to run (already resolved by config). */
-  entries: Array<{ command: HookCommand }>
+  entries: Array<{ command: HookCommand; priority?: number; runMode?: string }>
   /** Max cumulative time (ms) for all hooks in this event. No limit if omitted. */
   eventTimeoutMs?: number
+  /** Custom events registry for blockable check */
+  customEvents?: Record<string, { blockable?: boolean }>
 }
 
 /**
  * Run all hook commands for a lifecycle event.
  * Returns an aggregated decision: first deny wins, all systemMessages/additionalContexts collected.
- * Fail-open: errors are swallowed and treated as allow.
+ * Fail-open: errors are swallowed and treated as allow unless continueOnError is false.
  */
 export async function runHooksForEntries(options: RunHooksOptions): Promise<HookDecision> {
-  const { event, input, workspacePath, entries, eventTimeoutMs } = options
-  const isBlockable = BLOCKABLE_EVENTS.has(event)
+  const { event, input, workspacePath, entries, eventTimeoutMs, customEvents } = options
+  const isBlockable = BLOCKABLE_EVENTS.has(event) || isBlockableEvent(event, customEvents)
   const eventStart = Date.now()
 
   const decision: HookDecision = {
@@ -230,8 +307,45 @@ export async function runHooksForEntries(options: RunHooksOptions): Promise<Hook
     additionalContexts: [],
   }
 
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i]!
+  const flatEntries = entries
+
+  // Support per-entry runMode — for now we flatten to sequential; parallel entries are still executed sequentially
+  // Future: if any entry has runMode parallel, we could Promise.all them
+  const hasParallel = flatEntries.some(e => (e as unknown as { runMode?: string }).runMode === 'parallel')
+  if (hasParallel) {
+    // Execute parallel groups concurrently (simple: run all in parallel, then aggregate)
+    const promises = flatEntries.map(e => runSingleHookCommand(e.command, input, workspacePath))
+    const results = await Promise.all(promises)
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]!
+      if (result.error)
+        continue
+      if (result.output) {
+        if (result.output.systemMessage)
+          decision.systemMessages.push(result.output.systemMessage)
+        if (result.output.additionalContext)
+          decision.additionalContexts.push(result.output.additionalContext)
+        if (result.output.toolInputPatch) {
+          decision.toolInputPatch = { ...(decision.toolInputPatch ?? {}), ...result.output.toolInputPatch }
+        }
+        if (result.output.envPatch) {
+          decision.envPatch = { ...(decision.envPatch ?? {}), ...result.output.envPatch }
+        }
+        if (isBlockable && result.output.permissionDecision === 'deny') {
+          decision.allowed = false
+          decision.reason = result.output.permissionDecisionReason ?? 'Blocked by hook'
+        }
+      }
+      if (isBlockable && result.exitCode === 2) {
+        decision.allowed = false
+        decision.reason = results[i]!.output?.permissionDecisionReason ?? 'Hook exited with code 2'
+      }
+    }
+    return decision
+  }
+
+  for (let i = 0; i < flatEntries.length; i++) {
+    const entry = flatEntries[i]!
     if (eventTimeoutMs && Date.now() - eventStart >= eventTimeoutMs) {
       break
     }
@@ -248,6 +362,13 @@ export async function runHooksForEntries(options: RunHooksOptions): Promise<Hook
 
       if (result.output.additionalContext)
         decision.additionalContexts.push(result.output.additionalContext)
+
+      if (result.output.toolInputPatch) {
+        decision.toolInputPatch = { ...(decision.toolInputPatch ?? {}), ...result.output.toolInputPatch }
+      }
+      if (result.output.envPatch) {
+        decision.envPatch = { ...(decision.envPatch ?? {}), ...result.output.envPatch }
+      }
 
       if (isBlockable && result.output.permissionDecision === 'deny') {
         decision.allowed = false

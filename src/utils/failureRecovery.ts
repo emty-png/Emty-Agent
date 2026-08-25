@@ -100,6 +100,41 @@ export function classifyFailure(error: unknown): FailureDescriptor {
         severity: 'warning',
       }
     }
+    if (status != null && status >= 500) {
+      return {
+        category: 'stream_error',
+        summary: message,
+        recoveryHint: `Provider returned a server error (HTTP ${status}). This is often caused by invalid params (e.g. thinking budget >= max_tokens) or a transient outage — check thinking effort / max tokens and retry. Details: ${message.slice(0, 400)}`,
+        severity: 'error',
+      }
+    }
+    // Also surface 413 payload too large as actionable
+    if (status === 413) {
+      return {
+        category: 'stream_error',
+        summary: message,
+        recoveryHint: 'Request too large (HTTP 413). The conversation may have grown too big — compaction should trigger automatically; try manual compaction and retry.',
+        severity: 'warning',
+      }
+    }
+  }
+
+  // Fallback for raw 500/400 strings that bypass typed APICallError (e.g. from providerMetadata finishReason error)
+  if (lowered.includes('finishreason=error') || lowered.includes('status=500') || lowered.includes('http 500') || lowered.includes('server error')) {
+    return {
+      category: 'stream_error',
+      summary: message,
+      recoveryHint: 'Provider server error detected. Retry in a moment. If it persists after thinking steps, lower the thinking effort (so budget < max tokens) or increase max output tokens.',
+      severity: 'error',
+    }
+  }
+  if (lowered.includes('finishreason=length') || lowered.includes('output limit was reached')) {
+    return {
+      category: 'stream_error',
+      summary: message,
+      recoveryHint: 'Output limit reached (finishReason=length). The model stopped early. Lower thinking effort or raise max tokens, or compact the context and retry.',
+      severity: 'warning',
+    }
   }
 
   if (lowered.includes('failed to initialise model') || lowered.includes('provider')) {

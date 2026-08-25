@@ -216,29 +216,48 @@ export function createSendMessage(
       return
     }
 
-    // ── Preflight compaction ──────────────────────────────────────────────
+    // ── PreCompact hook (blockable) ─────────────────────────────────────
     if (shouldCompactSession(tab, settings.agent.sessionCompaction?.thresholdPercent ?? 90)) {
-      try {
-        setStatus(tab, { type: 'compacting' })
-        await compactConversationSession({
-          tab,
-          settings: settings as unknown as SettingsSnapshot,
-          source: 'auto',
-          onPersist: async payload => {
-            if (tab.conversationId) {
-              const before = tab.messages.length
-              if (payload.deletedMessageIds.length)
-                await dbDeleteMessages(payload.deletedMessageIds).catch(() => {})
-              await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
-              await dbUpdateConversationMsgCount(tab.conversationId, before - payload.deletedMessageIds.length + payload.insertedMessages.length).catch(() => {})
-            }
-          },
-        })
-        setStatus(tab, STATUS_INITIALIZING)
+      const preCompactDecision = await runHooks('PreCompact', {
+        event: 'PreCompact',
+        tabId,
+        workspacePath: effectiveProjectPath,
+        projectName: projectNameFromPath(effectiveProjectPath),
+        conversationId: tab.conversationId ?? '',
+      })
+      if (!preCompactDecision.allowed) {
+        console.warn('[sendMessage] PreCompact blocked compaction:', preCompactDecision.reason)
       }
-      catch (err) {
-        console.error('[sendMessage] Preflight compaction failed:', err)
-        setStatus(tab, STATUS_INITIALIZING)
+      else {
+        try {
+          setStatus(tab, { type: 'compacting' })
+          await compactConversationSession({
+            tab,
+            settings: settings as unknown as SettingsSnapshot,
+            source: 'auto',
+            onPersist: async payload => {
+              if (tab.conversationId) {
+                const before = tab.messages.length
+                if (payload.deletedMessageIds.length)
+                  await dbDeleteMessages(payload.deletedMessageIds).catch(() => {})
+                await persistCompactionMessages({ conversationId: tab.conversationId, insertedMessages: payload.insertedMessages })
+                await dbUpdateConversationMsgCount(tab.conversationId, before - payload.deletedMessageIds.length + payload.insertedMessages.length).catch(() => {})
+              }
+            },
+          })
+          fireHooks('PostCompact', {
+            event: 'PostCompact',
+            tabId,
+            workspacePath: effectiveProjectPath,
+            projectName: projectNameFromPath(effectiveProjectPath),
+            conversationId: tab.conversationId ?? '',
+          })
+          setStatus(tab, STATUS_INITIALIZING)
+        }
+        catch (err) {
+          console.error('[sendMessage] Preflight compaction failed:', err)
+          setStatus(tab, STATUS_INITIALIZING)
+        }
       }
     }
 
@@ -409,10 +428,44 @@ export function createSendMessage(
 
     await consumePendingRequestMessages()
 
+    // ── BeforePromptBuild hook (blockable, can mutate prompt) ─────────
+    let mutableMentionContext = mentionContext
+    let mutableText = text
+    {
+      const beforePromptDecision = await runHooks('BeforePromptBuild', {
+        event: 'BeforePromptBuild',
+        tabId,
+        workspacePath: effectiveProjectPath,
+        projectName: projectNameFromPath(effectiveProjectPath),
+        prompt: text,
+        mode,
+        conversationId: tab.conversationId ?? '',
+        systemPrompt: '',
+      })
+      if (!beforePromptDecision.allowed) {
+        tab.messages.push({
+          id: makeId(),
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          error: `Blocked by hook: ${beforePromptDecision.reason ?? 'BeforePromptBuild denied'}`,
+        })
+        setStatus(tab, STATUS_IDLE)
+        return
+      }
+      if (beforePromptDecision.toolInputPatch) {
+        const patch = beforePromptDecision.toolInputPatch as Record<string, unknown>
+        if (typeof patch.prompt === 'string')
+          mutableText = patch.prompt
+        if (typeof patch.mentionContext === 'string')
+          mutableMentionContext = patch.mentionContext
+      }
+    }
+
     // ── Build run context (model, system prompt, api messages, cache) ─────
     let runCtx: Awaited<ReturnType<typeof buildRunContext>>
     try {
-      runCtx = await buildRunContext({ tab, settings: settings as import('@/stores/chat/agent/runContext').SettingsForContext, requestText: text, mentionContext, modelOverride: modelOverride ?? null, ...(osInfo ? { osInfo: osInfo as { shell?: 'sh' | 'powershell' } } : {}) })
+      runCtx = await buildRunContext({ tab, settings: settings as import('@/stores/chat/agent/runContext').SettingsForContext, requestText: mutableText, mentionContext: mutableMentionContext, modelOverride: modelOverride ?? null, ...(osInfo ? { osInfo: osInfo as { shell?: 'sh' | 'powershell' } } : {}) })
     }
     catch (e) {
       const message = e instanceof Error ? e.message : String(e)
@@ -446,6 +499,17 @@ export function createSendMessage(
     }
 
     const { model, activeModel: resolvedModel, systemPrompt, apiMessages, maxOutputTokens, temperature, topP, topK, frequencyPenalty, presencePenalty, seed, stopSequences, providerOptions, replayId } = runCtx as typeof runCtx & { temperature?: number; topP?: number; topK?: number; frequencyPenalty?: number; presencePenalty?: number; seed?: number; stopSequences?: string[] }
+    // ── AfterPromptBuild hook (fire-and-forget, annotation) ───────────────
+    fireHooks('AfterPromptBuild', {
+      event: 'AfterPromptBuild',
+      tabId,
+      workspacePath: effectiveProjectPath,
+      projectName: projectNameFromPath(effectiveProjectPath),
+      prompt: mutableText,
+      mode,
+      conversationId: tab.conversationId ?? '',
+      systemPrompt: typeof systemPrompt === 'string' ? systemPrompt : JSON.stringify(systemPrompt),
+    })
     const streamStartedAt = Date.now()
     const liveMsg = tab.messages.find(m => m.id === assistantId)!
     let replayFinished = false
@@ -556,6 +620,17 @@ export function createSendMessage(
       tabs.value.push(subTab)
       activeId.value = subTabId
 
+      // ── SubagentStart hook (fire-and-forget) ───────────────────────────
+      fireHooks('SubagentStart', {
+        event: 'SubagentStart',
+        tabId,
+        workspacePath: effectiveProjectPath,
+        projectName: projectNameFromPath(effectiveProjectPath),
+        subagentId: subTabId,
+        personality,
+        mission,
+      })
+
       // Retrieve the reactive Proxy — the raw `subTab` reference bypasses Vue reactivity,
       // so all streaming mutations would be invisible to the UI.
       const reactiveSubTab = tabs.value[tabs.value.length - 1]!
@@ -591,6 +666,25 @@ export function createSendMessage(
         createBrowserTools,
         requestToolPermission,
         onAbort: id => { abortControllers.delete(id) },
+      })
+      completionPromise.then(() => {
+        fireHooks('SubagentEnd', {
+          event: 'SubagentEnd',
+          tabId,
+          workspacePath: effectiveProjectPath,
+          projectName: projectNameFromPath(effectiveProjectPath),
+          subagentId: subTabId,
+          status: 'completed',
+        })
+      }).catch(() => {
+        fireHooks('SubagentEnd', {
+          event: 'SubagentEnd',
+          tabId,
+          workspacePath: effectiveProjectPath,
+          projectName: projectNameFromPath(effectiveProjectPath),
+          subagentId: subTabId,
+          status: 'error',
+        })
       })
 
       return { tabId: subTabId, completionPromise }
@@ -1011,6 +1105,8 @@ export function createSendMessage(
     }
 
     let hasRetried413 = false
+    let hasRetriedLength = false
+    let hasRetried500 = false
     let currentModel = model
     let currentResolvedModel = resolvedModel
     let currentSystemPrompt = systemPrompt
@@ -1057,8 +1153,12 @@ export function createSendMessage(
       catch (error) {
         const err = error instanceof Error ? error : new Error(String(error))
 
-        // ── Overflow compaction with auto-retry once ────────────────────
-        if (APICallError.isInstance(err) && err.statusCode === 413 && !hasRetried413) {
+        // ── Overflow compaction with auto-retry once (413 or finishReason=length) ──
+        const is413 = APICallError.isInstance(err) && err.statusCode === 413
+        const isLength = !hasRetriedLength && (err.message.includes('finishReason=length') || err.message.includes('output limit was reached'))
+        if ((is413 && !hasRetried413) || (isLength && !hasRetried413)) {
+          // Both cases benefit from compaction — length means max tokens hit, often due to large context
+          const reason = is413 ? '413' : 'length'
           try {
             setStatus(tab, { type: 'compacting' })
             await compactConversationSession({
@@ -1075,7 +1175,7 @@ export function createSendMessage(
                 }
               },
             })
-            console.warn('[compaction] 413 overflow compacted, auto-retrying once', { tabId })
+            console.warn(`[compaction] ${reason} overflow compacted, auto-retrying once`, { tabId })
             // Rebuild run context from compacted history for retry
             try {
               const refreshed = await buildRunContext({ tab, settings: settings as import('@/stores/chat/agent/runContext').SettingsForContext, requestText: text, mentionContext, modelOverride: modelOverride ?? null, ...(osInfo ? { osInfo: osInfo as { shell?: 'sh' | 'powershell' } } : {}) })
@@ -1096,15 +1196,51 @@ export function createSendMessage(
               currentStopSequences = anyRef.stopSequences as typeof currentStopSequences
             }
             catch (rebuildErr) {
-              console.error('[sendMessage] 413 retry rebuild failed', rebuildErr)
+              console.error(`[sendMessage] ${reason} retry rebuild failed`, rebuildErr)
             }
-            hasRetried413 = true
+            if (is413)
+              hasRetried413 = true
+            else hasRetriedLength = true
             setStatus(tab, STATUS_STREAMING)
             continue
           }
           catch (cErr) {
-            console.error('[sendMessage] Overflow compaction failed:', cErr)
+            console.error(`[sendMessage] ${reason} compaction failed:`, cErr)
           }
+        }
+
+        // ── Transient 500 / finishReason=error retry once (often invalid thinking params) ──
+        const is500 = APICallError.isInstance(err) && err.statusCode != null && err.statusCode >= 500
+        const isFinishError = err.message.includes('finishReason=error')
+        if (!hasRetried500 && (is500 || isFinishError)) {
+          // Retry once after a brief backoff; also rebuild context with potentially fixed providerOptions (e.g. thinking guard)
+          try {
+            console.warn('[sendMessage] transient 500/finishReason=error — retrying once after 800ms', { tabId, message: err.message.slice(0, 500) })
+            await new Promise(r => setTimeout(r, 800))
+            // Rebuild to pick up any updated thinking/maxTokens guards for retry
+            try {
+              const refreshed = await buildRunContext({ tab, settings: settings as import('@/stores/chat/agent/runContext').SettingsForContext, requestText: text, mentionContext, modelOverride: modelOverride ?? null, ...(osInfo ? { osInfo: osInfo as { shell?: 'sh' | 'powershell' } } : {}) })
+              currentModel = refreshed.model
+              currentResolvedModel = refreshed.activeModel
+              currentSystemPrompt = refreshed.systemPrompt
+              currentApiMessages = refreshed.apiMessages
+              currentMaxOutputTokens = refreshed.maxOutputTokens
+              currentProviderOptions = refreshed.providerOptions as typeof currentProviderOptions
+              const anyRef = refreshed as unknown as Record<string, unknown>
+              currentTemperature = anyRef.temperature as typeof currentTemperature
+              currentTopP = anyRef.topP as typeof currentTopP
+              currentTopK = anyRef.topK as typeof currentTopK
+              currentFrequencyPenalty = anyRef.frequencyPenalty as typeof currentFrequencyPenalty
+              currentPresencePenalty = anyRef.presencePenalty as typeof currentPresencePenalty
+              currentSeed = anyRef.seed as typeof currentSeed
+              currentStopSequences = anyRef.stopSequences as typeof currentStopSequences
+            }
+            catch {}
+            hasRetried500 = true
+            setStatus(tab, STATUS_STREAMING)
+            continue
+          }
+          catch {}
         }
 
         onError(err)

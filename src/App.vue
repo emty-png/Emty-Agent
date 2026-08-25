@@ -2,6 +2,7 @@
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check } from '@tauri-apps/plugin-updater'
 import { onMounted, ref, watch } from 'vue'
+import HooksPopup from '@/components/hooks/HooksPopup.vue'
 import FatalErrorScreen from './components/app/FatalErrorScreen.vue'
 import ZoomIndicator from './components/app/ZoomIndicator.vue'
 import OnboardingFlow from './components/onboarding/OnboardingFlow.vue'
@@ -19,7 +20,6 @@ import { ALL_PROVIDERS, warmIconCache } from './utils/modelsdev'
 import ChatView from './views/Chatview.vue'
 import DeveloperView from './views/DeveloperView.vue'
 import HistoryView from './views/HistoryView.vue'
-import HooksView from './views/HooksView.vue'
 import ProjectView from './views/ProjectView.vue'
 
 type ViewType = 'chat' | 'history' | 'projects' | 'hooks' | 'developer'
@@ -27,6 +27,7 @@ type ViewType = 'chat' | 'history' | 'projects' | 'hooks' | 'developer'
 const { activeView, setView } = useAppView()
 const settingsOpen = ref(false)
 const showProviderBrowser = ref(false)
+const showHooksPopup = ref(false)
 
 function onBrowseProviders() {
   settingsOpen.value = false
@@ -44,6 +45,10 @@ const settings = useSettingsStore()
 useZoom()
 
 function selectView(view: ViewType) {
+  if (view === 'hooks') {
+    showHooksPopup.value = true
+    return
+  }
   setView(view)
 }
 
@@ -117,7 +122,6 @@ function reloadApp() {
           @open-chat="selectView('chat')"
         />
         <ProjectView v-if="activeView === 'projects'" style="flex: 1" />
-        <HooksView v-if="activeView === 'hooks'" style="flex: 1" />
         <DeveloperView v-if="activeView === 'developer'" style="flex: 1" />
       </div>
 
@@ -127,6 +131,7 @@ function reloadApp() {
         @browse-providers="onBrowseProviders"
       />
       <ProviderBrowser v-model="showProviderBrowser" />
+      <HooksPopup v-if="showHooksPopup" @close="showHooksPopup = false" />
     </template>
   </div>
 </template>

@@ -161,13 +161,25 @@ export function buildProviderOptions(
     return { google: { thinkingConfig: { thinkingBudget: budgetMap[config.thinkingEffort], includeThoughts: true } } }
   }
 
+  // Anthropic fallback — any Anthropic model that advertises thinking but didn't match known patterns
+  if (config.providerId === 'anthropic') {
+    return { anthropic: { thinking: { type: 'enabled', budgetTokens: thinkingBudgetTokens(config.thinkingEffort) } } }
+  }
+
   // OpenAI: o-series and GPT-5 codex reasoning models - also support xhigh/max directly
   const isReasoningModel = /^o[1-9]/.test(id) || id.startsWith('o3') || id.startsWith('o4') || /gpt-5[\d.]*-codex/.test(id) || /thinking|reasoning/i.test(id)
   if (config.providerId === 'openai' && isReasoningModel) {
     return { openai: { reasoningEffort: config.thinkingEffort, reasoningSummary: 'auto' } }
   }
-  // Fallback for any provider that supports thinking - pass through effort
-  return { openai: { reasoningEffort: config.thinkingEffort } } as unknown as Record<string, Record<string, JSONValue>>
+
+  // OpenAI-compatible providers that expose reasoning via the OpenAI SDK (e.g. custom proxies)
+  if (config.providerId === 'openai' || config.providerId === 'compatible') {
+    // Only forward generic reasoningEffort for providers that actually use the OpenAI SDK
+    return { openai: { reasoningEffort: config.thinkingEffort } } as unknown as Record<string, Record<string, JSONValue>>
+  }
+
+  // Unknown provider + thinking flag -> don't send any providerOptions rather than guessing and causing 500s
+  return undefined
 }
 
 export function mergeProviderOptions(
@@ -239,17 +251,32 @@ export interface StreamChatFinishEvent {
 
 class ToolFailureGuard {
   private counts = new Map<string, number>()
+  private consecutive = 0
 
   constructor(private readonly threshold = 3) {}
 
   record(toolName: string): void {
+    this.consecutive += 1
     const next = (this.counts.get(toolName) ?? 0) + 1
     this.counts.set(toolName, next)
-    if (next >= this.threshold) {
+    if (this.consecutive >= this.threshold || next >= this.threshold) {
       throw new Error(
         `Repeated tool call failure detected for "${toolName}". Please provide further instructions.`,
       )
     }
+  }
+
+  recordSuccess(_toolName?: string): void {
+    // Any successful tool call breaks the consecutive failure streak.
+    // Previously this only counted total failures per turn; now it
+    // resets on success so only 3 *continuous* failures trigger.
+    this.consecutive = 0
+    this.counts.clear()
+  }
+
+  reset(): void {
+    this.consecutive = 0
+    this.counts.clear()
   }
 }
 
@@ -386,6 +413,8 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
 
     let fullText = ''
     const failureGuard = new ToolFailureGuard()
+    let capturedFinishReason: string | undefined
+    let capturedStepFinishReason: string | undefined
 
     for await (const part of result.fullStream) {
       if (signal?.aborted)
@@ -405,6 +434,13 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
 
         case 'reasoning-start':
         case 'reasoning-end':
+        case 'text-start':
+        case 'text-end':
+        case 'tool-input-start':
+        case 'tool-input-delta':
+        case 'tool-input-end':
+        case 'start':
+        case 'start-step':
           break
 
         case 'tool-call':
@@ -413,6 +449,7 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
 
         case 'tool-result':
           onToolResult?.({ id: part.toolCallId, name: part.toolName, ok: true, result: (part.output ?? {}) as Record<string, unknown> })
+          failureGuard.recordSuccess(part.toolName)
           break
 
         case 'tool-error': {
@@ -422,12 +459,66 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
           break
         }
 
+        case 'finish-step': {
+          // step-level finish reason — helps diagnose per-step 'length' or 'error'
+          const fr = (part as { finishReason?: string }).finishReason
+          if (fr)
+            capturedStepFinishReason = fr
+          break
+        }
+
+        case 'finish': {
+          const fr = (part as { finishReason?: string }).finishReason
+          if (fr)
+            capturedFinishReason = fr
+          break
+        }
+
+        case 'abort':
+          console.warn('[streamChat] abort part received:', (part as { reason?: string }).reason)
+          return
+
         case 'error':
           throw new Error(extractErrorMessage(part.error))
       }
     }
 
+    // Also await the result-level promises — provider may surface finishReason there even if no part did
+    let finalFinishReason: string | undefined = capturedFinishReason ?? capturedStepFinishReason
+    try {
+      const fr = await result.finishReason
+      if (fr)
+        finalFinishReason = fr
+    }
+    catch {
+      // ignore — finishReason promise may reject alongside usage
+    }
+
     const [usage, providerMetadata] = await Promise.all([result.usage, result.providerMetadata])
+
+    // ── Surface truncated / error finish reasons instead of silently succeeding ──
+    // This fixes "randomly stops after thinking or tool with no error" where the provider
+    // actually returned finishReason='length' (max tokens hit) or 'error' but the previous
+    // code treated the stream as successful.
+    if (finalFinishReason === 'error') {
+      throw new Error(`Generation finished with error (finishReason=error). Provider may have returned 500 or invalid params. Usage: ${JSON.stringify(usage)}. ProviderMetadata: ${JSON.stringify(providerMetadata ?? {})}`)
+    }
+    if (finalFinishReason === 'length') {
+      // Keep the accumulated text but also surface a recoverable hint so the UI warns.
+      // For thinking models, 'length' almost always means thinking budget + output overflow.
+      const hint = `Generation stopped because the output limit was reached (finishReason=length). Try lowering the thinking effort or increasing max tokens. Partial output kept (${fullText.length} chars).`
+      console.warn('[streamChat] finishReason=length —', hint, { usage, providerMetadata })
+      // If we produced almost no text (e.g. stopped during thinking), treat as hard error to enter onError path
+      if (fullText.trim().length === 0) {
+        throw new Error(hint)
+      }
+      // For partial text, annotate the output so the user sees the truncation reason
+      fullText += `\n\n> ⚠️ ${hint}`
+    }
+    if (finalFinishReason === 'content-filter') {
+      throw new Error('Generation was blocked by content filter (finishReason=content-filter). Try rephrasing the request.')
+    }
+
     // Await onFinish so callers' turn-finalization (e.g. design version snapshot)
     // completes before post-stream cleanup (e.g. discardPending) can run.
     await onFinish?.({ fullText, usage, ...(providerMetadata ? { providerMetadata } : {}) })

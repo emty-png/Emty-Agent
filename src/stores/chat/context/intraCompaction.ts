@@ -331,12 +331,12 @@ export function sanitizeModelMessages(
       const prunedTokens = estimateToolResultTokens(prunedText)
       reclaimed += Math.max(0, origTokens - prunedTokens)
       didCompact = true
-      // wrap as text output as expected by AI SDK
+      // wrap as text output as expected by AI SDK — do NOT add extra top-level fields
+      // (previous __compacted flag leaked into the wire payload as unknown property and
+      // caused provider validation 500s for strict schemas)
       return {
         ...part,
         output: { type: 'text', value: prunedText } as unknown,
-        // mark metadata if type allows
-        ...(typeof part === 'object' && part !== null ? { __compacted: true } : {}),
       }
     })
 

@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { getVersion } from '@tauri-apps/api/app'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check } from '@tauri-apps/plugin-updater'
 import { RefreshCw, Trash2, Upload, Volume2, VolumeX } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
@@ -110,6 +111,17 @@ function resetErrorSound() {
   sound.value.errorCustomName = null
   errorSoundError.value = ''
 }
+
+const appVersion = ref('')
+
+onMounted(async () => {
+  try {
+    appVersion.value = await getVersion()
+  }
+  catch {
+    // ignore — not in Tauri env or unavailable
+  }
+})
 
 const isCheckingUpdate = ref(false)
 const updateStatus = ref('')
@@ -316,6 +328,7 @@ async function checkForUpdate() {
         <h3 class="settings-card-title">
           Updates
         </h3>
+        <span v-if="appVersion" class="settings-card-version">v{{ appVersion }}</span>
       </div>
       <div class="settings-list">
         <div class="settings-item">
@@ -404,6 +417,10 @@ async function checkForUpdate() {
 }
 
 .settings-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 16px 20px 12px;
   border-bottom: 1px solid var(--color-border-subtle);
 }
@@ -414,6 +431,14 @@ async function checkForUpdate() {
   font-weight: 600;
   color: var(--color-text-secondary);
   letter-spacing: 0.01em;
+}
+
+.settings-card-version {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
 }
 
 /* =========================================

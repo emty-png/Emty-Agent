@@ -186,8 +186,20 @@ export async function buildRunContext(opts: BuildRunContextOpts): Promise<AgentR
       customReasoningBudget = per
     else customReasoningBudget = settings.providerReasoning.global.customBudgetTokens
   }
-  if (customReasoningBudget !== undefined && activeModel.supportsThinking)
-    maxOutputTokens = customReasoningBudget
+  if (customReasoningBudget !== undefined && activeModel.supportsThinking) {
+    // Custom budget must not become maxOutputTokens directly — max must be budget + output slack
+    // otherwise Anthropic returns invalid_param (budget >= max_tokens) as 400/500 and stream aborts after thinking.
+    maxOutputTokens = Math.max(maxOutputTokens, customReasoningBudget + 8192)
+  }
+
+  // ── Guard: if maxOutputTokens is still <= thinking budget, inflate it. Catches legacy resolveMaxTokens values.
+  if (activeModel.supportsThinking && activeModel.thinkingEffort !== 'off') {
+    const budgetMap: Record<string, number> = { off: 0, low: 2048, medium: 16000, high: 32000, xhigh: 48000, max: 100000 }
+    const budget = budgetMap[activeModel.thinkingEffort] ?? 0
+    if (budget > 0 && maxOutputTokens <= budget) {
+      maxOutputTokens = budget + 8192
+    }
+  }
 
   // context limit override (effective for estimation/compaction, not generation)
   let effectiveContextLimit: number | undefined

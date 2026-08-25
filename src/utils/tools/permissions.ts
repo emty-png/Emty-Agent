@@ -1,3 +1,4 @@
+/* eslint-disable no-param-reassign */
 import type { ToolSet } from '@/utils/ai'
 import type { HookInput } from '@/utils/hooks'
 import { tool } from 'ai'
@@ -57,9 +58,17 @@ function formatCommand(args: string[]): string {
 
 // ── Hook data extraction helpers ────────────────────────────────────────────
 
-function extractFilePaths(toolName: string, args: Record<string, unknown>): string[] {
+export function extractFilePaths(toolName: string, args: Record<string, unknown>): string[] {
   if (toolName === 'write_file')
-    return [typeof args.file_path === 'string' ? args.file_path : '']
+    return [typeof args.file_path === 'string' ? args.file_path : ''].filter(Boolean)
+  if (toolName === 'write_files') {
+    return [...new Set(
+      (Array.isArray(args.files) ? args.files : [])
+        .filter((f): f is Record<string, unknown> => typeof f === 'object' && f != null)
+        .map(f => typeof f.path === 'string' ? f.path : '')
+        .filter(Boolean),
+    )]
+  }
   if (toolName === 'edit_files') {
     return [...new Set(
       (Array.isArray(args.edits) ? args.edits : [])
@@ -68,10 +77,25 @@ function extractFilePaths(toolName: string, args: Record<string, unknown>): stri
         .filter(Boolean),
     )]
   }
+  if (toolName === 'read_files' || toolName === 'read_design') {
+    const paths = Array.isArray(args.file_paths) ? args.file_paths : []
+    return [...new Set(paths.filter((p): p is string => typeof p === 'string' && p.length > 0))]
+  }
+  if (toolName === 'glob' || toolName === 'grep' || toolName === 'list_directory') {
+    const p = typeof args.path === 'string' ? args.path : typeof args.file_path === 'string' ? args.file_path : ''
+    return p ? [p] : []
+  }
   return []
 }
 
-function extractShellCommand(toolName: string, args: Record<string, unknown>): { command: string; isBackground: boolean } {
+export function extractMcpServer(toolName: string): string | undefined {
+  if (!toolName.startsWith('mcp__'))
+    return undefined
+  const parts = toolName.split('__')
+  return parts[1] ?? undefined
+}
+
+export function extractShellCommand(toolName: string, args: Record<string, unknown>): { command: string; isBackground: boolean } {
   if (toolName === 'run_command') {
     return {
       command: typeof args.command === 'string' ? args.command : '',
@@ -94,7 +118,7 @@ function extractShellCommand(toolName: string, args: Record<string, unknown>): {
   return { command: '', isBackground: false }
 }
 
-function extractAddedRemoved(result: unknown): { added: number | null; removed: number | null } {
+export function extractAddedRemoved(result: unknown): { added: number | null; removed: number | null } {
   if (!result || typeof result !== 'object')
     return { added: null, removed: null }
   const data = result as Record<string, unknown>
@@ -104,7 +128,7 @@ function extractAddedRemoved(result: unknown): { added: number | null; removed: 
   }
 }
 
-function extractExitCode(result: unknown): number | null {
+export function extractExitCode(result: unknown): number | null {
   if (!result || typeof result !== 'object')
     return null
   const data = result as Record<string, unknown>
@@ -562,6 +586,49 @@ export function wrapToolSetWithPermissions(
             const reason = hookDecision.reason ?? 'Blocked by hook'
             throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
           }
+          if (hookDecision.toolInputPatch) {
+            Object.assign(normalizedArgs, hookDecision.toolInputPatch)
+            args = normalizedArgs as typeof args
+          }
+
+          // ── PreMcpUse hook (mcp__*) ────────────────────────────────
+          if (toolName.startsWith('mcp__')) {
+            const mcpDecision = await runHooks('PreMcpUse', {
+              event: 'PreMcpUse',
+              tabId: options.tabId,
+              workspacePath: options.workspacePath,
+              projectName: options.projectName,
+              toolName,
+              toolInput: normalizedArgs,
+              serverName: extractMcpServer(toolName),
+            } satisfies HookInput)
+            if (!mcpDecision.allowed) {
+              const reason = mcpDecision.reason ?? 'Blocked by hook'
+              throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
+            }
+            if (mcpDecision.toolInputPatch) {
+              Object.assign(normalizedArgs, mcpDecision.toolInputPatch)
+              args = normalizedArgs as typeof args
+            }
+          }
+
+          // ── PermissionRequest hook (can auto-allow/deny before modal) ──
+          const permReqDecision = await runHooks('PermissionRequest', {
+            event: 'PermissionRequest',
+            tabId: options.tabId,
+            workspacePath: options.workspacePath,
+            projectName: options.projectName,
+            toolName,
+            toolInput: normalizedArgs,
+          } satisfies HookInput)
+          if (!permReqDecision.allowed) {
+            const reason = permReqDecision.reason ?? 'Blocked by hook'
+            throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
+          }
+          if (permReqDecision.toolInputPatch) {
+            Object.assign(normalizedArgs, permReqDecision.toolInputPatch)
+            args = normalizedArgs as typeof args
+          }
 
           const preview = buildPermissionPreview(toolName, normalizedArgs)
           const decision = await options.requestPermission({
@@ -575,8 +642,8 @@ export function wrapToolSetWithPermissions(
           if (decision === 'deny')
             throw new ToolPermissionDeniedError(toolName)
 
-          // ── PreFileWrite hook (write_file / edit_files) ────────────
-          if (toolName === 'write_file' || toolName === 'edit_files') {
+          // ── PreFileWrite hook (write_file / write_files) ────────────
+          if (toolName === 'write_file' || toolName === 'write_files') {
             for (const filePath of extractFilePaths(toolName, normalizedArgs)) {
               const fileHookDecision = await runHooks('PreFileWrite', {
                 event: 'PreFileWrite',
@@ -588,6 +655,53 @@ export function wrapToolSetWithPermissions(
               if (!fileHookDecision.allowed) {
                 const reason = fileHookDecision.reason ?? 'Blocked by hook'
                 throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
+              }
+              if (fileHookDecision.toolInputPatch) {
+                Object.assign(normalizedArgs, fileHookDecision.toolInputPatch)
+                args = normalizedArgs as typeof args
+              }
+            }
+          }
+
+          // ── PreFileEdit hook (edit_files) ──────────────────────────────
+          if (toolName === 'edit_files') {
+            for (const filePath of extractFilePaths(toolName, normalizedArgs)) {
+              const fileHookDecision = await runHooks('PreFileEdit', {
+                event: 'PreFileEdit',
+                tabId: options.tabId,
+                workspacePath: options.workspacePath,
+                projectName: options.projectName,
+                filePath,
+              } satisfies HookInput)
+              if (!fileHookDecision.allowed) {
+                const reason = fileHookDecision.reason ?? 'Blocked by hook'
+                throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
+              }
+              if (fileHookDecision.toolInputPatch) {
+                Object.assign(normalizedArgs, fileHookDecision.toolInputPatch)
+                args = normalizedArgs as typeof args
+              }
+            }
+          }
+
+          // ── PreFileRead hook (read_files / glob / grep / list_directory) ──
+          if (['read_files', 'read_design', 'glob', 'grep', 'list_directory'].includes(toolName)) {
+            for (const filePath of extractFilePaths(toolName, normalizedArgs)) {
+              const readDecision = await runHooks('PreFileRead', {
+                event: 'PreFileRead',
+                tabId: options.tabId,
+                workspacePath: options.workspacePath,
+                projectName: options.projectName,
+                filePath,
+                toolName,
+              } satisfies HookInput)
+              if (!readDecision.allowed) {
+                const reason = readDecision.reason ?? 'Blocked by hook'
+                throw new ToolPermissionDeniedError(`${toolName} (${reason})`)
+              }
+              if (readDecision.toolInputPatch) {
+                Object.assign(normalizedArgs, readDecision.toolInputPatch)
+                args = normalizedArgs as typeof args
               }
             }
           }
@@ -627,11 +741,27 @@ export function wrapToolSetWithPermissions(
           })
 
           // ── PostFileWrite hook (fire-and-forget) ────────────────────
-          if (toolName === 'write_file' || toolName === 'edit_files') {
+          if (toolName === 'write_file' || toolName === 'write_files') {
             const { added, removed } = extractAddedRemoved(result)
             for (const filePath of extractFilePaths(toolName, normalizedArgs)) {
               fireHooks('PostFileWrite', {
                 event: 'PostFileWrite',
+                tabId: options.tabId,
+                workspacePath: options.workspacePath,
+                projectName: options.projectName,
+                filePath,
+                added,
+                removed,
+              })
+            }
+          }
+
+          // ── PostFileEdit hook (fire-and-forget) ───────────────────────
+          if (toolName === 'edit_files') {
+            const { added, removed } = extractAddedRemoved(result)
+            for (const filePath of extractFilePaths(toolName, normalizedArgs)) {
+              fireHooks('PostFileEdit', {
+                event: 'PostFileEdit',
                 tabId: options.tabId,
                 workspacePath: options.workspacePath,
                 projectName: options.projectName,
@@ -655,6 +785,34 @@ export function wrapToolSetWithPermissions(
                 exitCode: extractExitCode(result),
               })
             }
+          }
+
+          // ── PostFileRead hook (fire-and-forget) ───────────────────────
+          if (['read_files', 'read_design', 'glob', 'grep', 'list_directory'].includes(toolName)) {
+            for (const filePath of extractFilePaths(toolName, normalizedArgs)) {
+              fireHooks('PostFileRead', {
+                event: 'PostFileRead',
+                tabId: options.tabId,
+                workspacePath: options.workspacePath,
+                projectName: options.projectName,
+                filePath,
+                toolName,
+              })
+            }
+          }
+
+          // ── PostMcpUse hook (fire-and-forget) ─────────────────────────
+          if (toolName.startsWith('mcp__')) {
+            fireHooks('PostMcpUse', {
+              event: 'PostMcpUse',
+              tabId: options.tabId,
+              workspacePath: options.workspacePath,
+              projectName: options.projectName,
+              toolName,
+              toolInput: normalizedArgs,
+              toolResult: result,
+              serverName: extractMcpServer(toolName),
+            })
           }
 
           return result
