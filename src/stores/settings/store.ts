@@ -202,7 +202,6 @@ export const useSettingsStore = defineStore(
       defaultModelUid: null,
       subagentModelUid: null,
     })
-    const completedOnboarding = ref(false)
     const toolDisabledIds = ref<{ build: string[]; design: string[] }>({ build: [], design: [] })
 
     // Migrate legacy flat disabledToolIds → per-mode toolDisabledIds.build
@@ -1891,11 +1890,6 @@ export const useSettingsStore = defineStore(
       return agent.value.sessionCompaction.modelUid ?? null
     }
 
-    // ── onboarding ────────────────────────────────────────────────────────
-    function completeOnboarding() {
-      completedOnboarding.value = true
-    }
-
     return {
       openai,
       testOpenAI,
@@ -1950,8 +1944,6 @@ export const useSettingsStore = defineStore(
       sound,
       developerMode,
       agent,
-      completedOnboarding,
-      completeOnboarding,
       providerAppearance,
       setGlobalAppearance,
       setProviderAppearance,
@@ -2058,7 +2050,6 @@ export const useSettingsStore = defineStore(
         'memory',
         'developerMode',
         'agent',
-        'completedOnboarding',
         'toolDisabledIds',
         'toolDescriptionOverrides',
         'promptOverrides',

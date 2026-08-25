@@ -89,6 +89,17 @@ const slash = useSlashCommand(textareaRef, text, projectPath, activeTab)
 const restoreOverlay = useRestoreOverlay()
 
 const settings = useSettingsStore()
+// hide mic button if no STT provider is configured (apiKey missing / custom needs baseUrl)
+const hasSttConfigured = computed(() => {
+  const provider = settings.sttProvider
+  const cfg = settings.stt[provider]
+  if (!cfg)
+    return false
+  // custom needs both apiKey and baseUrl, others need apiKey
+  if (provider === 'custom')
+    return cfg.apiKey.trim().length > 0 && cfg.baseUrl.trim().length > 0
+  return cfg.apiKey.trim().length > 0
+})
 const {
   attachments,
   previewAttachment,
@@ -139,7 +150,7 @@ const dictationContext = computed<DictationContext>(() => {
 })
 
 async function startVoiceRecording() {
-  if (!settings.showSttMic)
+  if (!settings.showSttMic || !hasSttConfigured.value)
     return
   voiceError.value = null
   voiceTranscribing.value = false
@@ -236,7 +247,7 @@ const voiceStarting = ref(false)
 let pendingStop = false
 
 async function onPushToTalkDown(e: KeyboardEvent) {
-  if (!settings.showSttMic)
+  if (!settings.showSttMic || !hasSttConfigured.value)
     return
   if (e.code !== 'Space' || !e.ctrlKey)
     return
@@ -775,7 +786,7 @@ const sendBtnClasses = computed(() => {
         </button>
 
         <button
-          v-if="settings.showSttMic"
+          v-if="settings.showSttMic && hasSttConfigured"
           :class="micBtnClasses"
           aria-label="Voice input"
           :disabled="isStreaming || voiceTranscribing"

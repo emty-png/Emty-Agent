@@ -159,9 +159,7 @@ function addProviderModel(providerId: string) {
     </template>
 
     <template #actions>
-      <button class="icon-danger-btn" aria-label="Remove provider" @click="s.removeProvider(p.id)">
-        <Trash2 :size="14" :stroke-width="2" />
-      </button>
+      <!-- delete moved to footer -->
     </template>
 
     <template #fields>
@@ -292,15 +290,21 @@ function addProviderModel(providerId: string) {
     </template>
 
     <template #footer>
-      <button
-        class="test-btn"
-        :disabled="p.status === 'testing' || !p.baseURL.trim()"
-        @click="s.testProvider(p.id)"
-      >
-        <Loader v-if="p.status === 'testing'" :size="14" class="spin" />
-        <Zap v-else :size="14" :stroke-width="2" />
-        Save Provider
-      </button>
+      <div class="footer-actions">
+        <button class="delete-btn" @click="s.removeProvider(p.id)">
+          <Trash2 :size="14" :stroke-width="2" />
+          Delete
+        </button>
+        <button
+          class="test-btn"
+          :disabled="p.status === 'testing' || !p.baseURL.trim()"
+          @click="s.testProvider(p.id)"
+        >
+          <Loader v-if="p.status === 'testing'" :size="14" class="spin" />
+          <Zap v-else :size="14" :stroke-width="2" />
+          Save Provider
+        </button>
+      </div>
     </template>
   </ProviderCard>
 </template>
@@ -325,7 +329,7 @@ function addProviderModel(providerId: string) {
 
 .add-form-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
 }
 
@@ -517,6 +521,34 @@ function addProviderModel(providerId: string) {
   background: color-mix(in srgb, var(--color-danger-muted) 30%, transparent);
   color: var(--color-danger-text);
   border-color: var(--color-danger-muted);
+}
+
+.footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.delete-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.delete-btn:hover {
+  background: color-mix(in srgb, var(--color-danger-muted) 25%, transparent);
+  color: var(--color-danger-text);
+  border-color: color-mix(in srgb, var(--color-danger) 30%, transparent);
 }
 
 .test-btn {

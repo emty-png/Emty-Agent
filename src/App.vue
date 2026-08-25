@@ -4,8 +4,9 @@ import { check } from '@tauri-apps/plugin-updater'
 import { onMounted, ref, watch } from 'vue'
 import HooksPopup from '@/components/hooks/HooksPopup.vue'
 import FatalErrorScreen from './components/app/FatalErrorScreen.vue'
+import WelcomeAnimation from './components/app/WelcomeAnimation.vue'
 import ZoomIndicator from './components/app/ZoomIndicator.vue'
-import OnboardingFlow from './components/onboarding/OnboardingFlow.vue'
+import OnboardingView from './components/onboarding/OnboardingView.vue'
 import ProviderBrowser from './components/settings/providers/ProviderBrowser.vue'
 import SettingsModal from './components/settings/SettingsModal.vue'
 import SideBar from './components/sidebar/Sidebar.vue'
@@ -13,8 +14,9 @@ import TitleBar from './components/titlebar/Titlebar.vue'
 import { useAppView } from './composables/ui/useAppView'
 import { useZoom } from './composables/ui/useZoom'
 import { getDb } from './db/database'
+import { useOnboardingStore } from './stores/onboarding'
 import { useProjectStore } from './stores/project'
-import { useSettingsStore } from './stores/settings'
+import { useWelcomeStore } from './stores/welcome'
 import { captureFatalError, fatalError } from './utils/errors'
 import { ALL_PROVIDERS, warmIconCache } from './utils/modelsdev'
 import ChatView from './views/Chatview.vue'
@@ -40,7 +42,23 @@ watch(showProviderBrowser, open => {
 })
 
 const project = useProjectStore()
-const settings = useSettingsStore()
+const welcome = useWelcomeStore()
+const onboarding = useOnboardingStore()
+// show welcome synchronously before first paint so app doesn't flash main UI
+welcome.maybeShowOnFirstLaunch()
+if (!welcome.visible) {
+  // Welcome didn't show (existing install) — show onboarding directly if never seen
+  onboarding.maybeShow()
+}
+
+// After welcome hides, show onboarding instantly behind it so there is no gap.
+// Welcome leave is 420ms fade — onboarding is mounted immediately (z9998) under
+// welcome (z9999) and revealed as welcome fades, so no blank flash.
+watch(() => welcome.visible, (isVisible, wasVisible) => {
+  if (wasVisible && !isVisible) {
+    onboarding.trigger()
+  }
+})
 
 useZoom()
 
@@ -92,8 +110,11 @@ function reloadApp() {
   <div style="display: flex; flex-direction: column; height: 100%">
     <ZoomIndicator />
 
+    <WelcomeAnimation />
+    <OnboardingView />
+
     <TitleBar
-      v-if="settings.completedOnboarding && !fatalError"
+      v-if="!fatalError && !welcome.visible && !onboarding.visible"
       title="Emty Agent"
       :active-view="activeView"
       @select-view="selectView"
@@ -102,12 +123,7 @@ function reloadApp() {
 
     <FatalErrorScreen v-if="fatalError" :error="fatalError" @reload="reloadApp" />
 
-    <OnboardingFlow
-      v-else-if="!settings.completedOnboarding"
-      @complete="settings.completeOnboarding()"
-    />
-
-    <template v-else>
+    <template v-else-if="!welcome.visible && !onboarding.visible">
       <div style="display: flex; flex: 1; overflow: hidden">
         <SideBar
           :active-view="activeView"

@@ -27,7 +27,7 @@ export interface CustomTheme {
 }
 
 export const THEMES: ThemeMeta[] = [
-  { id: 'abyss', name: 'OLED Abyss', tagline: 'Pure black · Vibrant cyan', accent: '#00e5ff', bg: '#000000' },
+  { id: 'abyss', name: 'Abyss', tagline: 'Pure black · Vibrant cyan', accent: '#00e5ff', bg: '#000000' },
   { id: 'terracotta', name: 'Terracotta', tagline: 'Cream base · Clay accents', accent: '#c05a3c', bg: '#fdf8f3' },
   { id: 'chocolate', name: 'Chocolate', tagline: 'Rich dark · Golden amber', accent: '#e8a849', bg: '#0e0907' },
   { id: 'frost', name: 'Frost', tagline: 'Midnight navy · Lavender', accent: '#a78bfa', bg: '#0a0e14' },

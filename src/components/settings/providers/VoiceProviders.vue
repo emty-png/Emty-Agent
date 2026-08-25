@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import type { SttProvider, TtsProvider } from '@/stores/settings/voiceTypes'
-import { Loader, Mic, Plus, Volume2, X, Zap } from 'lucide-vue-next'
+import type { SttProvider } from '@/stores/settings/voiceTypes'
+import { Loader, Mic, Plus, X, Zap } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import ProviderCard from './ProviderCard.vue'
 
 const s = useSettingsStore()
-const { sttProvider, stt, ttsProvider, tts, voiceProcessing, voiceDictionary, voiceSnippets, showSttMic } = storeToRefs(s)
+const { sttProvider, stt, voiceProcessing, voiceDictionary, voiceSnippets } = storeToRefs(s)
 
 function addDictionaryEntry() {
   voiceDictionary.value = [...voiceDictionary.value, { wrong: '', correct: '' }]
@@ -107,70 +107,6 @@ const sttProviders: SttDef[] = [
   },
 ]
 
-// ── TTS provider definitions ───────────────────────────────────────────────────
-
-interface TtsDef {
-  id: TtsProvider
-  name: string
-  url: string
-  logoClass: string
-  keyPlaceholder: string
-  hintHtml: string
-  needsBaseUrl?: boolean
-}
-
-const ttsProviders: TtsDef[] = [
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    url: 'api.openai.com',
-    logoClass: 'openai-logo',
-    keyPlaceholder: 'sk-...',
-    hintHtml: 'TTS-1 / TTS-1-hd models with 11 voices. Get a key at <a href="https://platform.openai.com" target="_blank" rel="noopener">platform.openai.com</a>.',
-  },
-  {
-    id: 'elevenlabs',
-    name: 'ElevenLabs',
-    url: 'api.elevenlabs.io',
-    logoClass: 'elevenlabs-logo',
-    keyPlaceholder: '...',
-    hintHtml: 'Premium neural voices with cloning. Get a key at <a href="https://elevenlabs.io" target="_blank" rel="noopener">elevenlabs.io</a>.',
-  },
-  {
-    id: 'deepgram',
-    name: 'Deepgram Aura',
-    url: 'api.deepgram.com',
-    logoClass: 'deepgram-logo',
-    keyPlaceholder: 'dg...',
-    hintHtml: 'Aura-1 TTS model. Get a key at <a href="https://console.deepgram.com/signup" target="_blank" rel="noopener">console.deepgram.com</a>.',
-  },
-  {
-    id: 'google',
-    name: 'Google Cloud',
-    url: 'texttospeech.googleapis.com',
-    logoClass: 'google-logo',
-    keyPlaceholder: 'AIza...',
-    hintHtml: 'Cloud Text-to-Speech with WaveNet voices. Get a key at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">console.cloud.google.com</a>.',
-  },
-  {
-    id: 'azure',
-    name: 'Azure Speech',
-    url: 'cognitiveservices.azure.com',
-    logoClass: 'azure-logo',
-    keyPlaceholder: '...',
-    hintHtml: 'Azure Neural TTS. Get a key at <a href="https://portal.azure.com" target="_blank" rel="noopener">portal.azure.com</a>.',
-  },
-  {
-    id: 'custom',
-    name: 'Custom (OpenAI-compatible)',
-    url: 'custom endpoint',
-    logoClass: 'custom-logo',
-    keyPlaceholder: '...',
-    needsBaseUrl: true,
-    hintHtml: 'Any OpenAI-compatible text-to-speech endpoint.',
-  },
-]
-
 // ── auto-test watchers ─────────────────────────────────────────────────────────
 
 for (const prov of sttProviders) {
@@ -190,36 +126,8 @@ for (const prov of sttProviders) {
   })
 }
 
-for (const prov of ttsProviders) {
-  watch(() => tts.value[prov.id].apiKey, apiKey => {
-    s.resetTtsStatus(prov.id)
-    clearAutoTest(`tts-${prov.id}`)
-    if (apiKey.trim())
-      scheduleAutoTest(`tts-${prov.id}`, () => s.testTtsProvider(prov.id))
-  })
-  watch(() => tts.value[prov.id].baseUrl, baseUrl => {
-    if (prov.needsBaseUrl) {
-      s.resetTtsStatus(prov.id)
-      clearAutoTest(`tts-${prov.id}`)
-      if (baseUrl.trim())
-        scheduleAutoTest(`tts-${prov.id}`, () => s.testTtsProvider(prov.id))
-    }
-  })
-}
-
 function isSttTestDisabled(prov: SttDef): boolean {
   const cfg = stt.value[prov.id]
-  if (cfg.status === 'testing')
-    return true
-  if (prov.needsBaseUrl && !cfg.baseUrl.trim())
-    return true
-  if (!prov.needsBaseUrl && !cfg.apiKey.trim())
-    return true
-  return false
-}
-
-function isTtsTestDisabled(prov: TtsDef): boolean {
-  const cfg = tts.value[prov.id]
   if (cfg.status === 'testing')
     return true
   if (prov.needsBaseUrl && !cfg.baseUrl.trim())
@@ -232,30 +140,6 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
 
 <template>
   <div class="voice-providers">
-    <!-- ── STT Mic visibility ─────────────────────────────────────────────── -->
-    <div class="processing-card">
-      <div class="processing-row">
-        <div class="processing-info">
-          <span class="processing-label">Show microphone button in chat</span>
-          <span class="processing-hint">Display the STT mic icon in the chat input toolbar. Disable to hide it.</span>
-        </div>
-        <button
-          class="custom-toggle"
-          :class="{ 'custom-toggle--on': showSttMic }"
-          :aria-label="showSttMic ? 'Hide STT mic button' : 'Show STT mic button'"
-          @click="showSttMic = !showSttMic"
-        >
-          <span class="custom-toggle-thumb" />
-        </button>
-      </div>
-    </div>
-
-    <!-- ── STT Section ──────────────────────────────────────────────────── -->
-    <div class="section-heading">
-      <Mic :size="16" :stroke-width="1.8" />
-      <span>Speech-to-Text (STT)</span>
-    </div>
-
     <div v-for="prov in sttProviders" :key="prov.id">
       <ProviderCard
         :name="prov.name"
@@ -342,119 +226,6 @@ function isTtsTestDisabled(prov: TtsDef): boolean {
             @click="s.testSttProvider(prov.id)"
           >
             <Loader v-if="stt[prov.id].status === 'testing'" :size="14" class="spin" />
-            <Zap v-else :size="14" :stroke-width="2" />
-            Test Connection
-          </button>
-        </template>
-      </ProviderCard>
-    </div>
-
-    <!-- ── TTS Section ──────────────────────────────────────────────────── -->
-    <div class="section-heading section-heading--gap">
-      <Volume2 :size="16" :stroke-width="1.8" />
-      <span>Text-to-Speech (TTS)</span>
-    </div>
-
-    <div v-for="prov in ttsProviders" :key="prov.id">
-      <ProviderCard
-        :name="prov.name"
-        :url="prov.url"
-        :status="tts[prov.id].status"
-        :status-message="tts[prov.id].statusMessage"
-        :logo-class="prov.logoClass"
-      >
-        <template #logo>
-          <Volume2 :size="18" :stroke-width="1.5" />
-        </template>
-        <template #actions>
-          <button
-            class="custom-toggle"
-            :class="{ 'custom-toggle--on': ttsProvider === prov.id }"
-            :aria-label="ttsProvider === prov.id ? 'Active (click to deactivate)' : 'Inactive (click to activate)'"
-            @click="ttsProvider = prov.id"
-          >
-            <span class="custom-toggle-thumb" />
-          </button>
-        </template>
-        <template #fields>
-          <div class="field-group">
-            <label :for="`tts-${prov.id}-key`" class="field-label">API Key</label>
-            <div class="key-input-row">
-              <input
-                :id="`tts-${prov.id}-key`"
-                v-model="tts[prov.id].apiKey"
-                type="password"
-                :placeholder="prov.keyPlaceholder"
-                spellcheck="false"
-                autocomplete="off"
-                class="field-input"
-              >
-            </div>
-            <span class="field-hint" v-html="prov.hintHtml" />
-          </div>
-
-          <div v-if="prov.needsBaseUrl" class="field-group">
-            <label :for="`tts-${prov.id}-url`" class="field-label">Base URL</label>
-            <div class="key-input-row">
-              <input
-                :id="`tts-${prov.id}-url`"
-                v-model="tts[prov.id].baseUrl"
-                type="text"
-                placeholder="https://api.example.com/v1"
-                spellcheck="false"
-                autocomplete="off"
-                class="field-input"
-              >
-            </div>
-          </div>
-
-          <div class="field-group">
-            <label :for="`tts-${prov.id}-model`" class="field-label">Model</label>
-            <input
-              :id="`tts-${prov.id}-model`"
-              v-model="tts[prov.id].model"
-              type="text"
-              placeholder="tts-1"
-              spellcheck="false"
-              autocomplete="off"
-              class="field-input"
-            >
-          </div>
-
-          <div class="field-group">
-            <label :for="`tts-${prov.id}-voice`" class="field-label">Voice</label>
-            <input
-              :id="`tts-${prov.id}-voice`"
-              v-model="tts[prov.id].voice"
-              type="text"
-              placeholder="alloy"
-              spellcheck="false"
-              autocomplete="off"
-              class="field-input"
-            >
-          </div>
-
-          <div class="field-group">
-            <label :for="`tts-${prov.id}-speed`" class="field-label">Speed</label>
-            <input
-              :id="`tts-${prov.id}-speed`"
-              v-model.number="tts[prov.id].speed"
-              type="range"
-              min="0.25"
-              max="4"
-              step="0.25"
-              class="speed-slider"
-            >
-            <span class="speed-value">{{ tts[prov.id].speed }}x</span>
-          </div>
-        </template>
-        <template #footer>
-          <button
-            class="test-btn"
-            :disabled="isTtsTestDisabled(prov)"
-            @click="s.testTtsProvider(prov.id)"
-          >
-            <Loader v-if="tts[prov.id].status === 'testing'" :size="14" class="spin" />
             <Zap v-else :size="14" :stroke-width="2" />
             Test Connection
           </button>

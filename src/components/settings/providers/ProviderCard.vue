@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, ChevronDown, ChevronUp, Loader, X } from 'lucide-vue-next'
+import { ChevronDown, ChevronUp, Loader } from 'lucide-vue-next'
 import { ref } from 'vue'
 
 defineProps<{
@@ -23,20 +23,24 @@ const isExpanded = ref(false)
         <div class="provider-text">
           <span class="provider-name">{{ name }}</span>
           <!-- Only show the URL if expanded to match the cleaner mockup -->
-          <span v-if="isExpanded" class="provider-url">{{ url }}</span>
+          <span v-if="isExpanded" class="provider-url" :title="url">{{ url }}</span>
         </div>
       </div>
 
       <div class="header-right">
         <slot name="actions" />
 
-        <div v-if="status !== 'idle'" class="status-icon" :class="`status-icon--${status}`" :title="statusMessage">
-          <Loader v-if="status === 'testing'" :size="16" class="spin" />
-          <Check v-else-if="status === 'ok'" :size="16" />
-          <X v-else :size="16" />
-        </div>
-
-        <button class="configure-btn" @click="isExpanded = !isExpanded">
+        <button
+          class="configure-btn"
+          :class="{
+            'configure-btn--ok': status === 'ok',
+            'configure-btn--error': status === 'error',
+            'configure-btn--testing': status === 'testing',
+          }"
+          :title="statusMessage"
+          @click="isExpanded = !isExpanded"
+        >
+          <Loader v-if="status === 'testing'" :size="14" class="spin" />
           Configure
           <ChevronUp v-if="isExpanded" :size="14" />
           <ChevronDown v-else :size="14" />
@@ -76,13 +80,15 @@ const isExpanded = ref(false)
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  min-height: 44px; /* Reaches exactly 70px total card height in collapsed state (12px top/bottom padding + 44px header + 2px borders) */
+  min-height: 44px;
 }
 
 .provider-info {
   display: flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
+  flex: 1;
 }
 
 .provider-logo {
@@ -101,6 +107,8 @@ const isExpanded = ref(false)
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .provider-name {
@@ -116,6 +124,9 @@ const isExpanded = ref(false)
   font-size: 12px;
   color: var(--color-text-tertiary);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-right {
@@ -166,6 +177,31 @@ const isExpanded = ref(false)
 .configure-btn:hover {
   background: var(--color-state-hover);
   border-color: var(--color-border-strong);
+}
+
+.configure-btn--ok {
+  background: color-mix(in srgb, var(--color-success) 14%, var(--color-bg-elevated));
+  border-color: color-mix(in srgb, var(--color-success) 40%, transparent);
+  color: var(--color-success-text);
+}
+.configure-btn--ok:hover {
+  background: color-mix(in srgb, var(--color-success) 22%, var(--color-bg-elevated));
+  border-color: var(--color-success);
+}
+
+.configure-btn--error {
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-bg-elevated));
+  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  color: var(--color-danger-text);
+}
+.configure-btn--error:hover {
+  background: color-mix(in srgb, var(--color-danger) 18%, var(--color-bg-elevated));
+  border-color: var(--color-danger);
+}
+
+.configure-btn--testing {
+  border-color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .provider-content-wrapper {
