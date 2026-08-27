@@ -17,7 +17,7 @@ import {
   dbUpdateConversationWorkspace,
   dbUpdateMessage,
 } from '@/db/database'
-import { emitStatusChange } from '@/stores/chat/agent/lifecycle'
+import { setAgentStatusForTab } from '@/stores/chat/agent/lifecycle'
 import {
   STATUS_IDLE,
   STATUS_INITIALIZING,
@@ -45,12 +45,9 @@ import('@/stores/chat/tools/profiles/plan').then(m => toolRegistry.register('pla
 import('@/stores/chat/tools/profiles/chat').then(m => toolRegistry.register('chat', m.chatProfile))
 import('@/stores/chat/tools/profiles/design').then(m => toolRegistry.register('design', m.designProfile))
 
-// ── Helper ────────────────────────────────────────────────────────────────────
-
+// ── Helper - delegates to CLEAN lifecycle API ─────────────────────────────────
 function setStatus(tab: ChatTab, next: ChatTab['agentStatus']): void {
-  const prev = tab.agentStatus
-  tab.agentStatus = next
-  emitStatusChange(tab.id, prev, next)
+  setAgentStatusForTab(tab, next)
 }
 
 function debugStreamInterceptor(message: string, data?: Record<string, unknown>): void {
@@ -1139,6 +1136,7 @@ export function createSendMessage(
           ...(currentStopSequences !== undefined ? { stopSequences: currentStopSequences } : {}),
           onDelta: streamHandlers.onDelta,
           onReasoningDelta: streamHandlers.onReasoningDelta,
+          onToolInputStart: streamHandlers.onToolInputStart,
           onToolCall: streamHandlers.onToolCall,
           onToolResult: streamHandlers.onToolResult,
           onFinish,

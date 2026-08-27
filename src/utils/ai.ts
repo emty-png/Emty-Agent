@@ -225,6 +225,7 @@ export interface StreamChatOptions {
   }) => PromiseLike<{ messages?: ModelMessage[] } | undefined> | { messages?: ModelMessage[] } | undefined
   onDelta: (delta: string) => void
   onReasoningDelta?: (delta: string) => void
+  onToolInputStart?: (event: { id: string; name: string }) => void
   onToolCall?: (event: ToolCallEvent) => void
   onToolResult?: (event: ToolResultEvent) => void
   onFinish?: (event: StreamChatFinishEvent) => void
@@ -351,6 +352,7 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
     prepareStep,
     onDelta,
     onReasoningDelta,
+    onToolInputStart,
     onToolCall,
     onToolResult,
     onFinish,
@@ -436,11 +438,14 @@ export async function streamChat(opts: StreamChatOptions): Promise<void> {
         case 'reasoning-end':
         case 'text-start':
         case 'text-end':
-        case 'tool-input-start':
         case 'tool-input-delta':
         case 'tool-input-end':
         case 'start':
         case 'start-step':
+          break
+
+        case 'tool-input-start':
+          onToolInputStart?.({ id: part.id, name: part.toolName })
           break
 
         case 'tool-call':

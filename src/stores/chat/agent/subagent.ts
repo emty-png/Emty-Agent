@@ -5,7 +5,15 @@ import type { BeforeFileWriteCallback, FileReadRegistry, FilesystemTools } from 
 import type { RequestToolPermission, ToolPermissionDecision } from '@/utils/tools/permissions'
 import type { SubAgentOutcome } from '@/utils/tools/subagent'
 import { dbInsertConversation, dbInsertMessage, dbUpdateMessage } from '@/db/database'
-import { statusToolRunning, statusWaitingPermission } from '@/stores/chat/agent/status'
+import { setAgentStatus } from '@/stores/chat/agent/lifecycle'
+import {
+  STATUS_IDLE,
+  STATUS_INITIALIZING,
+  STATUS_STREAMING,
+  statusError,
+  statusToolRunning,
+  statusWaitingPermission,
+} from '@/stores/chat/agent/status'
 import { createStreamHandlers } from '@/stores/chat/agent/streamHandlers'
 import { getCoreToolDisplayLabel } from '@/stores/chat/tools/labels'
 import { resolveLanguageModel, resolveMaxTokens } from '@/stores/chat/utils/modelResolver'
@@ -143,7 +151,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       timestamp: new Date(),
       error: 'No model selected. Open Settings → Providers to connect a model.',
     })
-    subTab.agentStatus = { type: 'error', message: 'No model selected' }
+    setAgentStatus(subTab.id, statusError('No model selected'))
     if (subTab.subAgent)
       subTab.subAgent.status = 'error'
     return { text: '', status: 'error' }
@@ -157,7 +165,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
   catch (e) {
     const errMsg = `Failed to initialise model: ${e instanceof Error ? e.message : String(e)}`
     subTab.messages.push({ id: makeId(), role: 'assistant', content: '', timestamp: new Date(), error: errMsg })
-    subTab.agentStatus = { type: 'error', message: errMsg }
+    setAgentStatus(subTab.id, statusError(errMsg))
     if (subTab.subAgent)
       subTab.subAgent.status = 'error'
     return { text: '', status: 'error' }
@@ -277,7 +285,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     parts: [],
   }
   subTab.messages.push(assistantMsg)
-  subTab.agentStatus = { type: 'initializing' }
+  setAgentStatus(subTab.id, STATUS_INITIALIZING)
 
   // IMPORTANT: retrieve liveMsg from the reactive array — NOT the raw object.
   // Vue wraps array elements in a Proxy; writing to the raw object bypasses
@@ -325,19 +333,19 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
     getTabStatus: () => subTab.agentStatus,
     onStatusChange: (status, meta) => {
       if (status === 'tool-running' && meta?.toolName) {
-        subTab.agentStatus = statusToolRunning(meta.toolName)
+        setAgentStatus(subTab.id, statusToolRunning(meta.toolName))
       }
       else if (status === 'streaming') {
-        subTab.agentStatus = { type: 'streaming' }
+        setAgentStatus(subTab.id, STATUS_STREAMING)
       }
       else if (status === 'sleeping') {
-        subTab.agentStatus = { type: 'sleeping' }
+        setAgentStatus(subTab.id, { type: 'sleeping' })
       }
       else if (status === 'waiting-permission' && meta?.toolName) {
-        subTab.agentStatus = statusWaitingPermission(meta.toolName)
+        setAgentStatus(subTab.id, statusWaitingPermission(meta.toolName))
       }
       else if (status === 'waiting-questions') {
-        subTab.agentStatus = { type: 'waiting-questions' }
+        setAgentStatus(subTab.id, { type: 'waiting-questions' })
       }
     },
   })
@@ -434,7 +442,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
           liveMsg.cacheStats = usageStats
         else
           delete liveMsg.cacheStats
-        subTab.agentStatus = { type: 'idle' }
+        setAgentStatus(subTab.id, STATUS_IDLE)
         if (subTab.subAgent)
           subTab.subAgent.status = 'done'
         void (async () => {
@@ -466,7 +474,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       },
       onError: (error: Error) => {
         liveMsg.error = error.message
-        subTab.agentStatus = { type: 'error', message: error.message }
+        setAgentStatus(subTab.id, statusError(error.message))
         if (subTab.subAgent)
           subTab.subAgent.status = 'error'
         void (async () => {
@@ -501,7 +509,7 @@ export async function runSubAgentStream(params: SubAgentStreamParams): Promise<S
       },
       signal,
     }).catch(() => {
-      subTab.agentStatus = { type: 'error', message: 'Stream failed' }
+      setAgentStatus(subTab.id, statusError('Stream failed'))
       if (subTab.subAgent)
         subTab.subAgent.status = 'error'
       void (async () => {

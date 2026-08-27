@@ -6,6 +6,20 @@ import type { AgentStatus, AgentToolCategory } from '@/stores/chat/core/types'
 export const STATUS_IDLE: AgentStatus = { type: 'idle' }
 export const STATUS_INITIALIZING: AgentStatus = { type: 'initializing' }
 export const STATUS_STREAMING: AgentStatus = { type: 'streaming' }
+export const STATUS_COMPACTING: AgentStatus = { type: 'compacting' }
+export const STATUS_WAITING_QUESTIONS: AgentStatus = { type: 'waiting-questions' }
+
+export function statusInitializing(): AgentStatus {
+  return STATUS_INITIALIZING
+}
+
+export function statusCompacting(): AgentStatus {
+  return STATUS_COMPACTING
+}
+
+export function statusWaitingQuestions(): AgentStatus {
+  return STATUS_WAITING_QUESTIONS
+}
 
 export function statusToolRunning(toolName: string): AgentStatus {
   return { type: 'tool-running', toolName, category: toolCategoryFromName(toolName) }
@@ -23,14 +37,57 @@ export function statusError(message: string): AgentStatus {
   return { type: 'error', message }
 }
 
-/** Returns true for any status that represents active agent work. */
+/** True if agent is doing any work (not idle/error). Used for Stop button queue logic. */
 export function isActiveStatus(s: AgentStatus): boolean {
   return s.type !== 'idle' && s.type !== 'error'
 }
 
-/** Returns true for the legacy `isStreaming` boolean equivalent. */
+/** @deprecated alias for isActiveStatus - kept for OSS compat */
+export const isBusyStatus = isActiveStatus
+
+/**
+ * Legacy streaming check - true for any active work (not idle/error).
+ * Kept for OSS compat; prefer isActiveStatus / isStrictStreamingStatus.
+ */
 export function isStreamingStatus(s: AgentStatus): boolean {
   return s.type !== 'idle' && s.type !== 'error'
+}
+
+/** Strict streaming - only spinner/gloss states (streaming|tool-running|initializing). */
+export function isStrictStreamingStatus(s: AgentStatus): boolean {
+  return s.type === 'streaming' || s.type === 'tool-running' || s.type === 'initializing'
+}
+
+export function isIdleStatus(s: AgentStatus): s is Extract<AgentStatus, { type: 'idle' }> {
+  return s.type === 'idle'
+}
+
+export function isErrorStatus(s: AgentStatus): s is Extract<AgentStatus, { type: 'error' }> {
+  return s.type === 'error'
+}
+
+export function isCompactingStatus(s: AgentStatus): s is Extract<AgentStatus, { type: 'compacting' }> {
+  return s.type === 'compacting'
+}
+
+export function isWaitingStatus(s: AgentStatus): boolean {
+  return s.type === 'waiting-questions' || s.type === 'waiting-permission' || s.type === 'sleeping'
+}
+
+export function isToolRunningStatus(s: AgentStatus): s is Extract<AgentStatus, { type: 'tool-running' }> {
+  return s.type === 'tool-running'
+}
+
+export function isSleepingStatus(s: AgentStatus): s is Extract<AgentStatus, { type: 'sleeping' }> {
+  return s.type === 'sleeping'
+}
+
+export function isWaitingPermissionStatus(s: AgentStatus): s is Extract<AgentStatus, { type: 'waiting-permission' }> {
+  return s.type === 'waiting-permission'
+}
+
+export function isWaitingQuestionsStatus(s: AgentStatus): s is Extract<AgentStatus, { type: 'waiting-questions' }> {
+  return s.type === 'waiting-questions'
 }
 
 // ── Tool name → category mapping ──────────────────────────────────────────────

@@ -3,7 +3,7 @@ import type { Message, ToolEvent } from '@/stores/chat'
 import type { UsageStats } from '@/utils/contextCaching'
 import type { SubAgentPersonality } from '@/utils/tools/subagent'
 import { CircleX, Loader2 } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { dbFindSubAgentConversation, dbGetConversation, dbLoadMessages } from '@/db/database'
 import { useChatStore } from '@/stores/chat'
 import { safeJsonParse } from '@/utils/repairJson'
@@ -40,15 +40,34 @@ const runningElapsedLabel = computed(() =>
     : formatElapsed(nowMs.value - executionStartedAt.value),
 )
 
-onMounted(() => {
+function startTimer() {
+  if (timerId !== null)
+    return
   timerId = window.setInterval(() => {
     nowMs.value = Date.now()
   }, 1000)
+}
+
+function stopTimer() {
+  if (timerId !== null) {
+    window.clearInterval(timerId)
+    timerId = null
+  }
+}
+
+onMounted(() => {
+  if (isRunning.value)
+    startTimer()
+})
+
+watch(isRunning, running => {
+  if (running)
+    startTimer()
+  else stopTimer()
 })
 
 onUnmounted(() => {
-  if (timerId !== null)
-    window.clearInterval(timerId)
+  stopTimer()
 })
 
 const shellResult = computed(() => {

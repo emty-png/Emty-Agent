@@ -14,8 +14,7 @@ import { useBrowserStore } from '@/stores/browser'
 import { useGitPaneStore } from '@/stores/gitPane'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
-import { useTerminalStore } from '@/stores/terminal'
-import { emitStatusChange } from './chat/agent/lifecycle'
+import { setAgentStatusForTab } from './chat/agent/lifecycle'
 import { createSendMessage } from './chat/agent/sendMessage'
 import { STATUS_IDLE, statusWaitingPermission } from './chat/agent/status'
 import { compactConversationSession, persistCompactionMessages } from './chat/context/compaction'
@@ -38,12 +37,9 @@ export type {
 } from './chat/core/types'
 export type { TaskItem } from '@/utils/tools/todos'
 
-// ── Internal helper ───────────────────────────────────────────────────────────
-
+// ── Internal helper - now delegates to CLEAN API lifecycle:setAgentStatusForTab ──
 function setTabStatus(tab: ChatTab, next: AgentStatus): void {
-  const prev = tab.agentStatus
-  tab.agentStatus = next
-  emitStatusChange(tab.id, prev, next)
+  setAgentStatusForTab(tab, next)
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -57,6 +53,7 @@ export const useChatStore = defineStore('chat', () => {
   const permissionResolvers = new Map<string, (decision: ToolPermissionDecision) => void>()
   const sessionToolApprovals = ref<string[]>([])
   const unseenErrorIds = ref<Set<string>>(new Set<string>())
+  const closingTabIds = ref<Set<string>>(new Set<string>())
 
   const conversationStateCache = ref<Record<string, {
     modelUid: string | null
@@ -97,7 +94,14 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  watch(tabs, nextTabs => { nextTabs.forEach(snapshotConversationState) }, { deep: true })
+  // Perf: replaced deep watch (traversed entire tabs[].messages[].parts per chunk)
+  // with explicit snapshots in setTabDraft/setTabEstimatorState/setTabModel + a light
+  // draft/estimator watcher. Streaming deltas (messages/parts) no longer trigger this.
+  watch(() => tabs.value.map(t =>
+    `${t.conversationId ?? ''}:${t.draft.text.length}:${t.estimator.estimating ? 1 : 0}:${t.estimator.error.length}:${t.modelUid ?? ''}`), () => {
+    for (const tab of tabs.value)
+      snapshotConversationState(tab)
+  })
 
   watch(activeId, id => {
     const tab = tabs.value.find(item => item.id === id)
@@ -204,98 +208,109 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function closeTab(id: string): void {
-    unseenErrorIds.value.delete(id)
-    import('@/stores/gitLogs').then(({ useGitLogsStore }) => {
+  async function closeTab(id: string): Promise<void> {
+    if (closingTabIds.value.has(id))
+      return
+    closingTabIds.value.add(id)
+    // Trigger reactivity for Set mutation
+    closingTabIds.value = new Set(closingTabIds.value)
+    try {
+      unseenErrorIds.value.delete(id)
+      import('@/stores/gitLogs').then(({ useGitLogsStore }) => {
+        try {
+          useGitLogsStore().disposeOwner(id)
+        }
+        catch {}
+      }).catch(() => {})
+      const tab = tabs.value.find(t => t.id === id)
+      if (tab)
+        snapshotConversationState(tab)
+
+      // ── SessionEnd hook ──────────────────────────────────────────────
+      if (tab?.conversationId) {
+        const lastMsg = tab.messages[tab.messages.length - 1]
+        import('@/utils/hooks').then(({ fireHooks, projectNameFromPath }) => {
+          fireHooks('SessionEnd', {
+            event: 'SessionEnd',
+            tabId: id,
+            workspacePath: tab.workspacePath,
+            projectName: projectNameFromPath(tab.workspacePath),
+            conversationId: tab.conversationId,
+            toolCallsCount: lastMsg?.role === 'assistant' ? (lastMsg.toolEvents?.length ?? 0) : 0,
+          })
+        }).catch(() => {})
+      }
+
+      const browser = useBrowserStore()
+      const gitPane = useGitPaneStore()
+
+      abortControllers.get(id)?.abort()
+      abortControllers.delete(id)
+
+      // Kill ALL tracked processes for this tab (shell, terminal, MCP, hooks) — block with timeout + spinner
       try {
-        useGitLogsStore().disposeOwner(id)
+        const { killAllForTab } = await import('@/utils/tabProcessRegistry')
+        await killAllForTab(id)
       }
       catch {}
-    }).catch(() => {})
-    const tab = tabs.value.find(t => t.id === id)
-    if (tab)
-      snapshotConversationState(tab)
+      cleanupBgTaskNotifications(id)
 
-    // ── SessionEnd hook ──────────────────────────────────────────────
-    if (tab?.conversationId) {
-      const lastMsg = tab.messages[tab.messages.length - 1]
-      import('@/utils/hooks').then(({ fireHooks, projectNameFromPath }) => {
-        fireHooks('SessionEnd', {
-          event: 'SessionEnd',
-          tabId: id,
-          workspacePath: tab.workspacePath,
-          projectName: projectNameFromPath(tab.workspacePath),
-          conversationId: tab.conversationId,
-          toolCallsCount: lastMsg?.role === 'assistant' ? (lastMsg.toolEvents?.length ?? 0) : 0,
+      if (tab?.agentStatus.type !== 'idle' && tab?.agentStatus.type !== 'error')
+        markInterruptedAssistantMessage(tab!, 'Interrupted during generation.')
+
+      // Dismiss pending questions
+      const resolve = questionResolvers.get(id)
+      if (resolve) {
+        const pendingTab = tabs.value.find(t => t.id === id)
+        const skipped = (pendingTab?.pendingQuestions?.questions ?? []).map(q => ({ question: q.question, answer: 'skipped' }))
+        resolve(skipped)
+        questionResolvers.delete(id)
+      }
+
+      // Deny all queued permission requests
+      const closingTab = tabs.value.find(t => t.id === id)
+      if (closingTab) {
+        for (const perm of closingTab.pendingPermissions) {
+          permissionResolvers.get(perm.requestId)?.('deny')
+          permissionResolvers.delete(perm.requestId)
+        }
+        closingTab.pendingPermissions = []
+      }
+
+      // Fire-and-forget checkpoint/design cleanup (not blocking tab close)
+      import('./checkpoints').then(({ useCheckpointStore }) => {
+        const checkpoints = useCheckpointStore()
+        void checkpoints.finalizeCheckpoint(tab?.conversationId ?? null).finally(() => {
+          checkpoints.clearTab(id, useProjectStore().projectPath ?? undefined)
         })
       }).catch(() => {})
-    }
+      import('./designVersions').then(({ useDesignVersionStore }) => {
+        try { useDesignVersionStore().clearForTab(id) }
+        catch {}
+      }).catch(() => {})
 
-    const browser = useBrowserStore()
-    const gitPane = useGitPaneStore()
-    const terminal = useTerminalStore()
+      const idx = tabs.value.findIndex(t => t.id === id)
 
-    abortControllers.get(id)?.abort()
-    abortControllers.delete(id)
-
-    // Kill all running shell/git tasks for this tab
-    import('../utils/tools/shell').then(({ stopTasksForTab }) => {
-      stopTasksForTab(id)
-    }).catch(() => {})
-    cleanupBgTaskNotifications(id)
-
-    if (tab?.agentStatus.type !== 'idle' && tab?.agentStatus.type !== 'error')
-      markInterruptedAssistantMessage(tab!, 'Interrupted during generation.')
-
-    // Dismiss pending questions
-    const resolve = questionResolvers.get(id)
-    if (resolve) {
-      const pendingTab = tabs.value.find(t => t.id === id)
-      const skipped = (pendingTab?.pendingQuestions?.questions ?? []).map(q => ({ question: q.question, answer: 'skipped' }))
-      resolve(skipped)
-      questionResolvers.delete(id)
-    }
-
-    // Deny all queued permission requests
-    const closingTab = tabs.value.find(t => t.id === id)
-    if (closingTab) {
-      for (const perm of closingTab.pendingPermissions) {
-        permissionResolvers.get(perm.requestId)?.('deny')
-        permissionResolvers.delete(perm.requestId)
+      if (tabs.value.length === 1) {
+        browser.disposeOwner(id)
+        gitPane.disposeOwner(id)
+        const freshTab = newTab()
+        freshTab.workspacePath = useProjectStore().projectPath
+        tabs.value = [freshTab]
+        activeId.value = tabs.value[0]!.id
+        return
       }
-      closingTab.pendingPermissions = []
-    }
 
-    import('./checkpoints').then(({ useCheckpointStore }) => {
-      const checkpoints = useCheckpointStore()
-      void checkpoints.finalizeCheckpoint(tab?.conversationId ?? null).finally(() => {
-        checkpoints.clearTab(id, useProjectStore().projectPath ?? undefined)
-      })
-    }).catch(() => {})
-    import('./designVersions').then(({ useDesignVersionStore }) => {
-      try { useDesignVersionStore().clearForTab(id) }
-      catch {}
-    }).catch(() => {})
-
-    const idx = tabs.value.findIndex(t => t.id === id)
-
-    if (tabs.value.length === 1) {
       browser.disposeOwner(id)
       gitPane.disposeOwner(id)
-      void terminal.disposeOwner(id)
-      const freshTab = newTab()
-      freshTab.workspacePath = useProjectStore().projectPath
-      tabs.value = [freshTab]
-      activeId.value = tabs.value[0]!.id
-      return
+      tabs.value.splice(idx, 1)
+      if (activeId.value === id)
+        activeId.value = tabs.value[Math.max(0, idx - 1)]!.id
     }
-
-    browser.disposeOwner(id)
-    gitPane.disposeOwner(id)
-    void terminal.disposeOwner(id)
-    tabs.value.splice(idx, 1)
-    if (activeId.value === id)
-      activeId.value = tabs.value[Math.max(0, idx - 1)]!.id
+    finally {
+      closingTabIds.value.delete(id)
+      closingTabIds.value = new Set(closingTabIds.value)
+    }
   }
 
   function openConversation(payload: {
@@ -376,7 +391,7 @@ export const useChatStore = defineStore('chat', () => {
     }).catch(() => {})
   }
 
-  function stopGeneration(tabId?: string): void {
+  async function stopGeneration(tabId?: string): Promise<void> {
     const id = tabId ?? activeId.value
     // #region agent log
     fetch('http://127.0.0.1:7411/ingest/f4b72c61-7d32-407b-a0c8-9bdf31e403c2', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '61c5e2' }, body: JSON.stringify({ sessionId: '61c5e2', location: 'chat.ts:stopGeneration', message: 'stopGeneration called', data: { tabId: id, hadAbortController: abortControllers.has(id) }, timestamp: Date.now(), hypothesisId: 'A,C' }) }).catch(() => {})
@@ -392,10 +407,12 @@ export const useChatStore = defineStore('chat', () => {
     }
     abortControllers.get(id)?.abort()
     abortControllers.delete(id)
-    // Kill all running shell/git tasks for this tab
-    import('../utils/tools/shell').then(({ stopTasksForTab }) => {
-      stopTasksForTab(id)
-    }).catch(() => {})
+    // Kill ALL tracked processes for this tab (shell, terminal, MCP, hooks)
+    try {
+      const { killAllForTab } = await import('@/utils/tabProcessRegistry')
+      await killAllForTab(id)
+    }
+    catch {}
     cleanupBgTaskNotifications(id)
     const tab = tabs.value.find(t => t.id === id)
     if (tab) {
@@ -412,14 +429,18 @@ export const useChatStore = defineStore('chat', () => {
 
   function updateTabDraft(tabId: string, patch: Partial<ChatDraftState>): void {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (tab)
+    if (tab) {
       tab.draft = { ...tab.draft, ...patch }
+      snapshotConversationState(tab)
+    }
   }
 
   function clearTabDraft(tabId: string): void {
     const tab = tabs.value.find(t => t.id === tabId)
-    if (tab)
+    if (tab) {
       tab.draft = createEmptyDraft()
+      snapshotConversationState(tab)
+    }
   }
 
   function setTabWorkspace(
@@ -707,6 +728,7 @@ export const useChatStore = defineStore('chat', () => {
     activeTab,
     conversationStateCache,
     unseenErrorIds,
+    closingTabIds,
     clearUnseenError,
     addTab,
     addDesignTab,

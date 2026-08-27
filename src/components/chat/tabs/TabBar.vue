@@ -17,7 +17,11 @@ const gitPane = useGitPaneStore()
 const project = useProjectStore()
 const terminal = useTerminalStore()
 const settings = useSettingsStore()
-const { tabs, activeId, unseenErrorIds } = storeToRefs(chat)
+const { tabs, activeId, unseenErrorIds, closingTabIds } = storeToRefs(chat)
+
+function isTabClosing(tabId: string): boolean {
+  return (closingTabIds.value as Set<string>).has(tabId)
+}
 
 function hasUnseenError(tabId: string): boolean {
   return unseenErrorIds.value.has(tabId)
@@ -260,6 +264,17 @@ onUnmounted(() => {
           </span>
           <span class="min-w-0 flex-1 overflow-hidden text-ellipsis">{{ tab.title }}</span>
           <span
+            v-if="isTabClosing(tab.id)"
+            class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)]"
+            aria-label="Closing tab"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" class="animate-spin">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
+              <path d="M12 2 a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span
+            v-else
             class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[var(--radius-sm)] text-[var(--color-text-tertiary)] transition-[opacity,background] duration-[120ms] ease-[ease] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-primary)]"
             :class="tab.id === activeId ? 'opacity-100' : 'opacity-0 group-hover/tab:opacity-100'"
             role="button"

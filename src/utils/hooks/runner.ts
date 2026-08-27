@@ -112,6 +112,39 @@ async function resolveShell(): Promise<ShellBinary> {
   return _resolvedShell
 }
 
+// ── Per-tab abort tracking for kill-all ─────────────────────────────────────
+
+const hookAbortControllers = new Map<string, Set<AbortController>>()
+
+function trackHookController(tabId: string, controller: AbortController): void {
+  let set = hookAbortControllers.get(tabId)
+  if (!set) {
+    set = new Set()
+    hookAbortControllers.set(tabId, set)
+  }
+  set.add(controller)
+}
+
+function untrackHookController(tabId: string, controller: AbortController): void {
+  const set = hookAbortControllers.get(tabId)
+  if (!set)
+    return
+  set.delete(controller)
+  if (set.size === 0)
+    hookAbortControllers.delete(tabId)
+}
+
+export function abortHooksForTab(tabId: string): void {
+  const set = hookAbortControllers.get(tabId)
+  if (!set)
+    return
+  for (const c of [...set]) {
+    try { c.abort() }
+    catch {}
+  }
+  hookAbortControllers.delete(tabId)
+}
+
 // ── ID generator ──────────────────────────────────────────────────────────────
 
 let _hookIdCounter = 0
@@ -224,12 +257,36 @@ const input = JSON.parse(process.env.EMTY_INPUT || '{}');
       env,
     })
 
-    const result = await Promise.race([
-      cmd.execute(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Hook timed out after ${timeoutMs / 1000}s: ${command.command}`)), timeoutMs),
-      ),
-    ])
+    const hookAbort = new AbortController()
+    const tabIdForAbort = input.tabId
+    if (tabIdForAbort)
+      trackHookController(tabIdForAbort, hookAbort)
+
+    // Abort-aware race: abort signal rejects the execution
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (hookAbort.signal.aborted) {
+        reject(new Error(`Hook aborted for tab ${tabIdForAbort}`))
+        return
+      }
+      hookAbort.signal.addEventListener('abort', () => {
+        reject(new Error(`Hook aborted for tab ${tabIdForAbort}`))
+      }, { once: true })
+    })
+
+    let result: Awaited<ReturnType<typeof cmd.execute>>
+    try {
+      result = await Promise.race([
+        cmd.execute(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Hook timed out after ${timeoutMs / 1000}s: ${command.command}`)), timeoutMs),
+        ),
+        abortPromise,
+      ])
+    }
+    finally {
+      if (tabIdForAbort)
+        untrackHookController(tabIdForAbort, hookAbort)
+    }
 
     // Cleanup temp file
     if (inputFilePath) {

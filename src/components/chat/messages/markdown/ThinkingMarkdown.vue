@@ -244,20 +244,124 @@ function renderAll(content: string): string {
   return blocks.map(renderBlock).join('\n')
 }
 
+// Perf: multi-tab streaming can push 20+ deltas/s per tab.
+// Without throttling ThinkingMarkdown re-tokenises the entire reasoning
+// on every delta (previous: immediate watch). Batch via rAF + 32ms fallback
+// and keep a stable prefix cache like AssistantMarkdown to make per-tick
+// work O(tail) instead of O(total).
+let renderVersion = 0
+let rafId: number | null = null
+let timer: ReturnType<typeof setTimeout> | null = null
+let stableHtml = ''
+let stableBoundary = 0
+
+function resetStableCache(): void {
+  stableHtml = ''
+  stableBoundary = 0
+}
+
+function findStableBoundary(content: string): number {
+  const min = stableBoundary
+  let i = content.length - 1
+  while (i > min && content[i] !== '\n') i--
+  if (i > min)
+    i--
+  while (i > min && content[i] !== '\n') i--
+  const doubleNl = content.lastIndexOf('\n\n', i)
+  if (doubleNl > min)
+    return doubleNl + 2
+  return min
+}
+
+function renderContent(content: string, version: number, streaming: boolean): void {
+  if (renderVersion !== version)
+    return
+  if (!content) {
+    html.value = ''
+    resetStableCache()
+    return
+  }
+  if (!streaming) {
+    resetStableCache()
+    html.value = renderAll(content)
+    return
+  }
+  const newBoundary = findStableBoundary(content)
+  if (newBoundary > stableBoundary) {
+    const stableSlice = content.slice(stableBoundary, newBoundary)
+    const newBlocks = tokenise(stableSlice)
+    const newParts = newBlocks.map(renderBlock).join('\n')
+    stableHtml += newParts + (newParts ? '\n' : '')
+    stableBoundary = newBoundary
+  }
+  const tail = content.slice(stableBoundary)
+  if (!tail.trim()) {
+    html.value = stableHtml
+    return
+  }
+  const tailHtml = renderAll(tail)
+  html.value = stableHtml + tailHtml
+}
+
 function scheduleRender(): void {
-  html.value = renderAll(props.content)
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  if (timer !== null) {
+    clearTimeout(timer)
+    timer = null
+  }
+  const version = ++renderVersion
+  const streaming = props.streaming ?? false
+  if (!streaming) {
+    // Final render: immediate to avoid flash
+    renderContent(props.content, version, false)
+    return
+  }
+  // Coalesce rapid deltas: rAF for frame alignment + 32ms fallback if tab hidden (rAF paused)
+  rafId = requestAnimationFrame(() => {
+    rafId = null
+    if (timer !== null) {
+      clearTimeout(timer)
+      timer = null
+    }
+    renderContent(props.content, version, true)
+  })
+  timer = setTimeout(() => {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+    timer = null
+    renderContent(props.content, version, true)
+  }, 32)
 }
 
 watch(() => props.content, scheduleRender, { immediate: true })
 
-// When streaming ends, re-render from scratch to clean up any
-// partial-block artefacts (e.g. an unclosed fence that closed).
 watch(() => props.streaming, streaming => {
-  if (!streaming)
-    scheduleRender()
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  if (timer !== null) {
+    clearTimeout(timer)
+    timer = null
+  }
+  if (!streaming) {
+    resetStableCache()
+    const version = ++renderVersion
+    renderContent(props.content, version, false)
+  }
 })
 
 onUnmounted(() => {
+  if (rafId !== null)
+    cancelAnimationFrame(rafId)
+  if (timer !== null)
+    clearTimeout(timer)
+  resetStableCache()
   html.value = ''
 })
 </script>

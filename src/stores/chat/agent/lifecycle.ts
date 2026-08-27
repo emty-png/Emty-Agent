@@ -1,5 +1,5 @@
 import type { MaybeRef } from 'vue'
-import type { AgentStatus, AgentToolCategory } from '@/stores/chat/core/types'
+import type { AgentStatus, AgentToolCategory, ChatTab } from '@/stores/chat/core/types'
 import { computed, toValue, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
 
@@ -54,8 +54,37 @@ class AgentEventBus {
   }
 }
 
-/** Singleton event bus — import this to listen to or emit agent events globally. */
+/**
+ * Singleton event bus — prefer `useAgentLifecycle` / `useAgent` over direct import.
+ * Kept public for OSS compatibility; treat as @internal.
+ */
 export const agentBus = new AgentEventBus()
+
+// ── Centralized status accessors (CLEAN API) ─────────────────────────────────
+
+/** Get current status for any tab (non-reactive). Use `useAgent(id).status` for reactive. */
+export function getAgentStatus(tabId: string): AgentStatus {
+  const chat = useChatStore()
+  return chat.tabs.find(t => t.id === tabId)?.agentStatus ?? { type: 'idle' }
+}
+
+/** Single writer for agent status - always emits via bus. Replaces scattered setTabStatus. */
+export function setAgentStatus(tabId: string, next: AgentStatus): void {
+  const chat = useChatStore()
+  const tab = chat.tabs.find(t => t.id === tabId)
+  if (!tab)
+    return
+  setAgentStatusForTab(tab, next)
+}
+
+/** Direct tab-object variant - preferred in factories that already hold a tab ref. */
+export function setAgentStatusForTab(tab: ChatTab, next: AgentStatus): void {
+  const prev = tab.agentStatus
+  if (prev.type === next.type && JSON.stringify(prev) === JSON.stringify(next))
+    return
+  tab.agentStatus = next
+  emitStatusChange(tab.id, prev, next)
+}
 
 // ── Internal: emit status transitions ────────────────────────────────────────
 

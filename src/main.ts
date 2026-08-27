@@ -19,6 +19,20 @@ app.use(pinia)
 // Initialize theme (restores from local storage)
 useThemeStore().init()
 
+// Prime shell/platform off the critical path — warms resolveShell() cache (300-700ms probe)
+// so first run_command doesn't pay cold cost. Uses requestIdleCallback when available.
+function primeShellCache() {
+  import('@/utils/tools/shell').then(({ primeShellAsync }) => {
+    primeShellAsync().catch(() => {})
+  }).catch(() => {})
+}
+if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+  (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(primeShellCache)
+}
+else {
+  setTimeout(primeShellCache, 500)
+}
+
 app.config.errorHandler = (error, _instance, info) => {
   captureFatalError(error, {
     title: 'A Vue component crashed',

@@ -18,14 +18,14 @@ import { useGitWorkspace } from '@/composables/git/useGitWorkspace'
 import { useGitPaneStore } from '@/stores/gitPane'
 import { hooksConfigExists } from '@/utils/hooks'
 import { commandTasks } from '@/utils/tools/shell'
-import BackgroundTasksReview from './BackgroundTasksTab.vue'
-import DiffViewer from './DiffTab.vue'
+import BackgroundTasksTab from './BackgroundTasksTab.vue'
+import DiffTab from './DiffTab.vue'
 import GitLogsTab from './GitLogsTab.vue'
-import GitChangesReview from './GitTab.vue'
-import HooksTab from './HookResultsTab.vue'
-import PlanReview from './PlanTab.vue'
+import GitTab from './GitTab.vue'
+import HookResultsTab from './HookResultsTab.vue'
+import PlanTab from './PlanTab.vue'
 import SkillsMcpTab from './SkillsMcpTab.vue'
-import ToolResultsReview from './ToolResultsTab.vue'
+import ToolResultsTab from './ToolResultsTab.vue'
 
 const props = defineProps<{
   cwd: string
@@ -109,12 +109,12 @@ const toolEventCount = computed(() =>
   props.messages.reduce((count, message) => count + (message.role === 'assistant' ? message.toolEvents?.length ?? 0 : 0), 0),
 )
 const bgTaskCount = computed(() => commandTasks.value.filter(t => t.tabId === props.tabId && t.mode === 'background').length)
-const planReviewRef = ref<{ hasPlans: boolean } | null>(null)
+const planTabRef = ref<{ hasPlans: boolean } | null>(null)
 const hasPlanFiles = ref(false)
 const showHooksTab = ref(false)
 
 const showToolsTab = computed(() => toolEventCount.value > 0)
-const showPlanTab = computed(() => hasPlanFiles.value || planReviewRef.value?.hasPlans === true)
+const showPlanTab = computed(() => hasPlanFiles.value || planTabRef.value?.hasPlans === true)
 const showTasksTab = computed(() => bgTaskCount.value > 0)
 
 watchAutoTab(() => showToolsTab.value, 'tools')
@@ -250,7 +250,7 @@ watch(() => props.cwd, () => {
 })
 
 onMounted(() => {
-  workspace.refresh().catch(err => console.error('GitPane initial refresh failed', err))
+  workspace.refresh().catch(err => console.error('SidePane initial refresh failed', err))
   checkHooksConfig()
   window.addEventListener('emty:plan-created', handlePlanCreated)
   window.addEventListener('emty:open-diff-viewer', handleOpenDiffViewer)
@@ -382,25 +382,25 @@ const iconBtnClass = 'inline-flex items-center justify-center w-[26px] h-[26px] 
       </div>
     </div>
 
-    <GitChangesReview
+    <GitTab
       v-if="activePane === 'review'"
       :cwd="cwd"
       :tab-id="tabId"
       :workspace="workspace"
     />
 
-    <ToolResultsReview
+    <ToolResultsTab
       v-if="activePane === 'tools'"
       :messages="messages"
     />
 
-    <PlanReview
+    <PlanTab
       v-show="activePane === 'plan'"
-      ref="planReviewRef"
+      ref="planTabRef"
       :tab-id="tabId"
     />
 
-    <BackgroundTasksReview
+    <BackgroundTasksTab
       v-if="activePane === 'tasks'"
       :tab-id="tabId"
     />
@@ -410,12 +410,12 @@ const iconBtnClass = 'inline-flex items-center justify-center w-[26px] h-[26px] 
       :tab-id="tabId"
     />
 
-    <HooksTab
+    <HookResultsTab
       v-if="activePane === 'hooks'"
       :tab-id="tabId"
     />
 
-    <DiffViewer
+    <DiffTab
       v-if="activePane === 'diffViewer' && gitPaneOwner.diffViewerData"
       :file-path="gitPaneOwner.diffViewerData.filePath"
       :diff="gitPaneOwner.diffViewerData.diff"

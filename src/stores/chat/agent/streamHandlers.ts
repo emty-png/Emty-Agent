@@ -34,23 +34,40 @@ export interface StreamHandlersOptions {
 export function createStreamHandlers({
   liveMsg,
   getToolLabel,
-  persistThrottleMs = 1500,
+  persistThrottleMs = 2000,
   onStatusChange,
   getTabStatus,
 }: StreamHandlersOptions) {
   let _lastPersistAt = 0
   let _firstDelta = true
+  let _lastForcedAt = 0
 
   const persistLive = (force = false) => {
     const now = Date.now()
-    if (!force && now - _lastPersistAt < persistThrottleMs)
+    // Perf: multi-tab streaming does N concurrent JSON.stringify + IPC per tool event.
+    // Coalesce forced tool writes to at most 1 per 900ms, text deltas to persistThrottleMs (2000ms).
+    if (force) {
+      if (now - _lastForcedAt < 900 && now - _lastPersistAt < persistThrottleMs)
+        return
+      _lastForcedAt = now
+    }
+    else if (now - _lastPersistAt < persistThrottleMs) {
       return
+    }
     _lastPersistAt = now
-    dbUpdateMessage(liveMsg.id, {
-      content: liveMsg.content,
-      parts: liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null,
-      tool_events: liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null,
-    }).catch(() => {})
+    // Defer stringify/DB to idle so it doesn't jank the streaming frame.
+    // rIC keeps tab responsive while multiple tabs flush concurrently.
+    const doPersist = () => {
+      dbUpdateMessage(liveMsg.id, {
+        content: liveMsg.content,
+        parts: liveMsg.parts?.length ? JSON.stringify(liveMsg.parts) : null,
+        tool_events: liveMsg.toolEvents?.length ? JSON.stringify(liveMsg.toolEvents) : null,
+      }).catch(() => {})
+    }
+    const ric = (globalThis as unknown as { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback
+    if (typeof ric === 'function')
+      ric(doPersist, { timeout: 800 })
+    else doPersist()
   }
 
   let pendingDeltas: { type: 'text' | 'reasoning'; text: string }[] = []
@@ -109,20 +126,47 @@ export function createStreamHandlers({
     scheduleFlush()
   }
 
-  const handleToolCall = (event: ToolCallEvent) => {
+  const handleToolInputStart = (event: { id: string; name: string }) => {
     flushLive()
     liveMsg.toolEvents ??= []
     liveMsg.toolEvents.push({
       id: event.id,
       name: event.name,
-      label: getToolLabel(event.name, event.args),
+      label: `Preparing ${event.name}…`,
       status: 'running',
       toolName: event.name,
       startedAt: Date.now(),
-      args: event.args,
+      args: {},
     })
     liveMsg.parts ??= []
     liveMsg.parts.push({ type: 'tool', toolCallId: event.id })
+    const currentStatus = getTabStatus?.()
+    if (currentStatus?.type !== 'waiting-permission')
+      onStatusChange?.('tool-running', { toolName: event.name })
+    persistLive(true)
+  }
+
+  const handleToolCall = (event: ToolCallEvent) => {
+    flushLive()
+    liveMsg.toolEvents ??= []
+    const existing = liveMsg.toolEvents.find(e => e.id === event.id)
+    if (existing) {
+      existing.args = event.args
+      existing.label = getToolLabel(event.name, event.args)
+    }
+    else {
+      liveMsg.toolEvents.push({
+        id: event.id,
+        name: event.name,
+        label: getToolLabel(event.name, event.args),
+        status: 'running',
+        toolName: event.name,
+        startedAt: Date.now(),
+        args: event.args,
+      })
+      liveMsg.parts ??= []
+      liveMsg.parts.push({ type: 'tool', toolCallId: event.id })
+    }
     const currentStatus = getTabStatus?.()
     if (currentStatus?.type !== 'waiting-permission')
       onStatusChange?.('tool-running', { toolName: event.name })
@@ -239,6 +283,7 @@ export function createStreamHandlers({
   return {
     onDelta,
     onReasoningDelta,
+    onToolInputStart: handleToolInputStart,
     onToolCall: handleToolCall,
     onToolResult: handleToolResult,
     onToolExecutionStart: handleToolExecutionStart,

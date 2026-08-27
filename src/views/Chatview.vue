@@ -9,7 +9,7 @@ import AttachmentPreview from '@/components/chat/chat-input/AttachmentPreview.vu
 import ChatInput from '@/components/chat/chat-input/ChatInput.vue'
 import MessageThread from '@/components/chat/messages/MessageThread.vue'
 import TabBar from '@/components/chat/tabs/TabBar.vue'
-import GitPane from '@/components/sidepane/GitPane.vue'
+import SidePane from '@/components/sidepane/SidePane.vue'
 import TerminalPane from '@/components/terminal/TerminalPane.vue'
 import { useIllustrationComponent } from '@/composables/ui/useIllustration'
 import { useBrowserStore } from '@/stores/browser'
@@ -517,7 +517,7 @@ watch([() => activeBrowserOwner.value.isPanelOpen, () => activeGitOwner.value.is
       </div>
 
       <div v-if="!activeBrowserOwner.isPanelOpen && activeGitOwner.isPanelOpen && resolvedWorkspacePath" class="chat-git-panel">
-        <GitPane :cwd="resolvedWorkspacePath" :messages="activeTab.messages" :tab-id="activeTab.id" @close="gitPane.closePanel(activeId)" />
+        <SidePane :cwd="resolvedWorkspacePath" :messages="activeTab.messages" :tab-id="activeTab.id" @close="gitPane.closePanel(activeId)" />
       </div>
 
       <div v-if="!activeBrowserOwner.isPanelOpen && !activeGitOwner.isPanelOpen && terminalInRightPane" class="chat-terminal-right-panel">

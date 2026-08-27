@@ -122,6 +122,9 @@ let gitBashShellPromise: Promise<GitBashShell | null> | null = null
 let resolvedPlatform: string | null = null
 
 let cwdRef: string = ''
+let cwdLastVerifiedAt = 0
+let cwdLastVerifiedPath = ''
+let shellPrimePromise: Promise<ShellBinary | null> | null = null
 
 // ── Background task completion notification ────────────────────────────────
 
@@ -213,7 +216,13 @@ function trimOutput(raw: string): string {
 }
 
 function appendOutput(current: string, chunk: string): string {
-  return trimOutput(current ? `${current}${chunk}` : chunk)
+  if (!current)
+    return chunk.length > MAX_OUTPUT_CHARS ? trimOutput(chunk) : chunk
+  const nextLen = current.length + chunk.length
+  if (nextLen <= MAX_OUTPUT_CHARS)
+    return current + chunk
+  // Over limit: trim once (head+tail) — avoid per-chunk double slicing when still under limit
+  return trimOutput(current + chunk)
 }
 
 function sanitizeCommandForFilename(command: string): string {
@@ -238,31 +247,33 @@ async function writeLogOutputFile(command: string, output: string): Promise<stri
 
     await writeTextFile(filePath, `$ ${command}\n\n${output}`)
 
-    // Log rotation: keep only the newest MAX_LOG_FILES
-    try {
-      const entries = await readDir(dir)
-      const logFiles: Array<{ name: string; path: string; mtime: number }> = []
-      for (const entry of entries) {
-        if (entry.name?.endsWith('.log')) {
-          const entryPath = `${dir}/${entry.name}`
-          try {
-            const info = await stat(entryPath)
-            logFiles.push({ name: entry.name, path: entryPath, mtime: info.mtime?.getTime() ?? 0 })
+    // Log rotation: deferred to avoid blocking command return (was 1×readDir + N×stat + N×remove)
+    setTimeout(async () => {
+      try {
+        const entries = await readDir(dir)
+        const logFiles: Array<{ name: string; path: string; mtime: number }> = []
+        for (const entry of entries) {
+          if (entry.name?.endsWith('.log')) {
+            const entryPath = `${dir}/${entry.name}`
+            try {
+              const info = await stat(entryPath)
+              logFiles.push({ name: entry.name, path: entryPath, mtime: info.mtime?.getTime() ?? 0 })
+            }
+            catch { /* skip unreadable */ }
           }
-          catch { /* skip unreadable */ }
         }
-      }
 
-      if (logFiles.length > MAX_LOG_FILES) {
-        logFiles.sort((a, b) => a.mtime - b.mtime) // oldest first
-        const toDelete = logFiles.slice(0, logFiles.length - MAX_LOG_FILES)
-        for (const f of toDelete) {
-          try { await remove(f.path) }
-          catch { /* skip */ }
+        if (logFiles.length > MAX_LOG_FILES) {
+          logFiles.sort((a, b) => a.mtime - b.mtime) // oldest first
+          const toDelete = logFiles.slice(0, logFiles.length - MAX_LOG_FILES)
+          for (const f of toDelete) {
+            try { await remove(f.path) }
+            catch { /* skip */ }
+          }
         }
       }
-    }
-    catch { /* rotation failure is non-fatal */ }
+      catch { /* rotation failure is non-fatal */ }
+    }, 0)
 
     return filePath
   }
@@ -271,7 +282,7 @@ async function writeLogOutputFile(command: string, output: string): Promise<stri
   }
 }
 
-function updateCwdFromCommand(command: string): void {
+function updateCwdFromCommand(command: string): boolean {
   const cdMatch = command.match(/(?:^|[;&|]\s*)cd\s+([^;&|]+)/)
   if (cdMatch?.[1]) {
     const target = cdMatch[1].replace(/^"|"$/g, '').trim()
@@ -279,8 +290,10 @@ function updateCwdFromCommand(command: string): void {
       cwdRef = target.startsWith('/') || /^[A-Z]:\\/i.test(target)
         ? target
         : `${cwdRef}/${target}`
+      return true
     }
   }
+  return false
 }
 
 function sortTasks(entries: Iterable<CommandTaskRecord>): CommandTaskSummary[] {
@@ -385,6 +398,37 @@ async function resolveShell(): Promise<ShellBinary> {
 
 export function primeShell(shell: ShellBinary): void {
   resolvedShell = shell
+}
+
+export function primeShellAsync(): Promise<ShellBinary | null> {
+  if (shellPrimePromise)
+    return shellPrimePromise
+  shellPrimePromise = (async () => {
+    try {
+      const s = await resolveShell()
+      return s
+    }
+    catch {
+      return null
+    }
+  })()
+  return shellPrimePromise
+}
+
+// Hoisted checkpoint store promise to avoid per-command dynamic import cost
+let checkpointStorePromise: Promise<{ snapshotFilesFromCommand: (command: string, cwd: string, projectPath: string) => Promise<void> } | null> | null = null
+function getCheckpointStore(): Promise<{ snapshotFilesFromCommand: (command: string, cwd: string, projectPath: string) => Promise<void> } | null> {
+  checkpointStorePromise ??= import('@/stores/checkpoints').then(({ useCheckpointStore }) => {
+    try {
+      const store = useCheckpointStore()
+      // Expose only the needed method to avoid reactivity overhead
+      return { snapshotFilesFromCommand: store.snapshotFilesFromCommand.bind(store) }
+    }
+    catch {
+      return null
+    }
+  }).catch(() => null)
+  return checkpointStorePromise
 }
 
 function createShellArgs(shell: ShellBinary, command: string): string[] {
@@ -543,32 +587,34 @@ async function forceKillProcess(pid: number): Promise<boolean> {
   const osPlatform = await getOsPlatform()
 
   if (osPlatform === 'windows') {
+    // Parallelize shell-specific kill + taskkill so tree kill isn't delayed by sequential fallback (was 60-90ms serial)
+    const killPromises: Array<Promise<boolean>> = []
+
     if (resolvedShell === 'git-bash' || resolvedShell === 'git-bash-x86' || resolvedShell === 'sh') {
-      try {
-        const args = resolvedShell === 'sh' ? ['-c', `kill -9 ${pid}`] : ['-lc', `kill -9 ${pid}`]
-        const result = await Command.create(resolvedShell, args).execute()
-        if (result.code === 0)
-          return true
-      }
-      catch { /* ignore and fallback */ }
+      killPromises.push(
+        Command.create(resolvedShell, resolvedShell === 'sh' ? ['-c', `kill -9 ${pid}`] : ['-lc', `kill -9 ${pid}`]).execute()
+          .then(r => r.code === 0).catch(() => false),
+      )
     }
     else if (resolvedShell === 'pwsh' || resolvedShell === 'powershell') {
-      try {
-        const result = await Command.create(resolvedShell, [
+      killPromises.push(
+        Command.create(resolvedShell, [
           '-NoProfile',
           '-NonInteractive',
           '-Command',
           `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`,
-        ]).execute()
-        if (result.code === 0 || result.code === 1)
-          return true
-      }
-      catch { /* ignore and fallback */ }
+        ]).execute().then(r => r.code === 0 || r.code === 1).catch(() => false),
+      )
     }
 
+    killPromises.push(
+      Command.create('cmd', ['/d', '/s', '/c', `taskkill /F /T /PID ${pid}`]).execute()
+        .then(r => r.code === 0 || r.code === 128).catch(() => false),
+    )
+
     try {
-      const result = await Command.create('cmd', ['/d', '/s', '/c', `taskkill /F /T /PID ${pid}`]).execute()
-      if (result.code === 0 || result.code === 128)
+      const results = await Promise.all(killPromises)
+      if (results.some(Boolean))
         return true
     }
     catch { /* ignore */ }
@@ -1262,40 +1308,48 @@ export function createRunCommandTool(projectPath: string, runtimeEvents?: ShellT
       }
 
       // ── CWD resolution ──────────────────────────────────────────────
+      let cwdChanged = false
       if (input.cwd) {
         try {
-          const resolved = await safePath(projectPath, input.cwd, { kind: 'read' })
-          cwdRef = resolved
+          const resolvedPath = await safePath(projectPath, input.cwd, { kind: 'read' })
+          if (resolvedPath !== cwdRef) {
+            cwdRef = resolvedPath
+            cwdChanged = true
+          }
         }
         catch (e) {
           return { exit_code: -1, duration_ms: 0, output: `Error: ${e instanceof Error ? e.message : String(e)}` }
         }
       }
 
-      // Verify CWD exists
-      try {
-        const info = await stat(cwdRef)
-        if (!info.isDirectory)
+      const didCd = updateCwdFromCommand(command)
+      if (didCd)
+        cwdChanged = true
+
+      // Verify CWD exists only when changed or stale (2s TTL) to avoid per-command stat IPC (3-8ms)
+      const now = Date.now()
+      const needsVerify = cwdChanged || now - cwdLastVerifiedAt > 2000 || cwdLastVerifiedPath !== cwdRef
+      if (needsVerify) {
+        try {
+          const info = await stat(cwdRef)
+          if (!info.isDirectory)
+            cwdRef = projectPath
+        }
+        catch {
           cwdRef = projectPath
-      }
-      catch {
-        cwdRef = projectPath
+        }
+        cwdLastVerifiedAt = now
+        cwdLastVerifiedPath = cwdRef
       }
 
       const cwd = cwdRef
-      updateCwdFromCommand(command)
 
       // ── Snapshot files the command is about to mutate ───────────────
-      // Extends checkpoint coverage to shell-side mutations (sed -i,
-      // rm, mv, cp, redirects, etc.) that bypass the filesystem tools.
-      try {
-        const { useCheckpointStore } = await import('@/stores/checkpoints')
-        const checkpointStore = useCheckpointStore()
-        await checkpointStore.snapshotFilesFromCommand(command, cwd, projectPath)
-      }
-      catch {
-        // Snapshot is best-effort; never block the command.
-      }
+      // Parallelize with shell resolution so spawn is not blocked serially.
+      // Snapshot starts immediately; shell probe runs concurrently.
+      const snapshotPromise = getCheckpointStore()
+        .then(store => store ? store.snapshotFilesFromCommand(command, cwd, projectPath).catch(() => {}) : undefined)
+        .catch(() => {})
 
       const timeoutMs = input.timeout_ms ?? 120_000
       // The tool description promises timeout_ms is "Ignored if is_background", but
@@ -1305,7 +1359,10 @@ export function createRunCommandTool(projectPath: string, runtimeEvents?: ShellT
       // nothing was actually wrong. Background tasks have no deadline; they only stop
       // via an explicit kill or by exiting on their own.
       const effectiveTimeoutMs = input.is_background ? 0 : timeoutMs
-      const resolved = await resolveShellCommand(command)
+      const shellResolvePromise = resolveShellCommand(command)
+      const resolved = await shellResolvePromise
+      // Ensure snapshot completes before we spawn (file must be snapshot before mutation)
+      await snapshotPromise
 
       const { task, done, spawnDone } = startTrackedSequence({
         kind: 'shell',

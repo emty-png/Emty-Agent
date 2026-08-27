@@ -130,46 +130,33 @@ function emitAutoCompaction() {
   emit('compactSession', { source: 'auto' })
 }
 
-function valueSize(value: unknown): number {
-  if (value == null)
-    return 0
-  if (typeof value === 'string')
-    return value.length
-  try {
-    return JSON.stringify(value).length
+const estimationDependencies = computed(() => {
+  const active = chat.activeTab
+  // Perf: cheap sig - only counts + content length + last tool status.
+  // Previous version did JSON.stringify(event.result) per tool per chunk (O(total tool output)).
+  const msgs = active.messages
+  let sig = ''
+  // Manual loop cheaper than map/join + nested map per message
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i]!
+    sig += `${m.id}:${m.role}:${m.content.length}:${m.parts?.length ?? 0}:${m.toolEvents?.length ?? 0}:${m.toolEvents?.at(-1)?.status ?? ''}|`
   }
-  catch {
-    return String(value).length
+  return {
+    text: props.text,
+    mode: 'build' as const,
+    attachmentsSig: props.attachments.map(a => `${a.id}:${a.size}`).join('|'),
+    tabId: active.id,
+    modelUid: active.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid,
+    enabledModels: settings.enabledModels,
+    settings: [
+      settings.contextCaching,
+      settings.autoContext,
+      settings.disabledSkillIds.join(),
+      settings.mcpServers.length,
+    ].join('|'),
+    messageSig: sig,
   }
-}
-
-const estimationDependencies = computed(() => ({
-  text: props.text,
-  mode: 'build',
-  attachmentsSig: props.attachments.map(a => `${a.id}:${a.size}`).join('|'),
-  tabId: chat.activeTab.id,
-  modelUid: chat.activeTab.modelUid ?? settings.agent.defaultModelUid ?? settings.activeModelUid,
-  enabledModels: settings.enabledModels,
-  settings: [
-    settings.contextCaching,
-    settings.autoContext,
-    settings.disabledSkillIds.join(),
-    settings.mcpServers.length,
-  ].join('|'),
-  messageSig: chat.activeTab.messages
-    .map(
-      m => [
-        m.id,
-        m.role,
-        m.content.length,
-        m.attachments?.length ?? 0,
-        m.error ? 1 : 0,
-        m.parts?.map(part => part.type === 'tool' ? part.toolCallId : `${part.type}:${part.text.length}`).join(',') ?? '',
-        m.toolEvents?.map(event => `${event.id}:${event.status}:${valueSize(event.result)}`).join(',') ?? '',
-      ].join(':'),
-    )
-    .join('|'),
-}))
+})
 
 watch(
   estimationDependencies,

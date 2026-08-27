@@ -6,9 +6,6 @@ import type { PendingBatch } from '@/utils/tools/questions'
 import type { SubAgentInfo, SubAgentPersonality } from '@/utils/tools/subagent'
 import type { TaskItem } from '@/utils/tools/todos'
 import type { WorkspaceSnapshot } from '@/utils/worktrees'
-// Internal helper — used by agentLifecycle and chat.ts
-import { isStreamingStatus } from '@/stores/chat/agent/status'
-
 import { UsageStats } from '@/utils/contextCaching'
 
 // ── Chat mode ─────────────────────────────────────────────────────────────────
@@ -222,4 +219,18 @@ export interface ChatTab {
 }
 
 export type { Attachment, SubAgentInfo, SubAgentPersonality, TaskItem, ToolPermissionDecision }
-export { isStreamingStatus }
+export {
+  isActiveStatus,
+  isBusyStatus,
+  isCompactingStatus,
+  isErrorStatus,
+  isIdleStatus,
+  isSleepingStatus,
+  isStreamingStatus,
+  isStrictStreamingStatus,
+  isToolRunningStatus,
+  isWaitingPermissionStatus,
+  isWaitingQuestionsStatus,
+  isWaitingStatus,
+  toolCategoryFromName,
+} from '@/stores/chat/agent/status'

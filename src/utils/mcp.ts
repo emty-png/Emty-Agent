@@ -474,8 +474,30 @@ async function createMcpSession(server: McpServerConfig): Promise<McpSession> {
 // Session cache
 // ---------------------------------------------------------------------------
 const sessionCache = new Map<string, CachedSession>()
+// Tab-scoped association: which tabs have used which serverIds (for kill-all)
+const tabServerMap = new Map<string, Set<string>>()
 
-export async function getMcpSession(server: McpServerConfig): Promise<McpSession> {
+function associateTabServer(tabId: string, serverId: string): void {
+  let set = tabServerMap.get(tabId)
+  if (!set) {
+    set = new Set()
+    tabServerMap.set(tabId, set)
+  }
+  set.add(serverId)
+}
+
+export function invalidateMcpSessionsForTab(tabId: string): void {
+  const servers = tabServerMap.get(tabId)
+  if (!servers || servers.size === 0)
+    return
+  for (const serverId of [...servers])
+    invalidateMcpServerSession(serverId)
+  tabServerMap.delete(tabId)
+}
+
+export async function getMcpSession(server: McpServerConfig, tabId?: string): Promise<McpSession> {
+  if (tabId)
+    associateTabServer(tabId, server.id)
   const fingerprint = configFingerprint(server)
   const cached = sessionCache.get(server.id)
 

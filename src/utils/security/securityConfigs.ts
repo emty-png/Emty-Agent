@@ -261,6 +261,23 @@ function cleanLines(content: string): string[] {
     .filter(l => l.length > 0 && !l.startsWith('#'))
 }
 
+// Memoization caches — avoid recompiling identical blocklists every call
+const sensitivePatternsCache = new Map<string, RegExp[]>()
+const shellBlocklistCache = new Map<string, RegExp[]>()
+const shellPatternsCache = new Map<string, RegExp[]>()
+let shellPatternsCacheVersion = 0
+
+// Invalidate shell patterns cache when overrides change (called via securityCache)
+if (typeof window !== 'undefined') {
+  try {
+    window.addEventListener('storage', e => {
+      if (e.key === 'settings')
+        shellPatternsCacheVersion++
+    })
+  }
+  catch {}
+}
+
 export function parseDenyRoots(content: string): string[] {
   return cleanLines(content)
 }
@@ -275,17 +292,30 @@ export function parseSensitiveSegments(content: string): string[][] {
 }
 
 export function parseSensitivePatterns(content: string): RegExp[] {
+  const cached = sensitivePatternsCache.get(content)
+  if (cached)
+    return cached
   const lines = cleanLines(content)
   const out: RegExp[] = []
   for (const line of lines) {
     const re = compileUserRegex(line, 'i')
     if (re)
       out.push(re)
+  }
+  sensitivePatternsCache.set(content, out)
+  // Bound cache size to avoid unbounded growth from custom overrides
+  if (sensitivePatternsCache.size > 50) {
+    const firstKey = sensitivePatternsCache.keys().next().value as string | undefined
+    if (firstKey)
+      sensitivePatternsCache.delete(firstKey)
   }
   return out
 }
 
 export function parseShellBlocklist(content: string): RegExp[] {
+  const cached = shellBlocklistCache.get(content)
+  if (cached)
+    return cached
   const lines = cleanLines(content)
   const out: RegExp[] = []
   for (const line of lines) {
@@ -293,7 +323,20 @@ export function parseShellBlocklist(content: string): RegExp[] {
     if (re)
       out.push(re)
   }
+  shellBlocklistCache.set(content, out)
+  if (shellBlocklistCache.size > 50) {
+    const firstKey = shellBlocklistCache.keys().next().value as string | undefined
+    if (firstKey)
+      shellBlocklistCache.delete(firstKey)
+  }
   return out
+}
+
+export function clearSecurityPatternCaches(): void {
+  sensitivePatternsCache.clear()
+  shellBlocklistCache.clear()
+  shellPatternsCache.clear()
+  shellPatternsCacheVersion++
 }
 
 // Validate without swallowing errors — used by SecurityPanel UI
@@ -359,12 +402,40 @@ function collectShellPatterns(platform: SecurityPlatform, map: Record<string, st
   return [...common, ...byId('shell-blocklist-windows'), ...byId('shell-blocklist-linux'), ...byId('shell-blocklist-macos')]
 }
 
+function shellPatternsCacheKey(platform: SecurityPlatform, map: Record<string, string>): string {
+  // Hash relevant blocklist contents + platform + version
+  const ids = platform === 'windows'
+    ? ['shell-blocklist', 'shell-blocklist-windows']
+    : platform === 'linux'
+      ? ['shell-blocklist', 'shell-blocklist-linux']
+      : platform === 'macos'
+        ? ['shell-blocklist', 'shell-blocklist-linux', 'shell-blocklist-macos']
+        : ['shell-blocklist', 'shell-blocklist-windows', 'shell-blocklist-linux', 'shell-blocklist-macos']
+  const parts = ids.map(id => `${id}:${getSecurityEffectiveContent(id, map).length}:${getSecurityEffectiveContent(id, map).slice(0, 64)}`)
+  return `${platform}:${shellPatternsCacheVersion}:${parts.join('|')}`
+}
+
 export function getEffectiveShellPatterns(
   platform: SecurityPlatform,
   overrides?: Record<string, string>,
 ): RegExp[] {
-  const map = overrides ?? getCache()
-  return collectShellPatterns(platform, map)
+  // If caller supplied explicit overrides, bypass cache (caller-managed)
+  if (overrides) {
+    return collectShellPatterns(platform, overrides)
+  }
+  const map = getCache()
+  const key = shellPatternsCacheKey(platform, map)
+  const cached = shellPatternsCache.get(key)
+  if (cached)
+    return cached
+  const result = collectShellPatterns(platform, map)
+  shellPatternsCache.set(key, result)
+  if (shellPatternsCache.size > 20) {
+    const firstKey = shellPatternsCache.keys().next().value as string | undefined
+    if (firstKey)
+      shellPatternsCache.delete(firstKey)
+  }
+  return result
 }
 
 function compileUserRegex(raw: string, defaultFlags: string): RegExp | null {

@@ -1,6 +1,6 @@
 [package]
 name = "emty-agent"
-version = "0.1.7"
+version = "0.1.8"
 description = "A nothing-special coding agent"
 authors = ["emty-png"]
 edition = "2021"

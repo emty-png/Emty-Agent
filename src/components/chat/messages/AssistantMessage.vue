@@ -216,6 +216,46 @@ const showTypingIndicator = computed(() => {
   )
 })
 
+const hasHiddenReasoning = computed(() => {
+  if (!hideThinking.value)
+    return false
+  const all = [...layout.value.work, ...layout.value.rest]
+  return all.some(g => g.type === 'reasoning')
+})
+
+const isHiddenReasoningStreaming = computed(() => {
+  if (!hideThinking.value || !isStreaming.value)
+    return false
+  const all = [...layout.value.work, ...layout.value.rest]
+  return all.some(g => g.type === 'reasoning' && g.streaming)
+})
+
+const showHiddenThinkingPlaceholder = computed(() => {
+  if (!hideThinking.value || !isStreaming.value)
+    return false
+  if (showTypingIndicator.value)
+    return false
+  if (hasVisibleWork.value)
+    return false
+  const hasVisibleRest = layout.value.rest.some(g => {
+    if (g.type === 'tools')
+      return true
+    if (g.type === 'text' && (g.hasText || g.streaming))
+      return true
+    return false
+  })
+  if (hasVisibleRest)
+    return false
+  if (isHiddenReasoningStreaming.value)
+    return true
+  if (hasHiddenReasoning.value)
+    return true
+  const all = [...layout.value.work, ...layout.value.rest]
+  if (all.length === 0)
+    return true
+  return false
+})
+
 const displayError = computed(() => {
   if (!props.msg.error)
     return null
@@ -443,6 +483,20 @@ const finishedTime = computed(() => {
       :disable-assistant-markdown="disableAssistantMarkdown"
       @toggle="isWorkCollapsed = !isWorkCollapsed"
     />
+
+    <div
+      v-if="showHiddenThinkingPlaceholder"
+      class="flex items-center gap-1.5 py-1 text-[13px] font-normal text-[var(--color-accent-text)]"
+      aria-live="polite"
+    >
+      <span class="inline-flex items-center gap-0">
+        <span>Thinking</span>
+        <span class="inline-block" aria-hidden="true">
+          <span class="inline-block opacity-40 animate-[dot-bounce_1.4s_infinite] [animation-delay:0s] motion-reduce:animate-none motion-reduce:opacity-[0.85]">.</span><span class="inline-block opacity-40 animate-[dot-bounce_1.4s_infinite] [animation-delay:0.15s] motion-reduce:animate-none motion-reduce:opacity-[0.85]">.</span>
+        </span>
+      </span>
+      <!-- Thinking.. -->
+    </div>
 
     <template v-for="group in layout.rest" :key="group.key">
       <div v-if="group.type === 'tools'" class="flex w-full flex-col gap-2.5">
