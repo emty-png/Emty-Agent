@@ -195,7 +195,7 @@ function expandFromPreview() {
   <div class="flex w-full flex-col">
     <div
       v-if="streaming"
-      class="group/header pointer-events-none -ml-2 flex min-h-[30px] w-[calc(100%+8px)] cursor-default select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)]"
+      class="group/header pointer-events-none flex min-h-[30px] w-full cursor-default select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)]"
       aria-live="polite"
     >
       <span class="whitespace-nowrap text-[13px] font-normal text-[var(--color-accent-text)]">
@@ -208,7 +208,7 @@ function expandFromPreview() {
 
     <button
       v-else
-      class="group/header -ml-2 flex min-h-[30px] w-[calc(100%+8px)] cursor-pointer select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)] transition-[color,background,border-color,transform] duration-150 ease-[ease] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)] active:scale-[0.98]"
+      class="group/header flex min-h-[30px] w-full cursor-pointer select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)] transition-[color,background,border-color,transform] duration-150 ease-[ease] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)] active:scale-[0.98]"
       :aria-expanded="isOpen"
       @click="emit('toggle')"
     >
@@ -285,10 +285,7 @@ function expandFromPreview() {
 
               <button
                 v-else
-                class="group/header flex w-full min-h-[30px] cursor-pointer select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left transition-[color,background,border-color,transform] duration-150 ease-[ease] active:scale-[0.98]"
-                :class="isLatestActionsChunk(chunk)
-                  ? 'text-[var(--color-accent-text)] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-accent-text)]'
-                  : 'text-[var(--color-text-dim)] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)]'"
+                class="group/header flex w-full min-h-[30px] cursor-pointer select-none items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-transparent bg-transparent px-2 py-[5px] text-left text-[var(--color-text-dim)] transition-[color,background,border-color,transform] duration-150 ease-[ease] hover:border-[var(--color-border-subtle)] hover:bg-[var(--color-state-hover)] hover:text-[var(--color-text-secondary)] active:scale-[0.98]"
                 :aria-expanded="isActionsExpanded(getActionsChunkKey(chunk))"
                 @click.stop="toggleActionsChunk(getActionsChunkKey(chunk))"
               >
@@ -296,8 +293,7 @@ function expandFromPreview() {
                   <span
                     v-for="(part, i) in computeSummaryParts(chunk.groups)"
                     :key="i"
-                    class="flex items-center gap-1 whitespace-nowrap text-[11.5px] font-normal"
-                    :class="isLatestActionsChunk(chunk) ? 'text-[var(--color-accent-text)]' : 'text-[var(--color-text-dim)]'"
+                    class="flex items-center gap-1 whitespace-nowrap text-[11.5px] font-normal text-[var(--color-text-dim)]"
                   >
                     <component :is="part.icon" :size="12" :stroke-width="1.75" class="text-inherit opacity-75" />
                     {{ part.label }}

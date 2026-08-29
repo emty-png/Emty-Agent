@@ -17,12 +17,7 @@ import {
 } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, ref, watch } from 'vue'
-import {
-  dbCountConversationsByWorkspace,
-  dbListConversationsByWorkspace,
-  dbListConversationsByWorkspaceAll,
-  dbListProjectsWithLatestChat,
-} from '@/db/database'
+import { useSharedSidebar } from '@/composables/sidebar/useSharedSidebar'
 import { useChatStore } from '@/stores/chat'
 import { isStreamingStatus } from '@/stores/chat/agent/status'
 import { useHistoryStore } from '@/stores/history'
@@ -38,12 +33,7 @@ interface NavItem {
   icon: Component
 }
 
-interface ProjectItem {
-  workspace_path: string
-  project_name: string
-  conversations: ConversationRow[]
-  totalCount: number
-}
+type ProjectItem = import('@/composables/sidebar/useSharedSidebar').ProjectItem
 
 const props = defineProps<{
   activeView?: ViewId
@@ -81,10 +71,9 @@ const navItems = computed<NavItem[]>(() => {
   return items
 })
 
-// ── projects section ─────────────────────────────────────────────────────────
-const PROJECT_CHAT_LIMIT = 5
-const projects = ref<ProjectItem[]>([])
-const collapsedProjects = ref(new Set<string>())
+// ── projects section — shared between docked and flyout instances ─────────────
+const { projects, collapsedProjects, loadProjects: loadSharedProjects, toggleProject: toggleSharedProject, showAllConversations: showAllSharedConversations, PROJECT_CHAT_LIMIT } = useSharedSidebar()
+const loadProjects = loadSharedProjects
 const history = useHistoryStore()
 const { pinnedConversations } = storeToRefs(history)
 const chat = useChatStore()
@@ -105,58 +94,6 @@ function relativeTime(ts: number): string {
   if (days < 7)
     return `${days}d`
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
-
-async function loadProjects() {
-  try {
-    // get projects from DB (have conversations)
-    const latest = await dbListProjectsWithLatestChat(50)
-    const byPath = new Map<string, ProjectItem>()
-
-    // design folders opened via the canvas "show code" action are not real projects
-    const designPaths = new Set(projectStore.designProjects)
-
-    const projectPromises = latest
-      .filter(p => !designPaths.has(p.workspace_path))
-      .map(async p => {
-        const [conversations, totalCount] = await Promise.all([
-          dbListConversationsByWorkspace(p.workspace_path, PROJECT_CHAT_LIMIT),
-          dbCountConversationsByWorkspace(p.workspace_path),
-        ])
-        return { p, conversations, totalCount }
-      })
-
-    const results = await Promise.all(projectPromises)
-
-    for (const { p, conversations, totalCount } of results) {
-      byPath.set(p.workspace_path, {
-        workspace_path: p.workspace_path,
-        project_name: p.project_name,
-        conversations,
-        totalCount,
-      })
-    }
-
-    // ensure all openProjects appear (even if no conversations yet)
-    for (const path of projectStore.openProjects) {
-      if (designPaths.has(path))
-        continue
-      if (!byPath.has(path)) {
-        const name = path.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? path
-        byPath.set(path, {
-          workspace_path: path,
-          project_name: name,
-          conversations: [],
-          totalCount: 0,
-        })
-      }
-    }
-
-    projects.value = [...byPath.values()]
-  }
-  catch {
-    projects.value = []
-  }
 }
 
 async function openConversation(conv: ConversationRow) {
@@ -203,32 +140,24 @@ async function confirmRemoveProject() {
 }
 
 watch(confirmRemoveProjectPath, val => {
-  if (val)
+  if (val) {
     emit('contextMenuOpen')
+    sidebar.setContextMenuOpen(true)
+  }
+  else {
+    sidebar.setContextMenuOpen(false)
+  }
 })
 
 function toggleProject(path: string) {
-  if (collapsedProjects.value.has(path))
-    collapsedProjects.value.delete(path)
-  else
-    collapsedProjects.value.add(path)
+  toggleSharedProject(path)
 }
 
 async function showAllConversations(project: ProjectItem) {
-  const allConversations = await dbListConversationsByWorkspaceAll(project.workspace_path)
-  project.conversations = allConversations
+  await showAllSharedConversations(project)
 }
 
-// Kick off data loading immediately during setup (before mount) for instant perceived performance
-loadProjects()
-history.loadPinned()
-
-// refresh projects when conversations change (new chat created, renamed, deleted, pinned, unpinned)
-watch(
-  () => [history.conversations.length, history.pinnedConversations.length],
-  () => loadProjects(),
-  { deep: true },
-)
+const confirmDeleteId = ref<string | null>(null)
 
 // ── context menu ──────────────────────────────────────────────────────────────
 const menuOpen = ref<string | null>(null)
@@ -238,6 +167,7 @@ function openMenu(e: MouseEvent, id: string) {
   e.stopPropagation()
   menuOpen.value = id
   emit('contextMenuOpen')
+  sidebar.setContextMenuOpen(true)
   const btn = e.currentTarget as HTMLElement
   const rect = btn.getBoundingClientRect()
   const menuW = 140
@@ -253,6 +183,8 @@ function openMenu(e: MouseEvent, id: string) {
 function closeMenu() {
   menuOpen.value = null
   emit('contextMenuClose')
+  if (!confirmDeleteId.value && !confirmRemoveProjectPath.value)
+    sidebar.setContextMenuOpen(false)
 }
 
 // ── rename ────────────────────────────────────────────────────────────────────
@@ -285,8 +217,6 @@ function cancelRename() {
 }
 
 // ── delete ────────────────────────────────────────────────────────────────────
-const confirmDeleteId = ref<string | null>(null)
-
 function startDelete(id: string) {
   closeMenu()
   confirmDeleteId.value = id
@@ -305,9 +235,15 @@ async function confirmDelete() {
 }
 
 watch(confirmDeleteId, val => {
-  if (val)
+  if (val) {
     emit('contextMenuOpen')
-  else emit('contextMenuClose')
+    sidebar.setContextMenuOpen(true)
+  }
+  else {
+    emit('contextMenuClose')
+    if (!menuOpen.value && !confirmRemoveProjectPath.value)
+      sidebar.setContextMenuOpen(false)
+  }
 })
 
 // ── pin / unpin ───────────────────────────────────────────────────────────────

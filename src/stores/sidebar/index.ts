@@ -5,6 +5,8 @@ export const useSidebarStore = defineStore(
   'sidebar',
   () => {
     const collapsed = ref(false)
+    const flyoutOpen = ref(false)
+    const contextMenuOpen = ref(false)
 
     function toggle() {
       collapsed.value = !collapsed.value
@@ -14,9 +16,28 @@ export const useSidebarStore = defineStore(
       collapsed.value = value
     }
 
-    return { collapsed, toggle, setCollapsed }
+    function setFlyoutOpen(value: boolean) {
+      flyoutOpen.value = value
+    }
+
+    function openFlyout() {
+      if (collapsed.value)
+        flyoutOpen.value = true
+    }
+
+    function closeFlyout() {
+      flyoutOpen.value = false
+    }
+
+    function setContextMenuOpen(value: boolean) {
+      contextMenuOpen.value = value
+    }
+
+    return { collapsed, flyoutOpen, contextMenuOpen, toggle, setCollapsed, setFlyoutOpen, openFlyout, closeFlyout, setContextMenuOpen }
   },
   {
-    persist: true, // persists entire state to localStorage under key "sidebar"
+    persist: {
+      pick: ['collapsed'],
+    },
   },
 )

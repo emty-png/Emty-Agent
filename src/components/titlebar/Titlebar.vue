@@ -19,18 +19,16 @@ const emit = defineEmits<{
 }>()
 
 const sidebar = useSidebarStore()
-const { collapsed: sidebarCollapsed } = storeToRefs(sidebar)
+const { collapsed: sidebarCollapsed, flyoutOpen: sidebarFlyoutOpen, contextMenuOpen: sidebarContextMenuOpen } = storeToRefs(sidebar)
 
 const isOnline = ref(navigator.onLine)
 function onOnline() { isOnline.value = true }
 function onOffline() { isOnline.value = false }
 
-const sidebarFlyoutOpen = ref(false)
 const sidebarTriggerRef = ref<HTMLElement | null>(null)
 const sidebarFlyoutRef = ref<HTMLElement | null>(null)
 const sidebarFlyoutPos = ref({ top: 0, left: 0 })
 let flyoutCloseTimer: ReturnType<typeof setTimeout> | null = null
-const sidebarContextMenuOpen = ref(false)
 
 function updateSidebarFlyoutPos() {
   const trigger = sidebarTriggerRef.value
@@ -52,7 +50,7 @@ function cancelCloseSidebarFlyout() {
 
 function closeSidebarFlyoutNow() {
   cancelCloseSidebarFlyout()
-  sidebarFlyoutOpen.value = false
+  sidebar.setFlyoutOpen(false)
 }
 
 function scheduleCloseSidebarFlyout() {
@@ -60,7 +58,7 @@ function scheduleCloseSidebarFlyout() {
     return
   cancelCloseSidebarFlyout()
   flyoutCloseTimer = setTimeout(() => {
-    sidebarFlyoutOpen.value = false
+    sidebar.setFlyoutOpen(false)
   }, 150)
 }
 
@@ -69,7 +67,7 @@ async function openSidebarFlyout() {
     return
   cancelCloseSidebarFlyout()
   updateSidebarFlyoutPos()
-  sidebarFlyoutOpen.value = true
+  sidebar.setFlyoutOpen(true)
   await nextTick()
   updateSidebarFlyoutPos()
 }
@@ -238,8 +236,8 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
           :active-view="props.activeView"
           @select-view="onSidebarSelectView"
           @open-settings="onSidebarOpenSettings"
-          @context-menu-open="sidebarContextMenuOpen = true"
-          @context-menu-close="sidebarContextMenuOpen = false"
+          @context-menu-open="sidebar.setContextMenuOpen(true)"
+          @context-menu-close="sidebar.setContextMenuOpen(false)"
         />
       </div>
     </Transition>

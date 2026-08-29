@@ -503,7 +503,7 @@ const finishedTime = computed(() => {
 </script>
 
 <template>
-  <div class="group flex max-w-full flex-col items-start gap-2.5 py-1">
+  <div class="group flex w-full flex-col items-start gap-2.5 py-1">
     <div
       v-if="displayError"
       class="mx-auto mb-2.5 flex w-[calc(100%-24px)] max-w-full items-start gap-2 rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-bg-card))] px-3 py-2 text-[12.5px] leading-[1.5]"

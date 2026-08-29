@@ -492,10 +492,15 @@ function stop() {
 .thread {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-top: 32px;
   padding-bottom: 48px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-mid) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.thread::-webkit-scrollbar {
+  display: none;
 }
 
 .thread-inner {

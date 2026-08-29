@@ -36,11 +36,6 @@ export function useChatAttachments() {
   )
 
   async function addFiles(files: FileList | File[]) {
-    if (chat.activeTab.mode === 'design') {
-      console.warn('Attachments are not supported in design mode.')
-      return
-    }
-
     // Allow image attachments for *any* model, including those where
     // supportsAttachments === false. Previously dropping an image on a
     // text-only model would be ignored; now we store the image and let
@@ -92,11 +87,6 @@ export function useChatAttachments() {
   }
 
   async function handleOpenFileDialog() {
-    if (chat.activeTab.mode === 'design') {
-      console.warn('Attachments are not supported in design mode.')
-      return
-    }
-
     // File picker is allowed regardless of vision support — images will be
     // attached even for text-only models (warning shown in ChatInput).
     try {
@@ -113,8 +103,6 @@ export function useChatAttachments() {
   // native vision). This is the explicit "image dropping for models that don't
   // support it" path.
   async function handleDomDrop(e: DragEvent) {
-    if (chat.activeTab.mode === 'design')
-      return
     const files = e.dataTransfer?.files
     if (!files || files.length === 0)
       return
@@ -129,8 +117,6 @@ export function useChatAttachments() {
   }
 
   function handleDomDragOver(e: DragEvent) {
-    if (chat.activeTab.mode === 'design')
-      return
     // Always allow drop, even for non-vision models — we show a warning instead
     // of blocking.
     e.preventDefault()

@@ -39,7 +39,11 @@ export function guessMimeType(ext: string): string {
     c: 'text/x-c',
     h: 'text/x-c',
     css: 'text/css',
+    scss: 'text/x-scss',
+    sass: 'text/x-sass',
+    less: 'text/x-less',
     html: 'text/html',
+    htm: 'text/html',
     xml: 'text/xml',
     yaml: 'text/yaml',
     yml: 'text/yaml',
@@ -97,7 +101,7 @@ export function readFileAsAttachment(file: File): Promise<Attachment> {
     }
 
     const isImage = isImageMime(file.type)
-    const isText = file.type.startsWith('text/') || /\.(?:ts|js|jsx|tsx|vue|py|rb|go|rs|java|kt|cs|cpp|c|h|hpp|json|yaml|yml|toml|xml|csv|sql|sh|bash|zsh|ps1|md|mdx|txt|log|cfg|ini|env|gitignore|dockerfile|makefile)$/i.test(file.name)
+    const isText = file.type.startsWith('text/') || /\.(?:ts|js|jsx|tsx|vue|py|rb|go|rs|java|kt|cs|cpp|c|h|hpp|json|yaml|yml|toml|xml|csv|sql|sh|bash|zsh|ps1|md|mdx|txt|log|cfg|ini|env|gitignore|dockerfile|makefile|html|htm|css|scss|sass|less)$/i.test(file.name)
 
     const reader = new FileReader()
     reader.onerror = () => reject(reader.error)
@@ -160,7 +164,7 @@ export async function openFileDialog(): Promise<Attachment[]> {
         const ext = name.split('.').pop()?.toLowerCase() ?? ''
         const mimeType = guessMimeType(ext)
         const isImage = isImageMime(mimeType)
-        const isText = mimeType.startsWith('text/') || /^(?:ts|js|jsx|tsx|vue|py|rb|go|rs|java|kt|cs|cpp|c|h|hpp|json|yaml|yml|toml|xml|csv|sql|sh|bash|zsh|ps1|md|mdx|txt|log|cfg|ini|env)$/.test(ext)
+        const isText = mimeType.startsWith('text/') || /^(?:ts|js|jsx|tsx|vue|py|rb|go|rs|java|kt|cs|cpp|c|h|hpp|json|yaml|yml|toml|xml|csv|sql|sh|bash|zsh|ps1|md|mdx|txt|log|cfg|ini|env|html|htm|css|scss|sass|less)$/.test(ext)
 
         let dataUrl: string
         if (isText) {
@@ -205,7 +209,7 @@ export async function readFileFromPath(filePath: string): Promise<Attachment> {
   const mimeType = guessMimeType(ext)
   const isImage = isImageMime(mimeType)
   const isText = mimeType.startsWith('text/')
-    || /^(?:ts|js|jsx|tsx|vue|py|rb|go|rs|java|kt|cs|cpp|c|h|hpp|json|yaml|yml|toml|xml|csv|sql|sh|bash|zsh|ps1|md|mdx|txt|log|cfg|ini|env)$/.test(ext)
+    || /^(?:ts|js|jsx|tsx|vue|py|rb|go|rs|java|kt|cs|cpp|c|h|hpp|json|yaml|yml|toml|xml|csv|sql|sh|bash|zsh|ps1|md|mdx|txt|log|cfg|ini|env|html|htm|css|scss|sass|less)$/.test(ext)
 
   let dataUrl: string
   if (isText) {
