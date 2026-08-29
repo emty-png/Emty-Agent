@@ -2,7 +2,7 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check } from '@tauri-apps/plugin-updater'
-import { RefreshCw, Trash2, Upload, Volume2, VolumeX } from 'lucide-vue-next'
+import { Trash2, Upload, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { onMounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
@@ -124,11 +124,14 @@ onMounted(async () => {
 })
 
 const isCheckingUpdate = ref(false)
+const isDownloadingUpdate = ref(false)
 const updateStatus = ref('')
 const hasUpdate = ref(false)
+const showUpdateConfirm = ref(false)
+const pendingUpdate = ref<Awaited<ReturnType<typeof check>> | null>(null)
 
 async function checkForUpdate() {
-  if (isCheckingUpdate.value)
+  if (isCheckingUpdate.value || isDownloadingUpdate.value)
     return
   isCheckingUpdate.value = true
   updateStatus.value = 'Checking for updates...'
@@ -137,17 +140,14 @@ async function checkForUpdate() {
     const update = await check()
     if (update) {
       hasUpdate.value = true
-      updateStatus.value = `Update ${update.version} available. Downloading...`
-      await update.downloadAndInstall(event => {
-        if (event.event === 'Finished') {
-          updateStatus.value = 'Download finished. Restarting...'
-        }
-      })
-      await relaunch()
+      pendingUpdate.value = update
+      showUpdateConfirm.value = true
+      updateStatus.value = `Update ${update.version} available.`
     }
     else {
       updateStatus.value = 'You are on the latest version.'
       hasUpdate.value = false
+      pendingUpdate.value = null
     }
   }
   catch (error) {
@@ -156,6 +156,42 @@ async function checkForUpdate() {
   }
   finally {
     isCheckingUpdate.value = false
+  }
+}
+
+function cancelUpdate() {
+  showUpdateConfirm.value = false
+}
+
+function handleUpdateButtonClick() {
+  if (hasUpdate.value && pendingUpdate.value) {
+    showUpdateConfirm.value = true
+    return
+  }
+  checkForUpdate()
+}
+
+async function confirmUpdate() {
+  const update = pendingUpdate.value
+  if (!update)
+    return
+  showUpdateConfirm.value = false
+  isDownloadingUpdate.value = true
+  updateStatus.value = `Downloading update ${update.version}...`
+  try {
+    await update.downloadAndInstall(event => {
+      if (event.event === 'Finished') {
+        updateStatus.value = 'Download finished. Restarting...'
+      }
+    })
+    await relaunch()
+  }
+  catch (error) {
+    updateStatus.value = 'Failed to download update'
+    console.error(error)
+  }
+  finally {
+    isDownloadingUpdate.value = false
   }
 }
 </script>
@@ -340,12 +376,11 @@ async function checkForUpdate() {
             <button
               class="ghost-btn"
               type="button"
-              :disabled="isCheckingUpdate || hasUpdate"
-              title="Check for updates"
-              @click.prevent="checkForUpdate"
+              :disabled="isCheckingUpdate || isDownloadingUpdate"
+              :title="hasUpdate ? 'Download update' : 'Check for updates'"
+              @click.prevent="handleUpdateButtonClick"
             >
-              <RefreshCw v-if="!hasUpdate" :size="12" :class="{ 'animate-spin': isCheckingUpdate }" />
-              <span>{{ isCheckingUpdate ? 'Checking...' : (hasUpdate ? 'Downloading...' : 'Check') }}</span>
+              <span>{{ isCheckingUpdate ? 'Checking...' : (isDownloadingUpdate ? 'Downloading...' : (hasUpdate ? 'Download' : 'Check')) }}</span>
             </button>
           </div>
         </div>
@@ -378,6 +413,30 @@ async function checkForUpdate() {
       </div>
     </div>
   </section>
+
+  <Teleport to="body">
+    <div v-if="showUpdateConfirm" class="dialog-backdrop update-confirm-backdrop" @click.self="cancelUpdate">
+      <div class="dialog">
+        <button class="dialog-close" @click="cancelUpdate">
+          <X :size="14" :stroke-width="1.8" />
+        </button>
+        <h2 class="dialog-title">
+          Update available
+        </h2>
+        <p class="dialog-body">
+          Version <strong>{{ pendingUpdate?.version }}</strong> is available. Do you want to download and install it now? The app will restart automatically.
+        </p>
+        <div class="dialog-actions">
+          <button class="dialog-btn dialog-btn--cancel" @click="cancelUpdate">
+            Later
+          </button>
+          <button class="dialog-btn dialog-btn--primary" @click="confirmUpdate">
+            Update now
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -613,5 +672,25 @@ async function checkForUpdate() {
   background: color-mix(in srgb, var(--color-danger, #ef4444) 10%, transparent);
   border-color: color-mix(in srgb, var(--color-danger, #ef4444) 45%, transparent);
   color: var(--color-danger-text, #ef4444);
+}
+</style>
+
+<style>
+.update-confirm-backdrop {
+  z-index: 100000 !important;
+}
+
+.update-confirm-backdrop .dialog {
+  z-index: 100001;
+}
+
+.dialog-btn--primary {
+  background: var(--color-text-primary);
+  color: var(--color-bg-base);
+  border-color: transparent;
+}
+
+.dialog-btn--primary:hover {
+  opacity: 0.88;
 }
 </style>
