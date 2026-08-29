@@ -14,12 +14,19 @@ const emit = defineEmits<{
 }>()
 
 const showActions = computed(() => props.canCompare !== false)
+
+function onCardClick() {
+  if (!showActions.value)
+    return
+  emit('preview')
+}
 </script>
 
 <template>
   <div
-    class="group/dv flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-subtle bg-bg-card py-3 pr-2 pl-4 transition-colors duration-150 hover:border-accent/30"
-    @click="emit('preview')"
+    class="group/dv flex w-full items-center justify-between gap-2 rounded-lg border border-border-subtle bg-bg-card py-3 pr-2 pl-4 transition-colors duration-150"
+    :class="showActions ? 'cursor-pointer hover:border-accent/30' : 'cursor-default opacity-80'"
+    @click="onCardClick"
   >
     <span class="min-w-0 truncate text-[13px] font-semibold leading-none text-text-primary">{{ version.label }}</span>
 

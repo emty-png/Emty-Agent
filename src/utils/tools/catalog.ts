@@ -140,28 +140,30 @@ const BUILTIN_GROUPS: BuiltinGroupDefinition[] = [
   },
   {
     id: 'design-scaffold',
-    label: 'Project',
-    description: 'Create new design projects from a template.',
+    label: 'Screens',
+    description: 'Create and manage screens within a design (multi-screen).',
     tools: [
-      { id: 'start_project', label: 'start_project', description: 'Create a new design project with index.html, styles.css and script.js, and start the live preview.' },
+      { id: 'create_screen', label: 'create_screen', description: 'Create a new screen inside a design with index.html, styles.css, script.js.' },
+      { id: 'delete_screens', label: 'delete_screens', description: 'Delete one or more screens and their files from a design.' },
     ],
   },
   {
     id: 'design-files',
     label: 'Files',
-    description: 'Edit files within the design project.',
+    description: 'Edit and read screen files (batch across screens supported).',
     tools: [
-      { id: 'edit_design', label: 'edit_design', description: 'Edit index.html, styles.css or script.js in the active design project.' },
-      { id: 'read_design', label: 'read_design', description: 'Read index.html, styles.css or script.js from the active design project with line numbers. Supports offset/limit pagination.' },
+      { id: 'edit_design', label: 'edit_design', description: 'Edit index.html, styles.css or script.js in one or more screens (batch edits).' },
+      { id: 'read_design', label: 'read_design', description: 'Read screen files with line numbers. Supports batch reads across screens.' },
     ],
   },
   {
     id: 'design-build',
     label: 'Preview & Console',
-    description: 'Refresh the live preview and read its console output.',
+    description: 'Refresh the grid preview, capture screenshots, and read console output (per-screen filter optional).',
     tools: [
-      { id: 'refresh_preview', label: 'refresh_preview', description: 'Reload the live preview of the active design project.' },
-      { id: 'get_console', label: 'get_console', description: 'Read captured console logs, warnings and errors from the preview.' },
+      { id: 'refresh_preview', label: 'refresh_preview', description: 'Reload the grid preview for the active design.' },
+      { id: 'screenshot_screen', label: 'screenshot_screen', description: 'Capture a 1× PNG screenshot of a single screen for visual verification.' },
+      { id: 'get_console', label: 'get_console', description: 'Read captured console logs, warnings and errors (aggregate or per-screen).' },
     ],
   },
 ]

@@ -568,12 +568,26 @@ const overlayTransitions = {
   leaveToClass: 'opacity-0 translate-y-3',
 }
 
-const shellClasses = computed(() => [
-  'input-shell relative w-full bg-(--color-bg-card) border rounded-(--radius-lg) flex flex-col overflow-visible transition-colors duration-[120ms] ease-out',
-  isDragging.value
-    ? 'border-[var(--color-accent)] shadow-[0_0_12px_color-mix(in_srgb,var(--color-accent)_20%,transparent)]'
-    : (focused.value || isStreaming.value) ? 'border-(--color-accent-dim)' : 'border-(--color-border-bright)',
-].join(' '))
+const shellClasses = computed(() => {
+  const classes = [
+    'input-shell relative w-full bg-(--color-bg-card) border rounded-(--radius-lg) flex flex-col overflow-visible transition-colors duration-[120ms] ease-out',
+  ]
+  if (isDragging.value) {
+    classes.push('border-[var(--color-accent)] shadow-[0_0_12px_color-mix(in_srgb,var(--color-accent)_20%,transparent)]')
+  }
+  else if (mode.value === 'plan') {
+    classes.push('border-(--color-success)')
+    if (focused.value || isStreaming.value)
+      classes.push('shadow-[0_0_12px_color-mix(in_srgb,var(--color-success)_25%,transparent)]')
+  }
+  else if (focused.value || isStreaming.value) {
+    classes.push('border-(--color-accent-dim)')
+  }
+  else {
+    classes.push('border-(--color-border-bright)')
+  }
+  return classes.join(' ')
+})
 
 const textAreaBase = [
   'w-full min-h-[44px] max-h-[180px] pt-3 px-[14px] pb-1',
@@ -732,7 +746,12 @@ const sendBtnClasses = computed(() => {
         style="mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask-composite: exclude; -webkit-mask-composite: xor;"
       >
         <div class="absolute top-1/2 left-1/2 w-[300%] aspect-square -translate-x-1/2 -translate-y-1/2">
-          <div class="w-full h-full animate-[spin_2.5s_linear_infinite] bg-[conic-gradient(from_0deg,transparent_0%,transparent_75%,var(--color-accent)_95%,var(--color-accent-bright)_100%)]" />
+          <div
+            class="w-full h-full animate-[spin_2.5s_linear_infinite]"
+            :class="mode === 'plan'
+              ? 'bg-[conic-gradient(from_0deg,transparent_0%,transparent_75%,var(--color-success)_95%,var(--color-success-text)_100%)]'
+              : 'bg-[conic-gradient(from_0deg,transparent_0%,transparent_75%,var(--color-accent)_95%,var(--color-accent-bright)_100%)]'"
+          />
         </div>
       </div>
 
@@ -795,7 +814,7 @@ const sendBtnClasses = computed(() => {
           <Mic :size="14" :stroke-width="2" />
         </button>
 
-        <PermissionModePicker :is-plan-mode="chat.activeTab.mode === 'plan'" :compact="compactToolbar" />
+        <PermissionModePicker :compact="compactToolbar" />
 
         <ProjectPicker v-if="props.showProjectPicker !== false" :compact="compactToolbar" />
 

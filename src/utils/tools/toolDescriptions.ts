@@ -317,44 +317,60 @@ Optional parameters:
 - count: Number of images to generate (1-4, default 1).
 - size: Image dimensions as "WIDTHxHEIGHT" (e.g. "1024x1024"). Default varies by provider.`,
 
-  start_project: `Create a new design project and start its live preview.
+  create_screen: `Create a new screen inside a design. Manages the multi-screen architecture at ~/.emty/designs/{design}/{screen}/
 
-Call this FIRST, before any other design tool. It creates a project at ~/.emty/designs/{name}/ containing three files:
-- index.html — links styles.css and script.js
-- styles.css
-- script.js
-
-The preview renders index.html in the canvas immediately (phone/desktop toggle available). A console capture is active: anything logged via console.* or runtime errors appears in the preview console.
+Call this to start any design work. Each design is a folder under ~/.emty/designs/, each screen is a subfolder with index.html, styles.css, script.js.
+The preview is a GRID of all screens — newly created screens appear immediately in the grid at their viewport size.
 
 Rules:
-- Choose a short, descriptive snake_case name (e.g. "login_page", "dashboard_v2").
-- If a project with that name exists, pick a different name or pass overwrite: true to replace it.
-- After creating, use edit_design to write your actual code into the three files.`,
+- Pick a short snake_case design name (e.g. "my_app") and screen name (e.g. "login", "dashboard"). Both must match ^[a-z0-9][a-z0-9_-]{0,63}$.
+- Max ${20} screens per design. If a screen already exists, use a different name or overwrite:true.
+- One design per chat tab — all screens you create should share the same design name.
+- Viewport: choose the frame size at creation — viewport:"mobile" (390×844, default), "tablet" (768×1024), "desktop" (1440×900). For dashboards, landing pages, or desktop UIs you MUST use viewport:"desktop" — otherwise the frame will be phone-sized and the design will look squashed. Custom width/height (320–5120 / 480–3200) can override the preset.
+- After creating, use edit_design to write real code into that screen's files.
+- Use delete_screens to remove screens you no longer need.`,
 
-  edit_design: `Edit files in the current design project. Only index.html, styles.css and script.js exist.
+  delete_screens: `Delete one or more screens from a design. Removes the screen folders at ~/.emty/designs/{design}/{screen}/ (including index.html, styles.css, script.js and versions) and prunes them from design.json (screens, viewports, connections).
+
+Provide design name and an array of screen names to delete (1–20). All names must match ^[a-z0-9][a-z0-9_-]{0,63}$. At least one screen must exist; non-existent screens are reported as notFound without failing the whole call. Irreversible — creates no backup.`,
+
+  screenshot_screen: `Capture a pixel-perfect 1× PNG screenshot of a single screen in the active design at its viewport size. Use after edit_design to visually verify layout — checks for clipping, overflow, text legibility, and viewport fit without human review.
+
+Provide valid design and screen names (both matching ^[a-z0-9][a-z0-9_-]{0,63}$). The preview must be open and the screen rendered in the grid (opaque capture via in-iframe foreignObject, 1× DPR, viewport-only). Saves PNG to ~/.emty/designs/{design}/{screen}/.screenshots/ per-screen. If the model lacks vision (supportsAttachments=false), the preview shows a system notification instead of an image.`,
+
+  edit_design: `Edit files in one or more screens of the active design. Each screen has index.html, styles.css, script.js at ~/.emty/designs/{design}/{screen}/
+
+Preferred: batch mode
+  { edits: [{ screen: "login", files: [{ path:"index.html", content:"..." }] }, { screen:"dashboard", files:[...] }] }
+Shorthand for single screen:
+  { screen:"login", files:[{path,content}] }
 
 Rules:
-- Provide the FULL new content for each file you change — there is no partial patching.
-- Only send files that actually change; unchanged files are skipped automatically.
-- Keep index.html linking "./styles.css" and "./script.js" so the preview stays wired up.
-- The preview reloads automatically after a successful edit. If it ever looks stale, call refresh_preview.
-- After editing, check get_console if something may have gone wrong at runtime.`,
+- Provide the FULL new content for each file you change — no partial patches.
+- Only send files that actually change; unchanged files are skipped.
+- Keep index.html linking "./styles.css" and "./script.js" so the preview stays wired.
+- The preview grid reloads automatically after a successful edit. If stale, call refresh_preview.
+- After editing, check get_console (optionally with screen filter) if runtime may have failed.`,
 
-  refresh_preview: `Reload the live preview of the current design project.
+  refresh_preview: `Reload the live preview grid for the current design.
 
-Use this only when the preview did not auto-refresh after edit_design, or when you suspect it is showing stale content. Takes no parameters.`,
+Use this only when the preview did not auto-refresh after edit_design, or you suspect stale content. Takes no parameters. Works for both legacy single-project and new multi-screen layouts.`,
 
-  get_console: `Read the console output captured from the preview (console.log/info/warn/error/debug plus uncaught errors and promise rejections).
+  get_console: `Read the console output captured from the preview grid (console.log/info/warn/error/debug plus uncaught errors and promise rejections).
 
-Use this to debug runtime problems: read the errors, fix the code with edit_design, then verify again.
+Aggregates across all screens in the active design by default. Pass screen to filter to one screen.
 
 Parameters:
 - level: filter by "log", "info", "warn" or "error" (default "all").
-- limit: max entries returned, oldest first (default 50, max 200).`,
+- limit: max entries returned, oldest first (default 50, max 200).
+- screen: optional screen name to filter to.`,
 
-  read_design: `Read one or more files from the current design project (index.html, styles.css, script.js). Returns content with 1-based line numbers in cat -n format.
+  read_design: `Read one or more files from one or more screens in the active design (index.html, styles.css, script.js). Returns content with 1-based line numbers in cat -n format. Batch across screens supported.
 
-Use this to inspect the current state of your design files before rewriting them with edit_design.
+Preferred: batch mode
+  { reads: [{ screen:"login", file_paths:["index.html","styles.css"] }, {screen:"dashboard", file_paths:["script.js"]}] }
+Single screen shorthand:
+  { screen:"login", file_paths:["index.html"] }
 
 If a file is truncated, use offset + limit to read subsequent pages. Default limit: 300 lines, max: 2000.`,
 } as const

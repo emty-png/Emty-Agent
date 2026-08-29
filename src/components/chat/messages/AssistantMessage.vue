@@ -410,19 +410,44 @@ const modelName = computed(() => props.msg.modelName ?? null)
 const chatStoreForVersion = useChatStore()
 const dvStoreForVersion = useDesignVersionStore()
 
-const designVersion = computed(() => {
+const designVersionsList = computed(() => {
+  // Collect all versions for this assistant message (multi-screen: one row per screen sharing same messageId)
+  const byMsg: import('@/stores/chat/core/types').DesignVersionRef[] = []
+  for (const tab of chatStoreForVersion.tabs) {
+    if (!tab.designVersions)
+      continue
+    for (const v of tab.designVersions) {
+      if (v.messageId === props.msg.id)
+        byMsg.push(v)
+    }
+  }
+  if (byMsg.length > 0) {
+    // sort by label/screen for stable order
+    return byMsg.slice().sort((a, b) => (a.screenName ?? '').localeCompare(b.screenName ?? '') || a.versionNumber - b.versionNumber)
+  }
+  // Fallback: scan designVersions store (covers history-loaded not yet attached to tab)
+  for (const list of Object.values(dvStoreForVersion.versionsByConversation)) {
+    for (const v of list) {
+      if (v.messageId === props.msg.id)
+        byMsg.push(v)
+    }
+  }
+  if (byMsg.length > 0)
+    return byMsg.slice().sort((a, b) => (a.screenName ?? '').localeCompare(b.screenName ?? '') || a.versionNumber - b.versionNumber)
+
+  // Legacy single version via msg.designVersionId
   const id = props.msg.designVersionId
   if (!id)
-    return null
+    return []
   for (const tab of chatStoreForVersion.tabs) {
     const v = tab.designVersions?.find(x => x.id === id)
     if (v)
-      return v
+      return [v]
   }
   const v2 = dvStoreForVersion.getByMessageId(props.msg.id)
   if (v2)
-    return v2
-  return {
+    return [v2 as unknown as import('@/stores/chat/core/types').DesignVersionRef]
+  return [{
     id,
     versionNumber: 0,
     createdAt: props.msg.timestamp.getTime(),
@@ -433,19 +458,36 @@ const designVersion = computed(() => {
     conversationId: '',
     projectPath: '',
     projectName: '',
-  }
+  } as import('@/stores/chat/core/types').DesignVersionRef]
 })
 
-const designVersionCount = computed(() => {
-  const v = designVersion.value
-  if (!v)
-    return 0
+function canCompareForVersion(ver: import('@/stores/chat/core/types').DesignVersionRef): boolean {
+  const screen = ver.screenName ?? ''
+  // Strictly per-screen: hide if this screen has only one version (nothing to compare/switch)
+  let count = 0
   for (const tab of chatStoreForVersion.tabs) {
-    if (tab.designVersions?.some(x => x.id === v.id))
-      return tab.designVersions.length
+    if (!tab.designVersions)
+      continue
+    for (const v of tab.designVersions) {
+      if ((v.screenName ?? '') === screen)
+        count++
+    }
   }
-  return dvStoreForVersion.versionsByConversation[v.conversationId]?.length ?? 1
-})
+  if (count > 1)
+    return true
+  if (count === 1)
+    return false
+  const conv = ver.conversationId
+  if (conv) {
+    const list = dvStoreForVersion.versionsByConversation[conv] ?? []
+    const sameScreen = list.filter(v => (v.screenName ?? '') === screen)
+    if (sameScreen.length > 1)
+      return true
+    if (sameScreen.length === 1)
+      return false
+  }
+  return false
+}
 
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })
@@ -532,13 +574,16 @@ const finishedTime = computed(() => {
 
     <FileEditChips v-if="!isStreaming && fileEditEvents.length > 0" :events="fileEditEvents" />
 
-    <DesignVersionCard
-      v-if="!isStreaming && designVersion"
-      :version="designVersion as never"
-      :can-compare="designVersionCount > 1"
-      @preview="emit('previewVersion', designVersion!.id)"
-      @compare="emit('compareVersion', designVersion!.id)"
-    />
+    <template v-if="!isStreaming && designVersionsList.length > 0">
+      <DesignVersionCard
+        v-for="ver in designVersionsList"
+        :key="ver.id"
+        :version="ver as never"
+        :can-compare="canCompareForVersion(ver)"
+        @preview="emit('previewVersion', ver.id)"
+        @compare="emit('compareVersion', ver.id)"
+      />
+    </template>
 
     <div v-if="!isStreaming" class="mr-1 flex items-center gap-1.5 opacity-0 transition-opacity duration-[150ms] group-hover:opacity-100">
       <button

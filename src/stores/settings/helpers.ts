@@ -1,5 +1,5 @@
 import type { CompatibleProviderModel, DiscoveredModel } from './types'
-import type { MDevData } from '@/utils/modelsdev'
+import type { MDevData, MDevModel } from '@/utils/modelsdev'
 import {
   CORE_MDEV_IDS,
   getContextLimit,
@@ -116,6 +116,33 @@ function resolveSdkType(mdevData: MDevData, mdevId: string): 'openai' | 'anthrop
   return null
 }
 
+/**
+ * Determines whether a model must use the OpenAI Responses API
+ * instead of Chat Completions. For opencode, Muse Spark models
+ * are currently only served on /responses and return 500 on
+ * /chat/completions (see opencode issues #44847, #44627).
+ * Detection is based on per-model provider.npm and id pattern.
+ */
+function shouldUseResponsesApi(
+  mdevData: MDevData,
+  mdevId: string,
+  rawModelId: string,
+): boolean {
+  // Heuristic for user-typed ids that are not in models.dev
+  if (/muse-spark/i.test(rawModelId) && (mdevId === 'opencode' || mdevId === 'opencode-go')) {
+    return true
+  }
+  const model = lookupModel(mdevData, mdevId, rawModelId)
+  if (!model)
+    return false
+  const perModelNpm = (model as MDevModel & { provider?: { npm?: string } }).provider?.npm
+  // Opencode Muse Spark models are marked with per-model npm @ai-sdk/openai and must use /responses
+  if (perModelNpm === '@ai-sdk/openai' && /muse-spark/i.test(rawModelId) && (mdevId === 'opencode' || mdevId === 'opencode-go')) {
+    return true
+  }
+  return false
+}
+
 function toDiscoveredModel(
   prevMap: Map<string, DiscoveredModel>,
   providerId: string,
@@ -161,6 +188,7 @@ function toDiscoveredModel(
     status: getModelStatus(mdevData, mdevId, rawModelId),
     reasoningOptions: getReasoningOptions(mdevData, mdevId, rawModelId),
     sdkType: resolveSdkType(mdevData, mdevId),
+    ...(shouldUseResponsesApi(mdevData, mdevId, rawModelId) ? { transport: 'responses' as const } : {}),
   }
 }
 
@@ -171,6 +199,8 @@ function createFallbackDiscoveredModel(
   rawModelId: string,
 ): DiscoveredModel {
   const prev = prevMap.get(rawModelId)
+  const mdevId = resolveMdevId(providerId, providerName)
+  const useResponses = /muse-spark/i.test(rawModelId) && (mdevId === 'opencode' || mdevId === 'opencode-go')
   return {
     uid: `${providerId}::${rawModelId}`,
     id: rawModelId,
@@ -199,5 +229,6 @@ function createFallbackDiscoveredModel(
     status: null,
     reasoningOptions: null,
     sdkType: null,
+    ...(useResponses ? { transport: 'responses' as const } : {}),
   }
 }

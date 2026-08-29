@@ -13,6 +13,7 @@ export interface ModelSettingsSnapshot {
     supportsThinking: boolean
     thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     sdkType?: 'openai' | 'anthropic' | 'google' | null
+    transport?: 'responses'
   } | null
   openai: { apiKey: string; baseURL?: string; organizationId?: string }
   anthropic: { apiKey: string; baseURL?: string }
@@ -33,9 +34,10 @@ export interface ModelSettingsSnapshot {
 export function resolveLanguageModel(
   activeModel: NonNullable<ModelSettingsSnapshot['activeModel']>,
   settings: ModelSettingsSnapshot,
-  buildLanguageModel: (creds: ProviderCredentials, modelId: string) => LanguageModel,
+  buildLanguageModel: (creds: ProviderCredentials, modelId: string, opts?: { transport?: 'chat' | 'responses' }) => LanguageModel,
 ): LanguageModel {
   const pid = activeModel.providerId
+  const transport = activeModel.transport
 
   if (pid === 'openai') {
     return buildLanguageModel(
@@ -46,6 +48,7 @@ export function resolveLanguageModel(
         ...(settings.openai.organizationId ? { organizationId: settings.openai.organizationId } : {}),
       },
       activeModel.id,
+      transport ? { transport } : undefined,
     )
   }
 
@@ -57,6 +60,7 @@ export function resolveLanguageModel(
         ...(settings.anthropic.baseURL ? { baseURL: settings.anthropic.baseURL } : {}),
       },
       activeModel.id,
+      transport ? { transport } : undefined,
     )
   }
 
@@ -64,6 +68,7 @@ export function resolveLanguageModel(
     return buildLanguageModel(
       { type: 'google', apiKey: settings.google.apiKey },
       activeModel.id,
+      transport ? { transport } : undefined,
     )
   }
 
@@ -73,6 +78,23 @@ export function resolveLanguageModel(
     throw new Error(`Provider "${pid}" not found`)
 
   const sdkType = activeModel.sdkType ?? 'compatible'
+  // Opencode Muse Spark must use Responses API via OpenAI provider even when stored as compatible
+  const effectiveTransport = transport ?? (activeModel.id.toLowerCase().includes('muse-spark') && compat.baseURL?.includes('opencode.ai') ? 'responses' as const : undefined)
+  // If responses transport is required, we must build via OpenAI SDK, not openai-compatible
+  if (effectiveTransport === 'responses') {
+    return buildLanguageModel(
+      {
+        type: 'openai',
+        apiKey: compat.apiKey,
+        baseURL: compat.baseURL,
+        name: compat.name,
+        headers: compat.headers,
+      },
+      activeModel.id,
+      { transport: 'responses' },
+    )
+  }
+
   return buildLanguageModel(
     {
       type: sdkType,
@@ -82,6 +104,7 @@ export function resolveLanguageModel(
       headers: compat.headers,
     },
     activeModel.id,
+    transport ? { transport } : undefined,
   )
 }
 

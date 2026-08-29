@@ -65,5 +65,9 @@ export function newDesignTab(): ChatTab {
     messageQueue: [],
     designs: [],
     activeDesignId: null,
+    designManifest: null,
+    activeScreenName: null,
+    designScreens: [],
+    projectVersion: 0,
   }
 }

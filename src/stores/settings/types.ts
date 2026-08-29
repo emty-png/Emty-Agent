@@ -158,6 +158,8 @@ export interface DiscoveredModel {
   status: 'alpha' | 'beta' | 'deprecated' | null
   reasoningOptions: MDevReasoningOption[] | null
   sdkType: 'openai' | 'anthropic' | 'google' | null
+  /** When 'responses', the model must be called via OpenAI Responses API (/v1/responses) instead of Chat Completions */
+  transport?: 'responses'
 }
 
 export interface ContextCachingConfig {

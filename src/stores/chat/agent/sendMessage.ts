@@ -742,7 +742,7 @@ export function createSendMessage(
               dbUpdateConversationDesigns(tab.conversationId, JSON.stringify(tab.designs)).catch(() => {})
           },
           onProjectScaffold: async project => {
-            // Stop any running dev server from a previous project
+            // Legacy single-project scaffold — keep for old conversations
             if (tab.devServerTaskId) {
               const { stopManagedCommandTask } = await import('@/utils/tools/shell')
               await stopManagedCommandTask(tab.devServerTaskId).catch(() => {})
@@ -750,15 +750,63 @@ export function createSendMessage(
               tab.previewUrl = undefined
             }
             tab.activeDesignProject = project
+            // Also populate new activeDesign for unified UI
+            ;(tab as unknown as { activeDesign?: { name: string; path: string } }).activeDesign = { name: project.name, path: project.path }
             if (tab.conversationId)
-              dbUpdateConversationDesigns(tab.conversationId, JSON.stringify({ project, designs: tab.designs })).catch(() => {})
-            // Keep versioning pending in sync — scaffold may happen after initPending (which had empty project)
+              dbUpdateConversationDesigns(tab.conversationId, JSON.stringify({ project, designs: tab.designs, activeDesign: { name: project.name, path: project.path } })).catch(() => {})
             try { designVersionStore.updatePendingProject(tab.id, project) }
             catch {}
             try { designVersionStore.ensurePending(tab.id, tab, assistantId) }
             catch {}
           },
+          onScreenScaffold: async info => {
+            if (tab.devServerTaskId) {
+              const { stopManagedCommandTask } = await import('@/utils/tools/shell')
+              await stopManagedCommandTask(tab.devServerTaskId).catch(() => {})
+              tab.devServerTaskId = undefined
+              tab.previewUrl = undefined
+            }
+            const designPath = info.path.replace(/[/\\][^/\\]+$/, '')
+            const activeDesign = { name: info.design, path: designPath }
+            ;(tab as unknown as { activeDesign?: { name: string; path: string } }).activeDesign = activeDesign
+            // Keep legacy field in sync for fallback readers
+            tab.activeDesignProject = { path: designPath, name: info.design, type: 'multiple-files' as const }
+            // Persist design info
+            if (tab.conversationId) {
+              const payload: Record<string, unknown> = { design: info.design, designPath, screens: (tab as unknown as { designManifest?: unknown }).designManifest }
+              // Store minimal design pointer in conversations.designs so history can hydrate
+              dbUpdateConversationDesigns(tab.conversationId, JSON.stringify({ project: activeDesign, designs: tab.designs, activeDesign })).catch(() => {})
+              void payload
+            }
+            // Sync versioning sentinel
+            try { designVersionStore.updatePendingDesign(tab.id, activeDesign) }
+            catch {}
+            try { designVersionStore.ensurePending(tab.id, tab, assistantId) }
+            catch {}
+            // Bump preview
+            tab.projectVersion = (tab.projectVersion ?? 0) + 1
+            // Reload manifest async
+            try {
+              const { readDesignManifest } = await import('@/utils/tools/designProject')
+              const m = await readDesignManifest(info.design)
+              if (m) {
+                const manifest = { design: m.design, screens: m.screens, connections: m.connections, updatedAt: m.updatedAt, ...(m.viewports ? { viewports: m.viewports } : {}) }
+                ;(tab as unknown as { designManifest?: typeof manifest }).designManifest = manifest
+                ;(tab as unknown as { designScreens?: Array<{ name: string; path: string }> }).designScreens = m.screens.map(s => ({ name: s, path: `${designPath}/${s}` }))
+              }
+            }
+            catch {}
+          },
           getActiveDesignProject: () => tab.activeDesignProject ?? null,
+          getActiveDesign: () => {
+            const ad = (tab as unknown as { activeDesign?: { path: string; name: string } }).activeDesign
+            if (ad)
+              return ad
+            const legacy = tab.activeDesignProject
+            if (legacy)
+              return { path: legacy.path, name: legacy.name }
+            return null
+          },
           onFilesChanged: () => {
             tab.projectVersion = (tab.projectVersion ?? 0) + 1
           },
@@ -766,6 +814,28 @@ export function createSendMessage(
             try { designVersionStore.ensurePending(tab.id, tab, assistantId) }
             catch {}
             try { designVersionStore.accumulateFiles(tab.id, files) }
+            catch {}
+          },
+          onScreenVersionAccumulate: (screen, files) => {
+            try { designVersionStore.ensurePendingForScreen(tab.id, tab, screen, assistantId) }
+            catch {}
+            try { designVersionStore.accumulateFilesForScreen(tab.id, screen, files) }
+            catch {}
+          },
+          onManifestChanged: async () => {
+            tab.projectVersion = (tab.projectVersion ?? 0) + 1
+            const ad = (tab as unknown as { activeDesign?: { path: string; name: string } }).activeDesign ?? tab.activeDesignProject
+            if (!ad)
+              return
+            try {
+              const { readDesignManifest } = await import('@/utils/tools/designProject')
+              const m = await readDesignManifest(ad.name)
+              if (m) {
+                const manifest = { design: m.design, screens: m.screens, connections: m.connections, updatedAt: m.updatedAt, ...(m.viewports ? { viewports: m.viewports } : {}) }
+                ;(tab as unknown as { designManifest?: typeof manifest }).designManifest = manifest
+                ;(tab as unknown as { designScreens?: Array<{ name: string; path: string }> }).designScreens = m.screens.map(s => ({ name: s, path: `${ad.path}/${s}` }))
+              }
+            }
             catch {}
           },
           onPreviewUrl: url => {

@@ -26,6 +26,27 @@ const theme = useThemeStore()
 const dvStore = useDesignVersionStore()
 const previewAttachment = ref<Attachment | null>(null)
 
+// ── Hydrate manifest for new multi-screen designs ────────────────────────────
+
+async function ensureManifest() {
+  const tabAny = props.tab as unknown as { activeDesign?: { name: string; path: string }; designManifest?: unknown }
+  const activeDesign = tabAny.activeDesign ?? (props.tab.activeDesignProject ? { name: props.tab.activeDesignProject.name, path: props.tab.activeDesignProject.path } : null)
+  if (!activeDesign?.name || tabAny.designManifest)
+    return
+  try {
+    const { readDesignManifest } = await import('@/utils/tools/designProject')
+    const m = await readDesignManifest(activeDesign.name)
+    if (m) {
+      ;(props.tab as unknown as { designManifest?: import('@/stores/chat/core/types').DesignManifest }).designManifest = { design: m.design, screens: m.screens, connections: m.connections, updatedAt: m.updatedAt, ...(m.viewports ? { viewports: m.viewports } : {}) }
+      ;(props.tab as unknown as { designScreens?: Array<{ name: string; path: string }> }).designScreens = m.screens.map(s => ({ name: s, path: `${activeDesign.path}/${s}` }))
+    }
+  }
+  catch {}
+}
+
+watch(() => (props.tab as unknown as { activeDesign?: { name: string } }).activeDesign?.name ?? props.tab.activeDesignProject?.name ?? '', () => { void ensureManifest() }, { immediate: true })
+watch(() => props.tab.projectVersion ?? 0, () => { void ensureManifest() })
+
 // ── Design version preview ──────────────────────────────────────────────────
 
 const previewVersionId = ref<string | null>(null)
@@ -90,6 +111,12 @@ watch(() => props.tab.id, () => {
   previewVersionId.value = dvStore.getPreviewId(props.tab.id)
 })
 watch(() => dvStore.getPreviewId(props.tab.id), v => { previewVersionId.value = v })
+
+// ── Derived tab fields (avoid complex casts in template which vue-tsc cannot parse) ──
+const tabActiveDesign = computed(() => (props.tab as unknown as { activeDesign?: { path: string; name: string } }).activeDesign ?? null)
+const tabDesignManifest = computed(() => (props.tab as unknown as { designManifest?: import('@/stores/chat/core/types').DesignManifest }).designManifest ?? null)
+const tabDesignScreens = computed(() => (props.tab as unknown as { designScreens?: Array<{ name: string; path: string }> }).designScreens ?? null)
+const tabCompareProjectPath = computed(() => (props.tab as unknown as { activeDesign?: { path: string; name: string } }).activeDesign?.path ?? props.tab.activeDesignProject?.path ?? null)
 
 // ── Resizable split ───────────────────────────────────────────────────────────
 
@@ -324,6 +351,9 @@ function stop() {
           <DesignCanvas
             :project-version="tab.projectVersion ?? 0"
             :active-project="tab.activeDesignProject ?? null"
+            :active-design="tabActiveDesign"
+            :design-manifest="tabDesignManifest"
+            :design-screens="tabDesignScreens"
             :tab-id="tab.id"
             :is-fullscreen="isFullscreen"
             :preview-version-id="previewVersion?.id ?? null"
@@ -350,7 +380,7 @@ function stop() {
       v-if="showCompareModal && compareAId"
       :a-id="compareAId"
       :b-id="compareBId"
-      :project-path="tab.activeDesignProject?.path ?? null"
+      :project-path="tabCompareProjectPath"
       @close="showCompareModal = false"
       @restore="onModalRestore"
     />

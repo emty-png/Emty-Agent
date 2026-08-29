@@ -21,6 +21,7 @@ export interface ModelConfig {
   thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   contextLimit?: number | null
   sdkType?: 'openai' | 'anthropic' | 'google' | null
+  transport?: 'responses'
 }
 
 export interface SettingsForContext {

@@ -35,9 +35,36 @@ export interface ProviderCredentials {
 
 // ── Model factory ─────────────────────────────────────────────────────────────
 
-export function buildLanguageModel(credentials: ProviderCredentials, modelId: string): LanguageModel {
+export function buildLanguageModel(
+  credentials: ProviderCredentials,
+  modelId: string,
+  opts?: { transport?: 'chat' | 'responses' },
+): LanguageModel {
   if (!modelId?.trim())
     throw new Error('buildLanguageModel: modelId is required')
+
+  // OpenCode Muse Spark models must use the Responses API — Chat Completions returns 500.
+  // Detect via transport flag or model id heuristic.
+  const needsResponses = opts?.transport === 'responses' || (/muse-spark/i.test(modelId) && credentials.baseURL?.includes('opencode.ai'))
+  if (needsResponses) {
+    // Responses transport is only available via the OpenAI provider (not openai-compatible).
+    // Re-use the same baseURL / apiKey but create via `provider.responses()`.
+    const apiKey = credentials.apiKey ?? ''
+    if (!apiKey.trim()) {
+      // For compatible-with-responses we still require an API key
+      throw new Error('Provider requires an API key')
+    }
+    const baseURL = credentials.baseURL
+    if (!baseURL?.trim())
+      throw new Error('Responses transport requires a baseURL')
+    const openaiProvider = createOpenAI({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      ...(credentials.organizationId ? { organization: credentials.organizationId } : {}),
+      fetch: platformFetch,
+    })
+    return openaiProvider.responses(modelId)
+  }
 
   switch (credentials.type) {
     case 'openai': {
@@ -120,12 +147,25 @@ export interface ThinkingConfig {
 export function buildProviderOptions(
   config: ThinkingConfig,
 ): Record<string, Record<string, JSONValue>> | undefined {
+  const id = config.modelId.toLowerCase()
+
+  // Opencode Muse Spark models currently require store:false when using the Responses API.
+  // With store:true (default) the SDK sends `item_reference` for previous reasoning / function calls,
+  // which the Console upstream cannot resolve ("No function call found for call_id").
+  // Using store:false forces the SDK to send the full history inline, which works.
+  // This must be returned even when thinking is off, otherwise tool rounds keep using the
+  // default store:true path and fail with 400.
+  // NOTE: Compatible providers get random IDs (makeId()), so we cannot rely on
+  // providerId === 'opencode'. Detect via modelId alone — only opencode serves
+  // muse-spark via /responses, so this is safe for any provider that hosts it.
+  if (/muse-spark/i.test(id)) {
+    return { openai: { store: false } } as unknown as Record<string, Record<string, JSONValue>>
+  }
+
   if (!config.supportsThinking)
     return undefined
   if (config.thinkingEffort === 'off')
     return undefined
-
-  const id = config.modelId.toLowerCase()
 
   // Anthropic: Claude 4.6+ adaptive, earlier budget-based, Opus 4.7+ needs display:summarized
   if (config.providerId === 'anthropic' && /claude-3-7|opus-4|sonnet-4|haiku-4/.test(id)) {

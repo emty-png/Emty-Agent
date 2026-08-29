@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { DesignProjectType } from '@/stores/chat/core/types'
+import type { DesignManifest, DesignProjectType } from '@/stores/chat/core/types'
 import type { DesignConsoleEntry, DesignConsoleLevel } from '@/utils/tools/designProject'
 import { join } from '@tauri-apps/api/path'
 import { save } from '@tauri-apps/plugin-dialog'
-import { readTextFile, writeFile } from '@tauri-apps/plugin-fs'
+import { exists, readTextFile, writeFile } from '@tauri-apps/plugin-fs'
 import {
   ChevronUp,
   Code2,
@@ -12,11 +12,9 @@ import {
   Loader2,
   MessageSquarePlus,
   Minus,
-  Monitor,
   Plus,
   RefreshCw,
   Shrink,
-  Smartphone,
   Trash2,
   X,
 } from 'lucide-vue-next'
@@ -25,20 +23,28 @@ import { useAppView } from '@/composables/ui/useAppView'
 import { useChatStore } from '@/stores/chat'
 import { createBrowserElementAttachment, isBrowserElementAttachment, parseBrowserElementAttachment } from '@/stores/chat/core/attachmentTypes'
 import { useProjectStore } from '@/stores/project'
+import { VIEWPORT_PRESETS } from '@/utils/tools/design/constants'
 import {
   clearConsoleBuffer,
   DESIGN_FILES,
   DESIGN_PICKER_HOST_SOURCE,
   DESIGN_PICKER_SOURCE,
+  DESIGN_SCREENSHOT_HOST_SOURCE,
+  DESIGN_SCREENSHOT_SOURCE,
   injectConsoleBootstrap,
   injectPickerBootstrap,
+  injectScreenshotBootstrap,
   pushConsoleEntries,
+  readDesignManifest,
 } from '@/utils/tools/designProject'
 import { createZip, sanitizeFilename } from '@/utils/zip'
 
 const props = defineProps<{
   projectVersion: number
   activeProject?: { path: string; name: string; type: DesignProjectType } | null
+  activeDesign?: { path: string; name: string } | null
+  designManifest?: DesignManifest | null
+  designScreens?: Array<{ name: string; path: string }> | null
   tabId?: string | null
   isFullscreen?: boolean
   previewVersionId?: string | null
@@ -48,34 +54,57 @@ const emit = defineEmits<{
   toggleFullscreen: []
 }>()
 
-// ── Device presets ───────────────────────────────────────────────────────────
+// ── Resolve effective design ───────────────────────────────────────────────
 
-type DeviceType = 'phone' | 'desktop'
-const device = ref<DeviceType>('desktop')
+const effectiveDesign = computed(() => {
+  if (props.activeDesign)
+    return props.activeDesign
+  if (props.activeProject)
+    return { path: props.activeProject.path, name: props.activeProject.name }
+  return null
+})
 
-const DEVICES: Record<DeviceType, { w: number; h: number; label: string }> = {
-  phone: { w: 390, h: 844, label: 'Phone (390×844)' },
-  desktop: { w: 1280, h: 800, label: 'Desktop (1280×800)' },
+// Screens list derived from manifest or props or fallback to legacy
+const effectiveScreens = computed<string[]>(() => {
+  if (props.designScreens && props.designScreens.length > 0)
+    return props.designScreens.map(s => s.name)
+  if (props.designManifest?.screens && props.designManifest.screens.length > 0)
+    return props.designManifest.screens
+  // Legacy fallback: if we have an activeDesign but no manifest, try to treat as single legacy screen
+  // The parent DesignView will have loaded manifest; if empty we show empty state
+  if (effectiveDesign.value && props.activeProject) {
+    // legacy single-project is not multi-screen; we represent as ["__legacy__"] internally handled separately
+    return []
+  }
+  return []
+})
+
+const connections = computed(() => props.designManifest?.connections ?? [])
+
+const screenViewports = computed<Record<string, Viewport>>(() => {
+  const map: Record<string, Viewport> = {}
+  const raw = (props.designManifest as unknown as { viewports?: Record<string, Viewport> })?.viewports
+  if (raw) {
+    for (const [k, v] of Object.entries(raw)) {
+      if (v && typeof v.width === 'number' && typeof v.height === 'number' && v.preset in VIEWPORT_PRESETS)
+        map[k] = v
+    }
+  }
+  return map
+})
+
+function getVp(screen: string): Viewport {
+  const vp = screenViewports.value[screen]
+  if (vp)
+    return vp
+  const preset = VIEWPORT_PRESETS.mobile
+  return { width: preset.width, height: preset.height, preset: 'mobile' }
 }
 
-const deviceSize = computed(() => DEVICES[device.value])
+const hasMultiScreen = computed(() => effectiveScreens.value.length > 0)
+const isLegacySingle = computed(() => !hasMultiScreen.value && !!props.activeProject)
 
-// ── Annotation picker (state early, helpers after iframeRef) ─────────────────
-
-const isPicking = ref(false)
-const chatStore = useChatStore()
-
-// ── Export ───────────────────────────────────────────────────────────────────
-
-const exportOpen = ref(false)
-const exportName = ref('')
-const exporting = ref(false)
-const exportError = ref<string | null>(null)
-const exportSuccess = ref<string | null>(null)
-let exportSuccessTimer: ReturnType<typeof setTimeout> | null = null
-const exportInputRef = ref<HTMLInputElement | null>(null)
-
-// ── Zoom & pan ───────────────────────────────────────────────────────────────
+// ── Zoom & pan (shared for grid) ───────────────────────────────────────────
 
 const canvasRef = ref<HTMLElement | null>(null)
 const scale = ref(1)
@@ -89,6 +118,13 @@ const WHEEL_ZOOM_SENSITIVITY = 0.0022
 const SCALE_SNAP_TOLERANCE = 0.03
 const PAN_EDGE_MARGIN = 80
 const FIT_PADDING = 48
+
+// Grid layout constants — defaults (per-screen via viewports override)
+const DEFAULT_SCREEN_W = 390
+const DEFAULT_SCREEN_H = 844
+const GRID_GAP = 64
+
+interface Viewport { width: number; height: number; preset: keyof typeof VIEWPORT_PRESETS }
 
 const zoomPercent = computed(() => Math.round(scale.value * 100))
 
@@ -120,32 +156,62 @@ function setZoom(next: number, originX?: number, originY?: number) {
 function zoomIn() { setZoom(scale.value * ZOOM_FACTOR) }
 function zoomOut() { setZoom(scale.value / ZOOM_FACTOR) }
 
+function getMaxCellSize(): { maxW: number; maxH: number } {
+  if (!hasMultiScreen.value)
+    return { maxW: DEFAULT_SCREEN_W, maxH: DEFAULT_SCREEN_H }
+  let maxW = DEFAULT_SCREEN_W
+  let maxH = DEFAULT_SCREEN_H
+  for (const s of effectiveScreens.value) {
+    const vp = getVp(s)
+    if (vp.width > maxW)
+      maxW = vp.width
+    if (vp.height > maxH)
+      maxH = vp.height
+  }
+  return { maxW, maxH }
+}
+
+function computeGridMetrics() {
+  const count = hasMultiScreen.value ? effectiveScreens.value.length : isLegacySingle.value ? 1 : 0
+  if (count === 0)
+    return { cols: 0, rows: 0, gridW: 0, gridH: 0, maxW: DEFAULT_SCREEN_W, maxH: DEFAULT_SCREEN_H, count }
+  const cols = Math.ceil(Math.sqrt(count))
+  const rows = Math.ceil(count / cols)
+  const { maxW, maxH } = getMaxCellSize()
+  const gridW = cols * maxW + (cols - 1) * GRID_GAP
+  const gridH = rows * maxH + (rows - 1) * GRID_GAP
+  return { cols, rows, gridW, gridH, maxW, maxH, count }
+}
+
 function fitToCanvas() {
   const el = canvasRef.value
   if (!el)
     return
   const rect = el.getBoundingClientRect()
-  const { w, h } = deviceSize.value
-
-  const scaleX = (rect.width - FIT_PADDING * 2) / w
-  const scaleY = (rect.height - FIT_PADDING * 2) / h
+  const { cols, rows, gridW, gridH, count } = computeGridMetrics()
+  if (count === 0) {
+    scale.value = 1
+    panX.value = rect.width / 2
+    panY.value = rect.height / 2
+    return
+  }
+  void cols; void rows
+  const scaleX = (rect.width - FIT_PADDING * 2) / gridW
+  const scaleY = (rect.height - FIT_PADDING * 2) / gridH
   const fit = clampScale(Math.min(scaleX, scaleY, 1))
-
   scale.value = fit
   panX.value = rect.width / 2
   panY.value = rect.height / 2
 }
 
-// Keep at least a sliver of the frame reachable inside the viewport
 function clampPan() {
   const el = canvasRef.value
   if (!el)
     return
   const { width, height } = el.getBoundingClientRect()
-  const { w, h } = deviceSize.value
-  const halfW = (w * scale.value) / 2
-  const halfH = (h * scale.value) / 2
-
+  const { gridW, gridH } = computeGridMetrics()
+  const halfW = (gridW * scale.value) / 2
+  const halfH = (gridH * scale.value) / 2
   panX.value = Math.min(Math.max(panX.value, PAN_EDGE_MARGIN - halfW), width - PAN_EDGE_MARGIN + halfW)
   panY.value = Math.min(Math.max(panY.value, PAN_EDGE_MARGIN - halfH), height - PAN_EDGE_MARGIN + halfH)
 }
@@ -156,13 +222,42 @@ function panBy(dx: number, dy: number) {
   clampPan()
 }
 
+// ── Annotation picker & Export state (must be defined before use in handlers) ─
+const isPicking = ref(false)
+const chatStore = useChatStore()
+const exportOpen = ref(false)
+const exportName = ref('')
+const exporting = ref(false)
+const exportError = ref<string | null>(null)
+const exportSuccess = ref<string | null>(null)
+let exportSuccessTimer: ReturnType<typeof setTimeout> | null = null
+const exportInputRef = ref<HTMLInputElement | null>(null)
+
+// ── Screenshot capture bridge ────────────────────────────────────────────────
+const screenshotWaiters = new Map<string, { resolve: (v: { dataUrl: string; width: number; height: number; viewport: string }) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+
+function makeScreenshotId(): string {
+  return Math.random().toString(36).slice(2, 9)
+}
+
+// ── Multi-screen srcdoc management (declared early to satisfy no-use-before-define) ──
+
+const iframeKey = ref(0)
+const iframeRefs = ref<Record<string, HTMLIFrameElement | null>>({})
+const srcdocs = ref<Record<string, string>>({})
+const screenLoadErrors = ref<Record<string, string>>({})
+
+function setIframeRef(screen: string, el: unknown) {
+  iframeRefs.value[screen] = el as HTMLIFrameElement | null
+}
+
 onMounted(() => {
   fitToCanvas()
 })
 
-watch([device, () => props.activeProject?.path], () => {
+watch(() => [hasMultiScreen.value, isLegacySingle.value, effectiveDesign.value?.path, effectiveScreens.value.join('|'), JSON.stringify(screenViewports.value)], () => {
   fitToCanvas()
-})
+}, { deep: true })
 
 watch(() => props.isFullscreen, () => {
   nextTick(() => fitToCanvas())
@@ -178,8 +273,6 @@ function onWheel(e: WheelEvent) {
   if (!el)
     return
   const rect = el.getBoundingClientRect()
-
-  // Normalize deltas: deltaMode 1 = lines, 2 = pages
   let dx = e.deltaX
   let dy = e.deltaY
   if (e.deltaMode === 1) {
@@ -190,15 +283,11 @@ function onWheel(e: WheelEvent) {
     dx *= rect.width
     dy *= rect.height
   }
-
-  // Ctrl/cmd + scroll (incl. trackpad pinch) zooms at the cursor
   if (e.ctrlKey || e.metaKey) {
     const factor = Math.exp(-dy * WHEEL_ZOOM_SENSITIVITY)
     setZoom(scale.value * factor, e.clientX - rect.left, e.clientY - rect.top)
     return
   }
-
-  // Shift swaps vertical scroll into horizontal pan
   if (e.shiftKey && dx === 0) {
     dx = dy
     dy = 0
@@ -210,13 +299,10 @@ const isPanning = ref(false)
 const spaceDown = ref(false)
 let lastPanX = 0
 let lastPanY = 0
-
-// Multi-pointer (pinch) tracking
 const activePointers = new Map<number, { x: number; y: number }>()
 let pinchDist = 0
 let pinchMidX = 0
 let pinchMidY = 0
-
 let resizeObserver: ResizeObserver | null = null
 
 function isEditableTarget(e: Event) {
@@ -232,25 +318,20 @@ function onKeyDown(e: KeyboardEvent) {
     closeExportModal()
     return
   }
-
   if (isPicking.value && e.key === 'Escape') {
     e.preventDefault()
     stopPicker()
     return
   }
-
   if (props.isFullscreen && e.key === 'Escape') {
     e.preventDefault()
     emit('toggleFullscreen')
     return
   }
-
   if (isEditableTarget(e))
     return
-
   if (isPicking.value || exportOpen.value)
     return
-
   if (e.code === 'Space' && !e.repeat) {
     spaceDown.value = true
     e.preventDefault()
@@ -291,15 +372,12 @@ function onPointerDown(e: PointerEvent) {
   if (isPicking.value)
     return
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-
-  // Two fingers take over from panning and start a pinch
   if (activePointers.size >= 2) {
     isPanning.value = false
     updatePinchState()
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     return
   }
-
   if (e.button === 1 || spaceDown.value) {
     e.preventDefault()
     isPanning.value = true
@@ -315,8 +393,6 @@ function onPointerMove(e: PointerEvent) {
   if (!activePointers.has(e.pointerId))
     return
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-
-  // Pinch: zoom around the midpoint, pan with midpoint movement
   if (activePointers.size >= 2) {
     const el = canvasRef.value
     if (!el)
@@ -325,17 +401,14 @@ function onPointerMove(e: PointerEvent) {
     const prevMidX = pinchMidX
     const prevMidY = pinchMidY
     updatePinchState()
-
     const rect = el.getBoundingClientRect()
     const originX = pinchMidX - rect.left
     const originY = pinchMidY - rect.top
-
     if (prevDist > 0 && pinchDist !== prevDist)
       setZoom(scale.value * (pinchDist / prevDist), originX, originY)
     panBy(pinchMidX - prevMidX, pinchMidY - prevMidY)
     return
   }
-
   if (!isPanning.value)
     return
   panBy(e.clientX - lastPanX, e.clientY - lastPanY)
@@ -345,9 +418,7 @@ function onPointerMove(e: PointerEvent) {
 
 function onPointerUp(e: PointerEvent) {
   activePointers.delete(e.pointerId)
-
   if (activePointers.size === 1) {
-    // Pinch ended — continue panning smoothly with the remaining finger
     const p = Array.from(activePointers.values())[0]
     if (p) {
       isPanning.value = true
@@ -369,6 +440,85 @@ onMounted(() => {
     resizeObserver = new ResizeObserver(() => clampPan())
     resizeObserver.observe(canvasRef.value)
   }
+  // Expose global capture bridge for screenshot_screen tool
+  // Tries modern-screenshot first (higher fidelity, handles CORS), falls back to iframe foreignObject bootstrap
+  ;(window as unknown as Record<string, unknown>).__EMTY_DESIGN_SCREENSHOT_CAPTURE__ = async (design: string, screen: string) => {
+    const ed = effectiveDesign.value
+    if (!ed || ed.name !== design)
+      throw new Error(`Active design is "${ed?.name ?? 'none'}", not "${design}" — open the correct design first.`)
+    const frame = iframeRefs.value[screen] ?? (screen === '__legacy__' ? iframeRefs.value.__legacy__ : null)
+    if (!frame?.contentWindow)
+      throw new Error(`Screen "${screen}" preview not ready — ensure DesignCanvas is visible and screen exists.`)
+    const vp = getVp(screen)
+    const width = vp.width
+    const height = vp.height
+    const viewportLabel = width >= 1440 ? 'desktop' : width >= 768 ? 'tablet' : 'mobile'
+    // ── Attempt 1: modern-screenshot on iframe document (handles external images via fetch, no taint) ──
+    const doc = frame.contentDocument
+    if (doc?.documentElement) {
+      try {
+        const { domToPng } = await import('modern-screenshot')
+        // Hide picker markers inside iframe to avoid capturing UI chrome
+        const pickerInFrame = doc.getElementById('__emty_design_picker__') as HTMLElement | null
+        const prevDisplay = pickerInFrame?.style.display
+        if (pickerInFrame)
+          pickerInFrame.style.display = 'none'
+        try {
+          const dataUrl = await Promise.race([
+            domToPng(doc.documentElement as unknown as HTMLElement, {
+              scale: 1,
+              width,
+              height,
+              backgroundColor: '#ffffff',
+              timeout: 8000,
+              fetch: { requestInit: { cache: 'force-cache' } as RequestInit, placeholderImage: 'data:image/png;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' },
+              filter: (node: Node) => {
+                if (node instanceof Element) {
+                  const id = (node as HTMLElement).id
+                  if (id === '__emty_design_picker__' || id === '__emty_agent_browser_picker__')
+                    return false
+                }
+                return true
+              },
+            } as unknown as Record<string, unknown>),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error('modern-screenshot timeout')), 9000)),
+          ]) as string
+          if (pickerInFrame)
+            pickerInFrame.style.display = prevDisplay ?? ''
+          if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/png')) {
+            console.warn(`[DesignCanvas] modern-screenshot succeeded ${screen} ${width}x${height}`)
+            return { dataUrl, width, height, viewport: viewportLabel }
+          }
+        }
+        catch (innerErr) {
+          if (pickerInFrame)
+            pickerInFrame.style.display = prevDisplay ?? ''
+          throw innerErr
+        }
+      }
+      catch (e) {
+        console.warn('[DesignCanvas] modern-screenshot failed, falling back to foreignObject', e)
+        // fall through to postMessage fallback
+      }
+    }
+    // ── Attempt 2: fallback to iframe bootstrap foreignObject (sanitized, never taints) ──
+    const requestId = makeScreenshotId()
+    return await new Promise<{ dataUrl: string; width: number; height: number; viewport: string }>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        screenshotWaiters.delete(requestId)
+        reject(new Error('Screenshot capture timed out after 15s'))
+      }, 15_000)
+      screenshotWaiters.set(requestId, { resolve, reject, timer })
+      try {
+        frame.contentWindow!.postMessage({ source: DESIGN_SCREENSHOT_HOST_SOURCE, action: 'capture', requestId, width, height }, '*')
+      }
+      catch (e) {
+        clearTimeout(timer)
+        screenshotWaiters.delete(requestId)
+        reject(e instanceof Error ? e : new Error(String(e)))
+      }
+    })
+  }
 })
 
 onUnmounted(() => {
@@ -381,13 +531,15 @@ onUnmounted(() => {
     clearTimeout(exportSuccessTimer)
     exportSuccessTimer = null
   }
+  try { delete (window as unknown as Record<string, unknown>).__EMTY_DESIGN_SCREENSHOT_CAPTURE__ }
+  catch {}
+  for (const [, w] of screenshotWaiters) {
+    clearTimeout(w.timer)
+    try { w.reject(new Error('DesignCanvas unmounted')) }
+    catch {}
+  }
+  screenshotWaiters.clear()
 })
-
-// ── Preview loading ──────────────────────────────────────────────────────────
-
-const iframeKey = ref(0)
-const iframeRef = ref<HTMLIFrameElement | null>(null)
-const srcdoc = ref('')
 
 function draftAnnotations() {
   const tabId = props.tabId
@@ -400,7 +552,6 @@ function draftAnnotations() {
     .filter(isBrowserElementAttachment)
     .map(att => parseBrowserElementAttachment(att))
     .filter((data): data is NonNullable<ReturnType<typeof parseBrowserElementAttachment>> => data != null)
-  // Deep-clone via JSON to strip Vue reactive proxies — postMessage requires structured-cloneable plain objects
   try {
     return JSON.parse(JSON.stringify(raw)) as typeof raw
   }
@@ -409,38 +560,70 @@ function draftAnnotations() {
   }
 }
 
-function sendPickerCommand(action: 'startPicker' | 'stopPicker' | 'setAnnotations', payload?: Record<string, unknown>) {
-  const win = iframeRef.value?.contentWindow
-  if (!win)
-    return
-  try {
-    const msg = JSON.parse(JSON.stringify({ source: DESIGN_PICKER_HOST_SOURCE, action, ...(payload ?? {}) }))
-    win.postMessage(msg, '*')
-  }
-  catch (err) {
-    // Fallback: try raw postMessage if JSON round-trip fails (should still be cloneable)
+function sendPickerCommandToAll(action: 'startPicker' | 'stopPicker' | 'setAnnotations', payload?: Record<string, unknown>) {
+  for (const screen of effectiveScreens.value) {
+    const frame = iframeRefs.value[screen]
+    const win = frame?.contentWindow
+    if (!win)
+      continue
     try {
-      win.postMessage({ source: DESIGN_PICKER_HOST_SOURCE, action, ...(payload ?? {}) }, '*')
+      const msg = JSON.parse(JSON.stringify({ source: DESIGN_PICKER_HOST_SOURCE, action, ...(payload ?? {}) }))
+      win.postMessage(msg, '*')
     }
-    catch (e) {
-      console.warn('[DesignCanvas Picker] postMessage failed:', e ?? err)
+    catch {
+      try { win.postMessage({ source: DESIGN_PICKER_HOST_SOURCE, action, ...(payload ?? {}) }, '*') }
+      catch {}
+    }
+  }
+  // Also legacy single
+  if (isLegacySingle.value) {
+    const frame = iframeRefs.value.__legacy__
+    const win = frame?.contentWindow
+    if (win) {
+      try {
+        const msg = JSON.parse(JSON.stringify({ source: DESIGN_PICKER_HOST_SOURCE, action, ...(payload ?? {}) }))
+        win.postMessage(msg, '*')
+      }
+      catch {
+        try { win.postMessage({ source: DESIGN_PICKER_HOST_SOURCE, action, ...(payload ?? {}) }, '*') }
+        catch {}
+      }
     }
   }
 }
 
 function syncAnnotationsToIframe() {
-  // Guard until iframe has a contentWindow (before @load it may be null)
-  if (!iframeRef.value?.contentWindow)
-    return
   const annotations = draftAnnotations()
-  sendPickerCommand('setAnnotations', { annotations })
+  for (const screen of effectiveScreens.value) {
+    const frame = iframeRefs.value[screen]
+    if (!frame?.contentWindow)
+      continue
+    try {
+      const msg = JSON.parse(JSON.stringify({ source: DESIGN_PICKER_HOST_SOURCE, action: 'setAnnotations', annotations }))
+      frame.contentWindow.postMessage(msg, '*')
+    }
+    catch {
+      try { frame.contentWindow.postMessage({ source: DESIGN_PICKER_HOST_SOURCE, action: 'setAnnotations', annotations }, '*') }
+      catch {}
+    }
+  }
+  if (isLegacySingle.value) {
+    const frame = iframeRefs.value.__legacy__
+    if (frame?.contentWindow) {
+      try {
+        const msg = JSON.parse(JSON.stringify({ source: DESIGN_PICKER_HOST_SOURCE, action: 'setAnnotations', annotations }))
+        frame.contentWindow.postMessage(msg, '*')
+      }
+      catch {}
+    }
+  }
 }
 
 function startPicker() {
-  if (!props.activeProject)
+  if (!effectiveDesign.value)
     return
   isPicking.value = true
-  sendPickerCommand('startPicker')
+  sendPickerCommandToAll('startPicker')
   syncAnnotationsToIframe()
 }
 
@@ -448,20 +631,20 @@ function stopPicker() {
   if (!isPicking.value)
     return
   isPicking.value = false
-  sendPickerCommand('stopPicker')
+  sendPickerCommandToAll('stopPicker')
 }
 
 function toggleAnnotating() {
   if (isPicking.value)
     stopPicker()
-  else
-    startPicker()
+  else startPicker()
 }
 
 function openExportModal() {
-  if (!props.activeProject)
+  const d = effectiveDesign.value
+  if (!d)
     return
-  exportName.value = props.activeProject.name
+  exportName.value = d.name
   exportError.value = null
   exportSuccess.value = null
   if (exportSuccessTimer) {
@@ -483,10 +666,10 @@ function closeExportModal() {
 }
 
 async function confirmExport() {
-  const project = props.activeProject
-  if (!project || exporting.value)
+  const design = effectiveDesign.value
+  if (!design || exporting.value)
     return
-  const rawName = exportName.value.trim() || project.name
+  const rawName = exportName.value.trim() || design.name
   const safe = sanitizeFilename(rawName)
   const zipName = safe.toLowerCase().endsWith('.zip') ? safe : `${safe}.zip`
   exportError.value = null
@@ -503,21 +686,46 @@ async function confirmExport() {
       return
     }
     const finalDest = dest.toLowerCase().endsWith('.zip') ? dest : `${dest}.zip`
-
-    // Read design files (text) and encode as UTF-8 for the ZIP
     const entries: Array<{ name: string; data: Uint8Array }> = []
     const enc = new TextEncoder()
-    for (const fileName of DESIGN_FILES) {
+
+    if (hasMultiScreen.value) {
+      // Export each screen folder + design.json
       try {
-        const fullPath = await join(project.path, fileName)
-        const content = await readTextFile(fullPath)
-        entries.push({ name: fileName, data: enc.encode(content) })
+        const manifestPath = await join(design.path, 'design.json')
+        if (await exists(manifestPath)) {
+          const mContent = await readTextFile(manifestPath)
+          entries.push({ name: 'design.json', data: enc.encode(mContent) })
+        }
       }
-      catch (e) {
-        // Skip unreadable files but warn — still create a zip with whatever we have
-        console.warn(`[DesignCanvas Export] Skip ${fileName}:`, e)
+      catch {}
+      for (const screen of effectiveScreens.value) {
+        for (const fileName of DESIGN_FILES) {
+          try {
+            const fullPath = await join(design.path, screen, fileName)
+            const content = await readTextFile(fullPath)
+            entries.push({ name: `${screen}/${fileName}`, data: enc.encode(content) })
+          }
+          catch (e) {
+            console.warn(`[DesignCanvas Export] Skip ${screen}/${fileName}:`, e)
+          }
+        }
       }
     }
+    else if (isLegacySingle.value) {
+      const project = props.activeProject!
+      for (const fileName of DESIGN_FILES) {
+        try {
+          const fullPath = await join(project.path, fileName)
+          const content = await readTextFile(fullPath)
+          entries.push({ name: fileName, data: enc.encode(content) })
+        }
+        catch (e) {
+          console.warn(`[DesignCanvas Export] Skip ${fileName}:`, e)
+        }
+      }
+    }
+
     if (entries.length === 0)
       throw new Error('No design files found to export.')
 
@@ -546,6 +754,8 @@ function onExportKeydown(e: KeyboardEvent) {
 
 function refresh() {
   iframeKey.value++
+  if (effectiveDesign.value)
+    readAllScreens()
 }
 
 // ── Open code in project view ────────────────────────────────────────────────
@@ -554,106 +764,321 @@ const projectStore = useProjectStore()
 const { setView } = useAppView()
 
 function openInProjectView() {
-  const path = props.activeProject?.path
+  const path = effectiveDesign.value?.path
   if (!path)
     return
   projectStore.addProject(path, true)
   setView('projects')
 }
 
-async function readProjectFiles() {
-  const project = props.activeProject
-  if (!project) {
-    srcdoc.value = ''
+async function buildSrcdocForScreen(screen: string, filesOverride?: Record<string, string>): Promise<string> {
+  const design = effectiveDesign.value
+  if (!design)
+    return ''
+  let html = ''
+  let css: string | undefined
+  let js: string | undefined
+
+  if (filesOverride) {
+    html = filesOverride['index.html'] ?? ''
+    css = filesOverride['styles.css']
+    js = filesOverride['script.js']
+    if (!html) {
+      try { html = await readTextFile(await join(design.path, screen, 'index.html')) }
+      catch { html = '<html><body>No snapshot</body></html>' }
+    }
+  }
+  else {
+    // live files
+    try { html = await readTextFile(await join(design.path, screen, 'index.html')) }
+    catch { html = `<html><body style="font-family:system-ui;padding:40px;color:#666;"><h2>Screen "${screen}" empty</h2><p>Create content with edit_design.</p></body></html>` }
+    try { css = await readTextFile(await join(design.path, screen, 'styles.css')) }
+    catch {}
+    try { js = await readTextFile(await join(design.path, screen, 'script.js')) }
+    catch {}
+  }
+
+  html = injectConsoleBootstrap(html)
+  html = injectPickerBootstrap(html)
+  html = injectScreenshotBootstrap(html)
+  // ── DEBUG ───────────────────────────────────────────────────────────────
+  const debugEnabled = true
+  function escapeForInlineScript(s: string): string {
+    // Escape $ for String.replace replacement semantics, and closing tags to avoid premature closing
+    // Split literals to avoid Vite Vue SFC parsing the closing tag
+    return s.replaceAll('$', '$$$$').replaceAll('</' + 'script>', '<\\/' + 'script>').replaceAll('</' + 'SCRIPT>', '<\\/' + 'SCRIPT>').replaceAll('<!--', '<\\!--')
+  }
+  function escapeForInlineStyle(s: string): string {
+    return s.replaceAll('$', '$$$$').replaceAll('</' + 'style>', '<\\/' + 'style>').replaceAll('</' + 'STYLE>', '<\\/' + 'STYLE>')
+  }
+  if (debugEnabled) {
+    console.warn(`[DesignCanvas][buildSrcdoc] screen=${screen} html=${html.length} css=${css?.length ?? 'none'} js=${js?.length ?? 'none'} hasLink=${/<link[^>]*styles\.css/i.test(html)} hasScript=${/<script[^>]*script\.js/i.test(html)}`)
+  }
+  if (css !== undefined) {
+    html = html.replace(/<link\s[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/i, `<style>${escapeForInlineStyle(css)}</style>`)
+  }
+  else {
+    try {
+      const cssLive = filesOverride ? undefined : await readTextFile(await join(design.path, screen, 'styles.css'))
+      if (cssLive !== undefined)
+        html = html.replace(/<link\s[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/i, `<style>${escapeForInlineStyle(cssLive)}</style>`)
+    }
+    catch {}
+  }
+  if (js !== undefined) {
+    html = html.replace(/<script\s[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i, `<script>${escapeForInlineScript(js)}<\/script>`)
+  }
+  else {
+    try {
+      const jsLive = filesOverride ? undefined : await readTextFile(await join(design.path, screen, 'script.js'))
+      if (jsLive !== undefined)
+        html = html.replace(/<script\s[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i, `<script>${escapeForInlineScript(jsLive)}<\/script>`)
+    }
+    catch {}
+  }
+  if (debugEnabled) {
+    // Store for post-mortem debugging when SyntaxError occurs
+    try {
+      const w = window as unknown as Record<string, unknown>
+      w.__EMTY_LAST_SRCDOC__ = html
+      w.__EMTY_LAST_SCREEN__ = screen
+    }
+    catch {}
+    // Validate that we didn't leave stray src references (would cause double-load)
+    if (/<script[^>]*src=["'].*script\.js/i.test(html)) {
+      console.error(`[DesignCanvas][buildSrcdoc] screen=${screen} still has <script src> after inline — inline failed. Prev html snippet:`, html.slice(0, 2000))
+    }
+  }
+  return html
+}
+
+async function readAllScreens() {
+  const design = effectiveDesign.value
+  if (!design) {
+    srcdocs.value = {}
     return
   }
 
-  // If previewing a historical version, read from snapshot dir
-  if (props.previewVersionId) {
+  // Multi-screen case
+  if (hasMultiScreen.value) {
+    const next: Record<string, string> = {}
+    const errors: Record<string, string> = {}
+    for (const screen of effectiveScreens.value) {
+      try {
+        // If previewing a historical version for this screen, load snapshot
+        if (props.previewVersionId) {
+          try {
+            const { useDesignVersionStore } = await import('@/stores/designVersions')
+            const dvStore = useDesignVersionStore()
+            const version = dvStore.versionsByConversation[props.previewVersionId ? (chatStore.activeTab.conversationId ?? '') : '']?.find(v => v.id === props.previewVersionId)
+              ?? dvStore.getByMessageId(props.previewVersionId ?? '') as unknown as { screenName?: string } | undefined
+            // Only use snapshot if it belongs to this screen
+            const belongs = !version || (version as { screenName?: string }).screenName === screen || !(version as { screenName?: string }).screenName
+            if (belongs && props.previewVersionId) {
+              const files = await dvStore.readSnapshotFiles(props.previewVersionId)
+              // Check if files look like they belong to this screen — if snapshot has content, use it
+              if (Object.keys(files).length > 0) {
+                // Heuristic: if previewVersion's screenName doesn't match, skip snapshot for this screen
+                const vScreen = (version as unknown as { screenName?: string })?.screenName
+                if (!vScreen || vScreen === screen) {
+                  next[screen] = await buildSrcdocForScreen(screen, files)
+                  continue
+                }
+              }
+            }
+          }
+          catch (e) {
+            console.warn('[DesignCanvas] preview snapshot read failed', e)
+          }
+        }
+        next[screen] = await buildSrcdocForScreen(screen)
+      }
+      catch (e) {
+        errors[screen] = e instanceof Error ? e.message : String(e)
+        next[screen] = `<html><body style=\"font-family:system-ui;padding:40px;color:#666;\"><h2>Preview unavailable for ${screen}</h2><p>${errors[screen]}</p></body></html>`
+      }
+    }
+    srcdocs.value = next
+    screenLoadErrors.value = errors
+    iframeKey.value++
+    return
+  }
+
+  // Fallback for multi-screen where props haven't hydrated yet but effectiveDesign exists (no activeProject)
+  if (effectiveDesign.value && !hasMultiScreen.value && !isLegacySingle.value) {
     try {
-      const { useDesignVersionStore } = await import('@/stores/designVersions')
-      const dvStore = useDesignVersionStore()
-      const files = await dvStore.readSnapshotFiles(props.previewVersionId)
-      let html = files['index.html'] ?? await readTextFile(await join(project.path, 'index.html'))
-      html = injectConsoleBootstrap(html)
-      html = injectPickerBootstrap(html)
-      const css = files['styles.css']
-      if (css !== undefined) {
-        html = html.replace(/<link\s[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/i, `<style>${css.replaceAll('$', '$$$$')}</style>`)
-      }
-      else {
-        try {
-          const cssLive = await readTextFile(await join(project.path, 'styles.css'))
-          html = html.replace(/<link\s[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/i, `<style>${cssLive.replaceAll('$', '$$$$')}</style>`)
+      const m = await readDesignManifest(effectiveDesign.value.name)
+      if (m && m.screens.length > 0) {
+        console.warn(`[DesignCanvas] DEBUG non-legacy fallback manifest screens=${m.screens.join(',')}`)
+        const next: Record<string, string> = {}
+        const errors: Record<string, string> = {}
+        for (const screen of m.screens) {
+          try {
+            if (props.previewVersionId) {
+              try {
+                const { useDesignVersionStore } = await import('@/stores/designVersions')
+                const dvStore = useDesignVersionStore()
+                const version = dvStore.versionsByConversation[props.previewVersionId ? (chatStore.activeTab.conversationId ?? '') : '']?.find(v => v.id === props.previewVersionId) ?? dvStore.getByMessageId(props.previewVersionId ?? '') as unknown as { screenName?: string } | undefined
+                const vScreen = (version as unknown as { screenName?: string })?.screenName
+                if (!vScreen || vScreen === screen) {
+                  const files = await dvStore.readSnapshotFiles(props.previewVersionId!)
+                  if (Object.keys(files).length > 0) {
+                    next[screen] = await buildSrcdocForScreen(screen, files)
+                    continue
+                  }
+                }
+              }
+              catch {}
+            }
+            next[screen] = await buildSrcdocForScreen(screen)
+          }
+          catch (e) {
+            errors[screen] = e instanceof Error ? e.message : String(e)
+            next[screen] = `<html><body style=\"font-family:system-ui;padding:40px;color:#666;\"><h2>Preview unavailable for ${screen}</h2><p>${errors[screen]}</p></body></html>`
+          }
         }
-        catch {}
-      }
-      const js = files['script.js']
-      if (js !== undefined) {
-        html = html.replace(/<script\s[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i, `<script>${js.replaceAll('$', '$$$$')}<\/script>`)
-      }
-      else {
-        try {
-          const jsLive = await readTextFile(await join(project.path, 'script.js'))
-          html = html.replace(/<script\s[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i, `<script>${jsLive.replaceAll('$', '$$$$')}<\/script>`)
+        if (Object.keys(next).length > 0) {
+          srcdocs.value = next
+          screenLoadErrors.value = errors
+          iframeKey.value++
+          return
         }
-        catch {}
       }
-      srcdoc.value = html
-      return
     }
     catch (e) {
-      console.warn('[DesignCanvas] preview snapshot read failed, falling back to live', e)
+      console.warn('[DesignCanvas] DEBUG non-legacy manifest fallback failed', e)
     }
   }
 
-  try {
-    let html = await readTextFile(await join(project.path, 'index.html'))
-
-    // Console + picker bootstraps must run before any user code
-    html = injectConsoleBootstrap(html)
-    html = injectPickerBootstrap(html)
-
-    // Inline styles.css over its <link> tag
+  // Legacy single project (with fallback for new multi-screen designs where props haven't hydrated yet)
+  if (isLegacySingle.value) {
+    const project = props.activeProject!
+    // DEBUG: check if this is actually a multi-screen design that hasn't hydrated
     try {
-      const css = await readTextFile(await join(project.path, 'styles.css'))
-      html = html.replace(
-        /<link\s[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/i,
-        `<style>${css.replaceAll('$', '$$$$')}</style>`,
-      )
+      const legacyIdx = await join(project.path, 'index.html')
+      const legacyExists = await exists(legacyIdx).catch(() => false)
+      console.warn(`[DesignCanvas] DEBUG legacy check path=${legacyIdx} exists=${legacyExists} hasMulti=${hasMultiScreen.value} screens=${effectiveScreens.value.join(',')}`)
+      if (!legacyExists) {
+        try {
+          const m = await readDesignManifest(project.name)
+          if (m && m.screens.length > 0) {
+            console.warn(`[DesignCanvas] DEBUG fallback to multi-screen manifest screens=${m.screens.join(',')}`)
+            const next: Record<string, string> = {}
+            const errors: Record<string, string> = {}
+            for (const screen of m.screens) {
+              try {
+                // If previewing a version for this screen, use snapshot
+                if (props.previewVersionId) {
+                  try {
+                    const { useDesignVersionStore } = await import('@/stores/designVersions')
+                    const dvStore = useDesignVersionStore()
+                    const version = dvStore.versionsByConversation[props.previewVersionId ? (chatStore.activeTab.conversationId ?? '') : '']?.find(v => v.id === props.previewVersionId) ?? dvStore.getByMessageId(props.previewVersionId ?? '') as unknown as { screenName?: string } | undefined
+                    const vScreen = (version as unknown as { screenName?: string })?.screenName
+                    if (!vScreen || vScreen === screen) {
+                      const files = await dvStore.readSnapshotFiles(props.previewVersionId!)
+                      if (Object.keys(files).length > 0) {
+                        next[screen] = await buildSrcdocForScreen(screen, files)
+                        continue
+                      }
+                    }
+                  }
+                  catch {}
+                }
+                next[screen] = await buildSrcdocForScreen(screen)
+              }
+              catch (e) {
+                errors[screen] = e instanceof Error ? e.message : String(e)
+                next[screen] = `<html><body style=\"font-family:system-ui;padding:40px;color:#666;\"><h2>Preview unavailable for ${screen}</h2><p>${errors[screen]}</p></body></html>`
+              }
+            }
+            srcdocs.value = next
+            screenLoadErrors.value = errors
+            iframeKey.value++
+            return
+          }
+        }
+        catch (e) {
+          console.warn('[DesignCanvas] DEBUG manifest fallback failed', e)
+        }
+      }
     }
     catch {}
-
-    // Inline script.js over its <script src> tag
-    try {
-      const js = await readTextFile(await join(project.path, 'script.js'))
-      html = html.replace(
-        /<script\s[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i,
-        `<script>${js.replaceAll('$', '$$$$')}<\/script>`,
-      )
+    // If previewing historical version, read from snapshot dir
+    if (props.previewVersionId) {
+      try {
+        const { useDesignVersionStore } = await import('@/stores/designVersions')
+        const dvStore = useDesignVersionStore()
+        const files = await dvStore.readSnapshotFiles(props.previewVersionId)
+        let html = files['index.html'] ?? await readTextFile(await join(project.path, 'index.html'))
+        html = injectConsoleBootstrap(html)
+        html = injectPickerBootstrap(html)
+        const css = files['styles.css']
+        if (css !== undefined) {
+          html = html.replace(/<link\s[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/i, `<style>${css.replaceAll('$', '$$$$')}</style>`)
+        }
+        else {
+          try {
+            const cssLive = await readTextFile(await join(project.path, 'styles.css'))
+            html = html.replace(/<link\s[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/i, `<style>${cssLive.replaceAll('$', '$$$$')}</style>`)
+          }
+          catch {}
+        }
+        const js = files['script.js']
+        if (js !== undefined) {
+          html = html.replace(/<script\s[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i, `<script>${js.replaceAll('$', '$$$$')}<\/script>`)
+        }
+        else {
+          try {
+            const jsLive = await readTextFile(await join(project.path, 'script.js'))
+            html = html.replace(/<script\s[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i, `<script>${jsLive.replaceAll('$', '$$$$')}<\/script>`)
+          }
+          catch {}
+        }
+        srcdocs.value = { __legacy__: html }
+        iframeKey.value++
+        return
+      }
+      catch (e) {
+        console.warn('[DesignCanvas] preview snapshot read failed, falling back to live', e)
+      }
     }
-    catch {}
 
-    srcdoc.value = html
+    try {
+      let html = await readTextFile(await join(project.path, 'index.html'))
+      html = injectConsoleBootstrap(html)
+      html = injectPickerBootstrap(html)
+      try {
+        const css = await readTextFile(await join(project.path, 'styles.css'))
+        html = html.replace(/<link\s[^>]*href=["'](?:\.\/)?styles\.css["'][^>]*>/i, `<style>${css.replaceAll('$', '$$$$')}</style>`)
+      }
+      catch {}
+      try {
+        const js = await readTextFile(await join(project.path, 'script.js'))
+        html = html.replace(/<script\s[^>]*src=["'](?:\.\/)?script\.js["'][^>]*>\s*<\/script>/i, `<script>${js.replaceAll('$', '$$$$')}<\/script>`)
+      }
+      catch {}
+      srcdocs.value = { __legacy__: html }
+    }
+    catch (e) {
+      console.error('[DesignCanvas] Failed to read project files:', e)
+      srcdocs.value = { __legacy__: `<html><body style="font-family:system-ui;padding:40px;color:#666;"><h2>Preview unavailable</h2><p>Could not read project files: ${e instanceof Error ? e.message : String(e)}</p></body></html>` }
+    }
+    iframeKey.value++
+    return
   }
-  catch (e) {
-    console.error('[DesignCanvas] Failed to read project files:', e)
-    srcdoc.value = `<html><body style="font-family:system-ui;padding:40px;color:#666;">
-      <h2>Preview unavailable</h2>
-      <p>Could not read project files: ${e instanceof Error ? e.message : String(e)}</p>
-    </body></html>`
-  }
+
+  // No design
+  srcdocs.value = {}
 }
 
 watch(
-  [() => props.projectVersion, () => props.activeProject?.path, () => props.previewVersionId],
+  [() => props.projectVersion, () => effectiveDesign.value?.path, () => props.previewVersionId, () => effectiveScreens.value.join('|')],
   () => {
-    if (props.activeProject) {
-      readProjectFiles()
-      iframeKey.value++
+    if (effectiveDesign.value) {
+      readAllScreens()
     }
     else {
-      srcdoc.value = ''
+      srcdocs.value = {}
     }
   },
   { immediate: true },
@@ -703,11 +1128,37 @@ function onWindowMessage(e: MessageEvent) {
   } | null
   if (!data || typeof data.source !== 'string')
     return
-  if (!iframeRef.value || e.source !== iframeRef.value.contentWindow)
-    return
 
-  // Picker annotation from inside iframe → add as chat attachment
+  // Find which screen iframe sent this
+  const allFrames = { ...iframeRefs.value }
+  const matchedEntry = Object.entries(allFrames).find(([, frame]) => frame && e.source === frame.contentWindow)
+  const isFromDesignFrame = !!matchedEntry
+  const screenOfMessage = matchedEntry?.[0] ?? undefined
+
+  // Screenshot capture response
+  if (data.source === DESIGN_SCREENSHOT_SOURCE) {
+    const ext = e.data as { requestId?: string; ok?: boolean; dataUrl?: string; width?: number; height?: number; viewport?: string; error?: string } | null
+    const rid = typeof ext?.requestId === 'string' ? ext.requestId : ''
+    if (rid && screenshotWaiters.has(rid)) {
+      const waiter = screenshotWaiters.get(rid)!
+      screenshotWaiters.delete(rid)
+      clearTimeout(waiter.timer)
+      if (ext?.ok && typeof ext.dataUrl === 'string' && ext.dataUrl.startsWith('data:image/png')) {
+        const w = typeof ext.width === 'number' ? ext.width : 390
+        const h = typeof ext.height === 'number' ? ext.height : 844
+        const vp = typeof ext.viewport === 'string' ? ext.viewport : (w >= 1440 ? 'desktop' : w >= 768 ? 'tablet' : 'mobile')
+        waiter.resolve({ dataUrl: ext.dataUrl, width: w, height: h, viewport: vp })
+      }
+      else {
+        waiter.reject(new Error(typeof ext?.error === 'string' ? ext.error : 'Screenshot failed'))
+      }
+    }
+    return
+  }
+
   if (data.source === DESIGN_PICKER_SOURCE) {
+    if (!isFromDesignFrame)
+      return
     if (data.kind === 'annotation' && data.annotation) {
       const tabId = props.tabId
       if (!tabId)
@@ -716,17 +1167,16 @@ function onWindowMessage(e: MessageEvent) {
       if (!tab)
         return
       try {
-        // Enrich annotation with project path so it persists per-project and is useful for the AI
         const ann = data.annotation as Record<string, unknown>
-        if (props.activeProject?.path && typeof ann.url === 'string')
-          ann.url = props.activeProject.path
-        if (props.activeProject?.name && typeof ann.title === 'string' && !ann.title)
-          ann.title = props.activeProject.name
+        // Enrich annotation with design/screen path
+        if (effectiveDesign.value?.path && typeof ann.url === 'string')
+          ann.url = effectiveDesign.value.path
+        if (screenOfMessage && screenOfMessage !== '__legacy__')
+          (ann as Record<string, unknown>).screen = screenOfMessage
         const attachment = createBrowserElementAttachment(ann as never)
         chatStore.updateTabDraft(tabId, {
           attachments: [...tab.draft.attachments, attachment],
         })
-        // Re-sync markers so the new note appears immediately
         nextTick(() => syncAnnotationsToIframe())
       }
       catch (err) {
@@ -738,11 +1188,11 @@ function onWindowMessage(e: MessageEvent) {
 
   if (data.source !== 'emty-design-console')
     return
+  if (!isFromDesignFrame)
+    return
 
   const validLevels: DesignConsoleLevel[] = ['log', 'info', 'warn', 'error', 'debug']
-  const level = validLevels.includes(data.level as DesignConsoleLevel)
-    ? data.level as DesignConsoleLevel
-    : 'log'
+  const level = validLevels.includes(data.level as DesignConsoleLevel) ? data.level as DesignConsoleLevel : 'log'
 
   const entry: DesignConsoleEntry = {
     level,
@@ -754,20 +1204,32 @@ function onWindowMessage(e: MessageEvent) {
   if (entries.value.length > MAX_ENTRIES)
     entries.value.splice(0, entries.value.length - MAX_ENTRIES)
 
-  const path = props.activeProject?.path
-  if (path)
-    pushConsoleEntries(path, [entry])
+  const designPath = effectiveDesign.value?.path
+  if (designPath) {
+    // Per-screen buffer
+    if (screenOfMessage && screenOfMessage !== '__legacy__') {
+      const screenPath = `${designPath}/${screenOfMessage}`.replace(/\/\//g, '/')
+      pushConsoleEntries(screenPath, [entry])
+      pushConsoleEntries(designPath, [entry])
+    }
+    else if (isLegacySingle.value && props.activeProject) {
+      pushConsoleEntries(props.activeProject.path, [entry])
+    }
+    else {
+      pushConsoleEntries(designPath, [entry])
+    }
+  }
 
   if (!panelOpen.value && (level === 'error' || level === 'warn'))
     unread.value++
 }
 
-function onIframeLoad() {
-  // Iframe re-created after projectVersion bump — re-sync picker state
+function onIframeLoad(screen: string) {
   nextTick(() => {
     syncAnnotationsToIframe()
     if (isPicking.value)
-      sendPickerCommand('startPicker')
+      sendPickerCommandToAll('startPicker')
+    void screen
   })
 }
 
@@ -780,12 +1242,15 @@ function togglePanel() {
 function clearLogs() {
   entries.value = []
   unread.value = 0
-  const path = props.activeProject?.path
-  if (path)
-    clearConsoleBuffer(path)
+  const designPath = effectiveDesign.value?.path
+  if (designPath) {
+    clearConsoleBuffer(designPath)
+    if (isLegacySingle.value && props.activeProject)
+      clearConsoleBuffer(props.activeProject.path)
+    for (const s of effectiveScreens.value) clearConsoleBuffer(`${designPath}/${s}`)
+  }
 }
 
-// Auto-scroll console to bottom when new entries arrive (if already near bottom)
 watch(() => entries.value.length, async () => {
   await nextTick()
   const el = consoleListRef.value
@@ -803,18 +1268,14 @@ watch(filter, async () => {
     el.scrollTop = el.scrollHeight
 })
 
-// Reset local view when switching projects (shared buffer is per-project)
-watch(() => props.activeProject?.path, () => {
+watch(() => effectiveDesign.value?.path, () => {
   entries.value = []
   unread.value = 0
-  // Stop picker when switching projects (modal)
   if (isPicking.value)
     stopPicker()
-  // Re-sync markers after project switch (srcdoc will be rebuilt)
   nextTick(() => syncAnnotationsToIframe())
 })
 
-// Keep iframe markers in sync with chat draft (e.g. attachment deleted in ChatInput)
 watch(
   () => {
     const tabId = props.tabId
@@ -823,59 +1284,97 @@ watch(
     const tab = chatStore.tabs.find(t => t.id === tabId)
     return tab?.draft.attachments.map(a => a.id).join('|') ?? ''
   },
-  () => {
-    nextTick(() => syncAnnotationsToIframe())
-  },
+  () => { nextTick(() => syncAnnotationsToIframe()) },
 )
 
-// If activeProject disappears (landing), exit picker
-watch(() => !!props.activeProject, hasProject => {
+watch(() => !!effectiveDesign.value, hasProject => {
   if (!hasProject && isPicking.value)
     stopPicker()
 })
 
-// ── Frame style ──────────────────────────────────────────────────────────────
+// ── Grid layout computed ─────────────────────────────────────────────────────
 
-const frameStyle = computed(() => {
-  const w = deviceSize.value.w
-  const h = deviceSize.value.h
+const gridCols = computed(() => {
+  const n = hasMultiScreen.value ? effectiveScreens.value.length : isLegacySingle.value ? 1 : 0
+  if (n <= 1)
+    return 1
+  return Math.ceil(Math.sqrt(n))
+})
+
+interface GridPos { x: number; y: number; screen: string; w: number; h: number }
+
+const gridPositions = computed<GridPos[]>(() => {
+  if (hasMultiScreen.value) {
+    const cols = gridCols.value
+    const { maxW, maxH } = getMaxCellSize()
+    const cellW = maxW + GRID_GAP
+    const cellH = maxH + GRID_GAP
+    return effectiveScreens.value.map((screen, i) => {
+      const col = i % cols
+      const row = Math.floor(i / cols)
+      const vp = getVp(screen)
+      // Center horizontally within max cell, top-align vertically
+      const offsetX = (maxW - vp.width) / 2
+      const x = col * cellW + offsetX
+      const y = row * cellH
+      return { screen, x, y, w: vp.width, h: vp.height }
+    })
+  }
+  if (isLegacySingle.value)
+    return [{ screen: '__legacy__', x: 0, y: 0, w: DEFAULT_SCREEN_W, h: DEFAULT_SCREEN_H }]
+  return []
+})
+
+const gridSize = computed(() => {
+  if (gridPositions.value.length === 0)
+    return { w: 0, h: 0 }
+  const { maxW, maxH } = getMaxCellSize()
+  const cols = gridCols.value
+  const rows = Math.ceil(gridPositions.value.length / cols)
   return {
-    width: `${w}px`,
-    height: `${h}px`,
-    left: `${panX.value}px`,
-    top: `${panY.value}px`,
-    transform: `translate(-50%, -50%) scale(${scale.value})`,
+    w: cols * maxW + (cols - 1) * GRID_GAP,
+    h: rows * maxH + (rows - 1) * GRID_GAP,
   }
 })
+
+// Connection lines: center-to-center (using actual viewport size)
+interface Line { x1: number; y1: number; x2: number; y2: number; key: string; label?: string }
+const connectionLines = computed<Line[]>(() => {
+  if (!hasMultiScreen.value)
+    return []
+  const posMap = new Map(gridPositions.value.map(p => [p.screen, p]))
+  const out: Line[] = []
+  for (const c of connections.value) {
+    const from = posMap.get(c.from)
+    const to = posMap.get(c.to)
+    if (!from || !to)
+      continue
+    const x1 = from.x + from.w / 2
+    const y1 = from.y + from.h / 2
+    const x2 = to.x + to.w / 2
+    const y2 = to.y + to.h / 2
+    out.push({ x1, y1, x2, y2, key: `${c.from}->${c.to}`, ...(c.label ? { label: c.label } : {}) })
+  }
+  return out
+})
+
+const gridContainerStyle = computed(() => ({
+  width: `${gridSize.value.w}px`,
+  height: `${gridSize.value.h}px`,
+  left: `${panX.value}px`,
+  top: `${panY.value}px`,
+  transform: `translate(-50%, -50%) scale(${scale.value})`,
+}))
+
+// Keep legacy frameStyle for single fallback if needed
 </script>
 
 <template>
   <div class="design-canvas-root">
     <div class="dc-toolbar">
       <div class="dc-toolbar-group">
-        <button
-          class="dc-icon-btn"
-          :disabled="!activeProject"
-          title="Show code"
-          @click="openInProjectView"
-        >
+        <button class="dc-icon-btn" :disabled="!effectiveDesign" title="Show code" @click="openInProjectView">
           <Code2 :size="14" :stroke-width="1.8" />
-        </button>
-        <button
-          class="dc-icon-btn"
-          :class="{ 'dc-icon-btn--active': device === 'phone' }"
-          :title="DEVICES.phone.label"
-          @click="device = 'phone'"
-        >
-          <Smartphone :size="14" :stroke-width="1.8" />
-        </button>
-        <button
-          class="dc-icon-btn"
-          :class="{ 'dc-icon-btn--active': device === 'desktop' }"
-          :title="DEVICES.desktop.label"
-          @click="device = 'desktop'"
-        >
-          <Monitor :size="14" :stroke-width="1.8" />
         </button>
       </div>
 
@@ -907,14 +1406,14 @@ const frameStyle = computed(() => {
         <button
           class="dc-icon-btn"
           :class="{ 'dc-icon-btn--active': isPicking }"
-          :disabled="!activeProject"
+          :disabled="!effectiveDesign"
           title="Annotate element"
           :aria-pressed="isPicking"
           @click="toggleAnnotating"
         >
           <MessageSquarePlus :size="14" :stroke-width="1.8" />
         </button>
-        <button class="dc-icon-btn" :disabled="!activeProject" title="Export design as ZIP" @click="openExportModal">
+        <button class="dc-icon-btn" :disabled="!effectiveDesign" title="Export design as ZIP" @click="openExportModal">
           <Download :size="14" :stroke-width="1.8" />
         </button>
       </div>
@@ -933,20 +1432,61 @@ const frameStyle = computed(() => {
       @dblclick="fitToCanvas"
     >
       <Transition name="dc-fade">
-        <div v-if="activeProject" class="dc-frame-wrap" :style="frameStyle">
-          <div class="dc-frame" :class="`dc-frame--${device}`">
-            <iframe
-              :key="`${iframeKey}-${activeProject.path}`"
-              ref="iframeRef"
-              class="dc-iframe"
-              :class="{ 'dc-iframe--picking': isPicking }"
-              :srcdoc="srcdoc"
-              sandbox="allow-scripts allow-forms allow-same-origin"
-              title="Design preview"
-              @load="onIframeLoad"
-            />
+        <div v-if="effectiveDesign" class="dc-grid-wrap" :style="gridContainerStyle">
+          <!-- Connection lines SVG -->
+          <svg
+            v-if="connectionLines.length > 0"
+            class="dc-connections"
+            :width="gridSize.w"
+            :height="gridSize.h"
+            :viewBox="`0 0 ${gridSize.w} ${gridSize.h}`"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <defs>
+              <marker id="dc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-accent)" />
+              </marker>
+            </defs>
+            <g v-for="line in connectionLines" :key="line.key">
+              <line :x1="line.x1" :y1="line.y1" :x2="line.x2" :y2="line.y2" stroke="var(--color-accent)" stroke-width="2" stroke-dasharray="8 6" marker-end="url(#dc-arrow)" opacity="0.9" />
+              <circle :cx="line.x1" :cy="line.y1" r="4" fill="var(--color-accent)" stroke="white" stroke-width="1.5" />
+              <circle :cx="line.x2" :cy="line.y2" r="4" fill="var(--color-accent)" stroke="white" stroke-width="1.5" />
+            </g>
+          </svg>
 
-            <div v-if="device === 'phone'" class="dc-phone-home-bar" />
+          <!-- Screen frames -->
+          <div
+            v-for="pos in gridPositions"
+            :key="pos.screen"
+            class="dc-screen-wrap"
+            :style="{ left: `${pos.x}px`, top: `${pos.y}px`, width: `${pos.w}px` }"
+          >
+            <div class="dc-frame dc-frame--screen" :style="{ width: `${pos.w}px`, height: `${pos.h}px`, borderRadius: pos.w >= 768 ? '12px' : '16px' }">
+              <iframe
+                :key="`${iframeKey}-${effectiveDesign.path}-${pos.screen}`"
+                :ref="el => setIframeRef(pos.screen, el)"
+                class="dc-iframe"
+                :class="{ 'dc-iframe--picking': isPicking }"
+                :srcdoc="srcdocs[pos.screen] ?? ''"
+                sandbox="allow-scripts allow-forms allow-same-origin"
+                :title="`Preview ${pos.screen}`"
+                @load="onIframeLoad(pos.screen)"
+              />
+            </div>
+            <!-- per-connection labels -->
+            <div v-for="c in connections.filter(x => x.from === pos.screen)" :key="c.to" class="dc-connection-badge">
+              → {{ c.to }}<span v-if="c.label"> · {{ c.label }}</span>
+            </div>
+          </div>
+
+          <div v-if="!hasMultiScreen && !isLegacySingle" class="dc-empty-grid">
+            <p class="dc-empty-grid-title">
+              No screens yet
+            </p>
+            <p class="dc-empty-grid-sub">
+              Agent will create screens with <code>create_screen</code> — they appear here in a grid with connections.
+            </p>
           </div>
         </div>
       </Transition>
@@ -999,7 +1539,7 @@ const frameStyle = computed(() => {
                   <span class="shrink-0 pr-3.5 text-[13px] text-[var(--color-text-dim)] select-none">.zip</span>
                 </div>
                 <p class="text-[11px] text-[var(--color-text-tertiary)] leading-[1.5]">
-                  Exports index.html, styles.css and script.js as a ZIP archive.
+                  Exports all screens (each screen's index.html, styles.css, script.js) as a ZIP archive.
                 </p>
               </div>
               <div v-if="exportError" class="py-2 px-3 rounded-(--radius-md) bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-bg-card))] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] text-[12px] text-[var(--color-danger)] leading-[1.5]">
@@ -1028,32 +1568,16 @@ const frameStyle = computed(() => {
           <span class="dc-console-title">Console</span>
 
           <div class="dc-console-filters">
-            <button
-              class="dc-filter-chip"
-              :class="{ 'dc-filter-chip--active': filter === 'all' }"
-              @click="filter = 'all'"
-            >
+            <button class="dc-filter-chip" :class="{ 'dc-filter-chip--active': filter === 'all' }" @click="filter = 'all'">
               All <span class="dc-filter-count">{{ entries.length }}</span>
             </button>
-            <button
-              class="dc-filter-chip"
-              :class="{ 'dc-filter-chip--active': filter === 'log' }"
-              @click="filter = 'log'"
-            >
+            <button class="dc-filter-chip" :class="{ 'dc-filter-chip--active': filter === 'log' }" @click="filter = 'log'">
               Logs <span class="dc-filter-count">{{ logCount }}</span>
             </button>
-            <button
-              class="dc-filter-chip dc-filter-chip--warn"
-              :class="{ 'dc-filter-chip--active': filter === 'warn' }"
-              @click="filter = 'warn'"
-            >
+            <button class="dc-filter-chip dc-filter-chip--warn" :class="{ 'dc-filter-chip--active': filter === 'warn' }" @click="filter = 'warn'">
               Warnings <span class="dc-filter-count">{{ warnCount }}</span>
             </button>
-            <button
-              class="dc-filter-chip dc-filter-chip--error"
-              :class="{ 'dc-filter-chip--active': filter === 'error' }"
-              @click="filter = 'error'"
-            >
+            <button class="dc-filter-chip dc-filter-chip--error" :class="{ 'dc-filter-chip--active': filter === 'error' }" @click="filter = 'error'">
               Errors <span class="dc-filter-count">{{ errorCount }}</span>
             </button>
           </div>
@@ -1163,27 +1687,22 @@ const frameStyle = computed(() => {
     color 120ms ease;
   flex-shrink: 0;
 }
-
 .dc-icon-btn:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-secondary);
 }
-
 .dc-icon-btn--active {
   background: color-mix(in srgb, var(--color-accent) 14%, transparent);
   color: var(--color-accent-text);
 }
-
 .dc-icon-btn--active:hover {
   background: color-mix(in srgb, var(--color-accent) 22%, transparent);
   color: var(--color-accent-text);
 }
-
 .dc-icon-btn:disabled {
   opacity: 0.35;
   cursor: default;
 }
-
 .dc-icon-btn:disabled:hover {
   background: transparent;
   color: var(--color-text-tertiary);
@@ -1205,7 +1724,17 @@ const frameStyle = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: 4px;
+  padding: 0 4px;
+}
+.dc-screen-count {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  background: var(--color-bg-hover);
+  border-radius: 999px;
+  padding: 2px 7px;
 }
 
 /* ── Canvas ────────────────────────────────────────────────────────────────── */
@@ -1220,35 +1749,51 @@ const frameStyle = computed(() => {
   cursor: default;
   touch-action: none;
 }
-
 .dc-canvas--pan-ready {
   cursor: grab;
   user-select: none;
 }
-
 .dc-canvas--panning {
   cursor: grabbing;
   user-select: none;
 }
-
 .dc-canvas--picking {
   cursor: crosshair;
 }
-
 .dc-canvas--picking .dc-frame,
 .dc-canvas--picking .dc-iframe {
   cursor: crosshair;
 }
-
 .dc-iframe--picking {
   cursor: crosshair;
 }
 
-.dc-frame-wrap {
+.dc-grid-wrap {
   position: absolute;
   will-change: transform;
 }
-
+.dc-connections {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.dc-screen-wrap {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 2;
+}
+.dc-connection-badge {
+  font-size: 10px;
+  color: var(--color-accent-text);
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  align-self: flex-start;
+}
 .dc-frame {
   position: relative;
   overflow: hidden;
@@ -1259,30 +1804,37 @@ const frameStyle = computed(() => {
     0 8px 48px rgba(0, 0, 0, 0.55),
     0 2px 12px rgba(0, 0, 0, 0.4);
 }
-
-.dc-frame--phone {
-  border-radius: 44px;
+.dc-frame--screen {
+  border-radius: 16px;
   width: 390px;
   height: 844px;
 }
-
-.dc-frame--desktop {
-  border-radius: 10px;
-  width: 1280px;
-  height: 800px;
-}
-
-.dc-phone-home-bar {
+.dc-empty-grid {
   position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 134px;
-  height: 5px;
-  background: rgba(255, 255, 255, 0.25);
-  border-radius: 3px;
-  z-index: 2;
-  pointer-events: none;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 40px;
+  color: var(--color-text-tertiary);
+}
+.dc-empty-grid-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.dc-empty-grid-sub {
+  font-size: 12px;
+  margin-top: 8px;
+  line-height: 1.5;
+  max-width: 420px;
+}
+.dc-empty-grid-sub code {
+  font-family: ui-monospace, monospace;
+  background: var(--color-bg-hover);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
 }
 
 .dc-iframe {
@@ -1297,7 +1849,6 @@ const frameStyle = computed(() => {
   scrollbar-width: none;
   image-rendering: -webkit-optimize-contrast;
 }
-
 .dc-iframe::-webkit-scrollbar {
   display: none;
 }
@@ -1312,7 +1863,6 @@ const frameStyle = computed(() => {
   background: var(--color-bg-surface);
   border-top: 1px solid var(--color-border-subtle);
 }
-
 .dc-console-header {
   display: flex;
   align-items: center;
@@ -1322,7 +1872,6 @@ const frameStyle = computed(() => {
   padding: 0 10px;
   border-bottom: 1px solid var(--color-border-subtle);
 }
-
 .dc-console-title {
   font-size: 11px;
   font-weight: 600;
@@ -1330,7 +1879,6 @@ const frameStyle = computed(() => {
   text-transform: uppercase;
   color: var(--color-text-secondary);
 }
-
 .dc-console-filters {
   display: flex;
   align-items: center;
@@ -1340,11 +1888,9 @@ const frameStyle = computed(() => {
   overflow-x: auto;
   scrollbar-width: none;
 }
-
 .dc-console-filters::-webkit-scrollbar {
   display: none;
 }
-
 .dc-filter-chip {
   display: inline-flex;
   align-items: center;
@@ -1363,28 +1909,23 @@ const frameStyle = computed(() => {
     color 120ms ease;
   white-space: nowrap;
 }
-
 .dc-filter-chip:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-secondary);
 }
-
 .dc-filter-chip--active {
   background: color-mix(in srgb, var(--color-accent) 14%, transparent);
   color: var(--color-accent-text);
 }
-
 .dc-filter-count {
   font-variant-numeric: tabular-nums;
   opacity: 0.65;
 }
-
 .dc-console-actions {
   display: flex;
   align-items: center;
   gap: 2px;
 }
-
 .dc-console-list {
   flex: 1;
   min-height: 0;
@@ -1396,7 +1937,6 @@ const frameStyle = computed(() => {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border-mid) transparent;
 }
-
 .dc-console-empty {
   padding: 24px 16px;
   text-align: center;
@@ -1404,7 +1944,6 @@ const frameStyle = computed(() => {
   font-family: system-ui, sans-serif;
   font-size: 12px;
 }
-
 .dc-log-row {
   display: flex;
   align-items: baseline;
@@ -1413,14 +1952,12 @@ const frameStyle = computed(() => {
   border-left: 2px solid transparent;
   color: var(--color-text-primary);
 }
-
 .dc-log-time {
   color: var(--color-text-dim);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
   opacity: 0.7;
 }
-
 .dc-log-level {
   flex-shrink: 0;
   width: 42px;
@@ -1429,46 +1966,37 @@ const frameStyle = computed(() => {
   letter-spacing: 0.05em;
   opacity: 0.75;
 }
-
 .dc-log-text {
   white-space: pre-wrap;
   word-break: break-word;
   user-select: text;
 }
-
 .dc-log--log .dc-log-level,
 .dc-log--debug .dc-log-level {
   color: var(--color-text-tertiary);
 }
-
 .dc-log--debug .dc-log-text {
   opacity: 0.6;
 }
-
 .dc-log--info {
   border-left-color: color-mix(in srgb, var(--color-info) 60%, transparent);
 }
-
 .dc-log--info .dc-log-level,
 .dc-log--info .dc-log-text {
   color: var(--color-info-text);
 }
-
 .dc-log--warn {
   border-left-color: color-mix(in srgb, var(--color-warning) 70%, transparent);
   background: color-mix(in srgb, var(--color-warning) 6%, transparent);
 }
-
 .dc-log--warn .dc-log-level,
 .dc-log--warn .dc-log-text {
   color: var(--color-warning-text);
 }
-
 .dc-log--error {
   border-left-color: color-mix(in srgb, var(--color-danger) 70%, transparent);
   background: color-mix(in srgb, var(--color-danger) 7%, transparent);
 }
-
 .dc-log--error .dc-log-level,
 .dc-log--error .dc-log-text {
   color: var(--color-danger-text);
@@ -1494,29 +2022,23 @@ const frameStyle = computed(() => {
     color 120ms ease;
   flex-shrink: 0;
 }
-
 .dc-console-bar:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-secondary);
 }
-
 .dc-console-bar--open {
   color: var(--color-text-secondary);
 }
-
 .dc-console-chevron {
   transition: transform 160ms ease;
 }
-
 .dc-console-bar--open .dc-console-chevron {
   transform: rotate(180deg);
 }
-
 .dc-console-bar-label {
   font-weight: 600;
   letter-spacing: 0.04em;
 }
-
 .dc-badge {
   display: inline-flex;
   align-items: center;
@@ -1528,34 +2050,28 @@ const frameStyle = computed(() => {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-
 .dc-badge-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: currentColor;
 }
-
 .dc-badge--error {
   background: color-mix(in srgb, #f56c6c 16%, transparent);
   color: #f56c6c;
 }
-
 .dc-badge--warn {
   background: color-mix(in srgb, #e6a23c 16%, transparent);
   color: #e6a23c;
 }
-
 .dc-badge--log {
   background: var(--color-bg-hover);
   color: var(--color-text-tertiary);
 }
-
 .dc-unread {
   font-weight: 600;
   color: var(--color-accent-text);
 }
-
 .dc-console-bar-spacer {
   flex: 1;
 }
@@ -1565,19 +2081,16 @@ const frameStyle = computed(() => {
 .dc-fade-leave-active {
   transition: opacity 200ms ease;
 }
-
 .dc-fade-enter-from,
 .dc-fade-leave-to {
   opacity: 0;
 }
-
 .dc-console-slide-enter-active,
 .dc-console-slide-leave-active {
   transition:
     height 180ms ease,
     opacity 160ms ease;
 }
-
 .dc-console-slide-enter-from,
 .dc-console-slide-leave-to {
   height: 0;

@@ -69,6 +69,7 @@ interface SettingsSnapshot {
     supportsThinking: boolean
     thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     sdkType?: 'openai' | 'anthropic' | 'google' | null
+    transport?: 'responses'
   } | null
   subagentActiveModel: {
     id: string
@@ -76,6 +77,7 @@ interface SettingsSnapshot {
     supportsThinking: boolean
     thinkingEffort: 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
     sdkType?: 'openai' | 'anthropic' | 'google' | null
+    transport?: 'responses'
   } | null
   openai: { apiKey: string; baseURL?: string; organizationId?: string }
   anthropic: { apiKey: string; baseURL?: string }

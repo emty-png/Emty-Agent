@@ -33,8 +33,13 @@ export interface ToolRegistryContext {
   onDesignEdit?: (id: string, patch: Partial<Omit<import('@/stores/chat/core/types').DesignArtifact, 'id' | 'createdAt'>>) => void
   onProjectScaffold?: (project: { path: string; name: string; type: DesignProjectType }) => void
   getActiveDesignProject?: () => { path: string; name: string; type: DesignProjectType } | null
-  onFilesChanged?: () => void
+  // New multi-screen design
+  getActiveDesign?: () => { path: string; name: string } | null
+  onScreenScaffold?: (info: { design: string; screen: string; path: string }) => void
   onDesignVersionAccumulate?: (files: Array<{ path: string; content: string }>) => void
+  onScreenVersionAccumulate?: (screen: string, files: Array<{ path: string; content: string }>) => void
+  onManifestChanged?: () => void
+  onFilesChanged?: () => void
   onPreviewUrl?: (url: string | null) => void
   onDevServerTaskId?: (id: string | null) => void
   stopPreview?: () => Promise<void>

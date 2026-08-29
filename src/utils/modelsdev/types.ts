@@ -66,6 +66,10 @@ export interface MDevModel {
   reasoning_options?: MDevReasoningOption[]
   interleaved?: boolean | MDevInterleaved
   status?: 'alpha' | 'beta' | 'deprecated'
+  provider?: {
+    npm?: string
+    api?: string
+  }
 }
 
 export interface MDevProvider {

@@ -202,6 +202,7 @@ function normalizeModelEntry(modelId: string, value: unknown): MDevModel | null 
   const interleaved = normalizeInterleaved(value.interleaved)
   const status = normalizeStatus(value.status)
   const reasoningOptions = normalizeReasoningOptions(value.reasoning_options)
+  const provider = normalizeModelProvider(value.provider)
 
   return {
     id: asNonEmptyString(value.id) ?? modelId,
@@ -222,6 +223,20 @@ function normalizeModelEntry(modelId: string, value: unknown): MDevModel | null 
     ...withOptional('reasoning_options', reasoningOptions),
     ...withOptional('interleaved', interleaved),
     ...withOptional('status', status),
+    ...withOptional('provider', provider),
+  }
+}
+
+function normalizeModelProvider(value: unknown): MDevModel['provider'] {
+  if (!isRecord(value))
+    return undefined
+  const npm = asNonEmptyString(value.npm)
+  const api = asNonEmptyString(value.api)
+  if (!npm && !api)
+    return undefined
+  return {
+    ...withOptional('npm', npm),
+    ...withOptional('api', api),
   }
 }
 

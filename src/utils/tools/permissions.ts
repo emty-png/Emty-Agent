@@ -415,6 +415,16 @@ export function buildPermissionPreview(toolName: string, args: Record<string, un
         actionDetails: ['Take a screenshot of the currently active browser page.'],
       }
 
+    case 'screenshot_screen':
+      return {
+        actionTitle: `Capture screenshot of "${typeof args.screen === 'string' && args.screen ? args.screen : 'screen'}"`,
+        actionDetails: [
+          `Design: ${String(args.design ?? '')}`,
+          `Screen: ${String(args.screen ?? '')}`,
+          'Saves 1× PNG to .screenshots/ per-screen',
+        ],
+      }
+
     case 'browser_execute':
       return {
         actionTitle: 'Execute JavaScript in embedded browser',

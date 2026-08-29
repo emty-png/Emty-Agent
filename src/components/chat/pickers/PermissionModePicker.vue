@@ -5,7 +5,6 @@ import { useChatStore } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 
 defineProps<{
-  isPlanMode?: boolean
   compact?: boolean
 }>()
 
@@ -38,11 +37,7 @@ onUnmounted(() => window.removeEventListener('keydown', onPermKeydown))
 </script>
 
 <template>
-  <div class="relative flex items-center gap-2">
-    <div v-if="isPlanMode" class="inline-flex items-center px-2 py-1 bg-[color-mix(in_srgb,var(--color-accent)_20%,transparent)] text-(--color-accent) rounded-(--radius-sm) text-[11px] font-bold uppercase tracking-[0.05em]">
-      <span>Plan Mode</span>
-    </div>
-
+  <div class="relative flex items-center">
     <button
       class="flex items-center justify-center gap-1.5 h-[30px] border rounded-(--radius-md) text-[13px] font-semibold tracking-[0.01em] cursor-pointer shrink-0 transition-[background,border-color,border-radius,color] duration-[120ms] active:scale-[0.97]"
       :class="[

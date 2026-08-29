@@ -325,6 +325,9 @@ export const useChatStore = defineStore('chat', () => {
     designs?: ChatTab['designs']
     activeDesignId?: string | null
     activeDesignProject?: ChatTab['activeDesignProject']
+    activeDesign?: ChatTab['activeDesign']
+    designManifest?: ChatTab['designManifest']
+    designScreens?: ChatTab['designScreens']
     designVersions?: ChatTab['designVersions']
   }): void {
     const existing = tabs.value.find(t => t.conversationId === payload.conversationId)
@@ -360,6 +363,9 @@ export const useChatStore = defineStore('chat', () => {
             designs: payload.designs ?? [],
             activeDesignId: payload.activeDesignId ?? null,
             ...(payload.activeDesignProject ? { activeDesignProject: payload.activeDesignProject } : {}),
+            ...(payload.activeDesign ? { activeDesign: payload.activeDesign } : {}),
+            ...(payload.designManifest ? { designManifest: payload.designManifest } : {}),
+            ...(payload.designScreens ? { designScreens: payload.designScreens } : {}),
             ...(payload.designVersions ? { designVersions: payload.designVersions } : {}),
           }
         : {}),

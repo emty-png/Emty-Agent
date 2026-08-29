@@ -163,9 +163,10 @@ export const useHistoryStore = defineStore('history', () => {
     }
 
     // Design tab persistence: the designs column holds either a legacy artifact
-    // array or { project, designs } once a file-based project was scaffolded.
+    // array or { project, designs, activeDesign } once a file-based project was scaffolded.
     let designs: ChatTab['designs'] | undefined
     let activeDesignProject: ChatTab['activeDesignProject'] | undefined
+    let activeDesign: ChatTab['activeDesign'] | undefined
     if (conv.designs) {
       try {
         const raw: unknown = JSON.parse(conv.designs)
@@ -173,14 +174,32 @@ export const useHistoryStore = defineStore('history', () => {
           designs = raw as ChatTab['designs']
         }
         else if (raw && typeof raw === 'object') {
-          const obj = raw as { designs?: unknown; project?: unknown }
+          const obj = raw as { designs?: unknown; project?: unknown; activeDesign?: unknown; design?: unknown; designPath?: unknown }
           if (Array.isArray(obj.designs))
             designs = obj.designs as ChatTab['designs']
           if (obj.project && typeof obj.project === 'object' && typeof (obj.project as { path?: unknown }).path === 'string')
             activeDesignProject = obj.project as ChatTab['activeDesignProject']
+          if (obj.activeDesign && typeof obj.activeDesign === 'object' && typeof (obj.activeDesign as { path?: unknown }).path === 'string')
+            activeDesign = obj.activeDesign as ChatTab['activeDesign']
+          else if (activeDesignProject)
+            activeDesign = { name: activeDesignProject.name, path: activeDesignProject.path } as ChatTab['activeDesign']
         }
       }
       catch { }
+    }
+    // Try to hydrate manifest if activeDesign present
+    let designManifest: ChatTab['designManifest'] | undefined
+    let designScreens: ChatTab['designScreens'] | undefined
+    if (activeDesign?.name) {
+      try {
+        const { readDesignManifest } = await import('@/utils/tools/designProject')
+        const m = await readDesignManifest(activeDesign.name)
+        if (m) {
+          designManifest = { design: m.design, screens: m.screens, connections: m.connections, updatedAt: m.updatedAt, ...(m.viewports ? { viewports: m.viewports } : {}) }
+          designScreens = m.screens.map(s => ({ name: s, path: `${activeDesign.path}/${s}` }))
+        }
+      }
+      catch {}
     }
 
     // Hydrate design versions if any
@@ -189,23 +208,29 @@ export const useHistoryStore = defineStore('history', () => {
       try {
         const { dbLoadDesignVersions } = await import('@/db/database')
         const vRows = await dbLoadDesignVersions(conv.id)
-        designVersions = vRows.map(v => ({
-          id: v.id,
-          conversationId: v.conversation_id,
-          versionNumber: v.version_number,
-          messageId: v.message_id,
-          projectPath: v.project_path,
-          projectName: v.project_name,
-          createdAt: v.created_at,
-          label: v.label,
-          filesChanged: v.files_changed
-            ? (() => {
-                try { return JSON.parse(v.files_changed!) as string[] }
-                catch { return [] }
-              })()
-            : [],
-          snapshotPath: v.snapshot_path,
-        }))
+        designVersions = vRows.map(v => {
+          const screenNameRaw = (v as unknown as { screen_name?: string | null }).screen_name
+          const designNameRaw = (v as unknown as { design_name?: string | null }).design_name
+          return {
+            id: v.id,
+            conversationId: v.conversation_id,
+            versionNumber: v.version_number,
+            messageId: v.message_id,
+            projectPath: v.project_path,
+            projectName: v.project_name,
+            createdAt: v.created_at,
+            label: v.label,
+            filesChanged: v.files_changed
+              ? (() => {
+                  try { return JSON.parse(v.files_changed!) as string[] }
+                  catch { return [] }
+                })()
+              : [],
+            snapshotPath: v.snapshot_path,
+            ...(screenNameRaw ? { screenName: screenNameRaw } : {}),
+            ...(designNameRaw ? { designName: designNameRaw } : {}),
+          }
+        })
         // Seed designVersions store
         const { useDesignVersionStore } = await import('@/stores/designVersions')
         const dvStore = useDesignVersionStore()
@@ -222,6 +247,9 @@ export const useHistoryStore = defineStore('history', () => {
       ...(conv.is_design_tab ? { isDesignTab: true, mode: 'design' as const } : {}),
       ...(designs ? { designs } : {}),
       ...(activeDesignProject ? { activeDesignProject } : {}),
+      ...(activeDesign ? { activeDesign } : {}),
+      ...(designManifest ? { designManifest } : {}),
+      ...(designScreens ? { designScreens } : {}),
       ...(designVersions ? { designVersions } : {}),
       messages: rows.map(r => {
         let toolEvents

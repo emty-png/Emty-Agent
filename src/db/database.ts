@@ -209,6 +209,11 @@ const MIGRATIONS: string[] = [
   'CREATE INDEX IF NOT EXISTS idx_dv_conv_ver ON design_versions (conversation_id, version_number ASC)',
   'CREATE INDEX IF NOT EXISTS idx_dv_msg ON design_versions (message_id)',
   'ALTER TABLE messages ADD COLUMN design_version_id TEXT REFERENCES design_versions(id)',
+
+  // v16 — multi-screen design (per-screen versioning + manifest)
+  'ALTER TABLE design_versions ADD COLUMN screen_name TEXT',
+  'ALTER TABLE design_versions ADD COLUMN design_name TEXT',
+  'CREATE INDEX IF NOT EXISTS idx_dv_screen ON design_versions (conversation_id, screen_name, version_number ASC)',
 ]
 
 // ── column existence helper ───────────────────────────────────────────────────
@@ -284,6 +289,11 @@ async function migrate(instance: Database): Promise<void> {
     { name: 'memory_key', definition: 'TEXT' },
   ])
 
+  await ensureColumns(instance, 'design_versions', [
+    { name: 'screen_name', definition: 'TEXT' },
+    { name: 'design_name', definition: 'TEXT' },
+  ])
+
   // ── apply pending migrations ──────────────────────────────────────────────
   if (current < MIGRATIONS.length) {
     for (let i = current; i < MIGRATIONS.length; i++) {
@@ -356,6 +366,8 @@ export interface DesignVersionRow {
   label: string
   files_changed: string | null
   snapshot_path: string
+  screen_name?: string | null
+  design_name?: string | null
 }
 
 export interface CheckpointRow {
@@ -1259,9 +1271,9 @@ export async function dbInsertDesignVersion(row: DesignVersionRow): Promise<void
   const d = await getDb()
   await d.execute(
     `INSERT INTO design_versions
-      (id, conversation_id, version_number, message_id, project_path, project_name, created_at, label, files_changed, snapshot_path)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [row.id, row.conversation_id, row.version_number, row.message_id, row.project_path, row.project_name, row.created_at, row.label, row.files_changed, row.snapshot_path],
+      (id, conversation_id, version_number, message_id, project_path, project_name, created_at, label, files_changed, snapshot_path, screen_name, design_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [row.id, row.conversation_id, row.version_number, row.message_id, row.project_path, row.project_name, row.created_at, row.label, row.files_changed, row.snapshot_path, row.screen_name ?? null, row.design_name ?? null],
   )
 }
 

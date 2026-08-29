@@ -94,6 +94,25 @@ export type MessagePart
     | { type: 'reasoning'; text: string }
     | { type: 'tool'; toolCallId: string }
 
+export interface DesignScreenRef {
+  name: string
+  path: string
+}
+
+export interface DesignConnection {
+  from: string
+  to: string
+  label?: string
+}
+
+export interface DesignManifest {
+  design: string
+  screens: string[]
+  connections: DesignConnection[]
+  updatedAt: number
+  viewports?: Record<string, { width: number; height: number; preset: 'mobile' | 'tablet' | 'desktop' }>
+}
+
 export interface DesignVersionRef {
   id: string
   versionNumber: number
@@ -105,6 +124,9 @@ export interface DesignVersionRef {
   conversationId: string
   projectPath: string
   projectName: string
+  /** New multi-screen fields — optional for backward compat with legacy rows */
+  screenName?: string
+  designName?: string
 }
 
 export interface Message {
@@ -204,6 +226,17 @@ export interface ChatTab {
     name: string
     type: DesignProjectType
   }
+  /** New multi-screen design — one design per tab, many screens */
+  activeDesign?: {
+    name: string
+    path: string
+  }
+  /** Manifest of screens + connections for activeDesign */
+  designManifest?: DesignManifest | null
+  /** Currently selected screen (grid shows all, selection is for focused actions) */
+  activeScreenName?: string | null
+  /** Map of screenName -> list of screens (derived, not persisted) */
+  designScreens?: DesignScreenRef[]
   /** Monotonically increasing counter — bumped when project files change on disk. */
   projectVersion?: number
   /** Dev server URL for Vite projects (e.g. http://localhost:5173). */

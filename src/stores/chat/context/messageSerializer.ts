@@ -2,6 +2,18 @@ import type { JSONValue, ModelMessage, ToolResultPart } from 'ai'
 import type { Message, ToolEvent } from '@/stores/chat/core/types'
 import { isBrowserElementAttachment, isImageMime, parseBrowserElementAttachment } from '@/stores/chat/core/attachmentTypes'
 import { BG_TASK_COMPLETED_DIVIDER, SESSION_COMPACTED_DIVIDER, SESSION_COMPACTING_DIVIDER } from '@/stores/chat/core/constants'
+import { useSettingsStore } from '@/stores/settings'
+
+function getSupportsVision(): boolean {
+  try {
+    const s = useSettingsStore()
+    if (s?.activeModel)
+      return Boolean(s.activeModel.supportsAttachments)
+  }
+  catch {}
+  // Default to true — inject image if we cannot determine (safe for vision models)
+  return true
+}
 
 // ── tool result helpers ─────────────────────────────────────────────────────
 
@@ -89,6 +101,17 @@ function smartCompressToolResult(toolName: string, result: unknown): unknown {
   // content on subsequent turns without re-reading the file.
   if (toolName === 'read_files' || toolName === 'read_file' || toolName === 'edit_files')
     return result
+
+  // Screenshot: keep full result for synthetic injection but truncate JSON for context
+  if (toolName === 'screenshot_screen' && typeof result === 'object' && result !== null) {
+    const cloned = { ...(result as Record<string, unknown>) }
+    if (typeof cloned.screenshot === 'string' && cloned.screenshot.length > 200) {
+      const w = typeof cloned.width === 'number' ? cloned.width : '?'
+      const h = typeof cloned.height === 'number' ? cloned.height : '?'
+      cloned.screenshot = `[PNG ${w}×${h} ${Math.round((cloned.screenshot as string).length / 1024)}KB — image injected separately as vision part; see image above]`
+    }
+    return cloned
+  }
 
   if (typeof result !== 'object' || result === null) {
     if (typeof result === 'string' && result.length > 2500)
@@ -332,6 +355,36 @@ export function toModelMessages(
     }))
 
     result.push({ role: 'tool' as const, content: toolContent })
+
+    // Synthetic vision injection for screenshot_screen (single screen, 1× PNG)
+    for (const event of toolEvents) {
+      if (event.toolName !== 'screenshot_screen')
+        continue
+      const r = event.result as Record<string, unknown> | null
+      if (!r || typeof r.screenshot !== 'string' || !r.screenshot.startsWith('data:image'))
+        continue
+      const supportsVision = getSupportsVision()
+      if (!supportsVision) {
+        const savedPath = typeof r.savedPath === 'string' ? r.savedPath : 'disk'
+        result.push({
+          role: 'user' as const,
+          content: `System notification: You can't view images, dont try this again. Screenshot was saved to ${savedPath} but this model does not support vision.`,
+        })
+        continue
+      }
+      const width = typeof r.width === 'number' ? r.width : 0
+      const height = typeof r.height === 'number' ? r.height : 0
+      const screen = typeof r.screen === 'string' ? r.screen : 'screen'
+      const design = typeof r.design === 'string' ? r.design : 'design'
+      const caption = `Screenshot of "${screen}" in "${design}" at ${width}×${height} — review for clipping, overflow, text legibility:`
+      result.push({
+        role: 'user' as const,
+        content: [
+          { type: 'text', text: caption },
+          { type: 'image', image: r.screenshot as string },
+        ],
+      })
+    }
   }
 
   return result

@@ -10,9 +10,9 @@ The user provides frontend requirements: a component, page, application, or inte
 
 ## Project Structure
 
-Every design project is exactly three files: `index.html` (structure), `styles.css` (styling) and `script.js` (behavior). There is no build step and no framework — vanilla HTML/CSS/JS only.
+Every design is a folder `~/.emty/designs/{design}/` containing many screens (max 20). Each screen is exactly three files: `index.html` (structure), `styles.css` (styling) and `script.js` (behavior) at `{design}/{screen}/`. There is no build step and no framework — vanilla HTML/CSS/JS only.
 
-Use `start_project` to create the project, then `edit_design` to write your code into the three files. Keep `index.html` linking `styles.css` and `script.js`.
+Use `create_screen({design, screen})` to create each screen (starter template with index.html/styles.css/script.js), then `edit_design({edits:[{screen, files:[{path,content}]}]})` to write your code (batch across screens). Keep `index.html` linking `./styles.css` and `./script.js`. Delete screens with `delete_screens({design, screens: ["screen1", "screen2"]})`. Visually verify with `screenshot_screen({design, screen})` — captures a 1× PNG at viewport size to `.screenshots/` (requires valid screen; falls back to system notification if model lacks vision).
 
 ## Design Thinking
 
