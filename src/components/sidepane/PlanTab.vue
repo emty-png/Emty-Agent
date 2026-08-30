@@ -28,14 +28,6 @@ interface PendingComment {
   text: string
 }
 
-const conversationId = computed(() => {
-  return chat.tabs.find(tab => tab.id === props.tabId)?.conversationId ?? null
-})
-
-const workspacePath = computed(() => {
-  return chat.tabs.find(tab => tab.id === props.tabId)?.workspacePath ?? null
-})
-
 function safePathSegment(value: string, fallback: string): string {
   const sanitized = value
     .trim()
@@ -49,6 +41,10 @@ function safePathSegment(value: string, fallback: string): string {
     .replace(/-+/g, '-')
   return sanitized || fallback
 }
+
+const conversationId = computed(() => chat.tabs.find(tab => tab.id === props.tabId)?.conversationId ?? null)
+
+const workspacePath = computed(() => chat.tabs.find(tab => tab.id === props.tabId)?.workspacePath ?? null)
 
 function projectNameFromPath(path: string | null): string | null {
   if (!path)
@@ -65,21 +61,13 @@ const projectSegment = computed(() => {
   return 'global'
 })
 
+const tabSegment = computed(() => safePathSegment(props.tabId, 'global'))
+
 function handleGlobalPlanCreated(e: Event) {
-  const detail = (e as CustomEvent<{ filepath: string; tabId?: string; conversationId?: string; projectName?: string | null; workspacePath?: string | null }>).detail
+  const detail = (e as CustomEvent<{ filepath: string; tabId?: string }>).detail
   if (!detail?.filepath)
     return
-
-  if (detail.tabId === props.tabId) {
-    void loadPlans()
-    return
-  }
-  // plans are now per-project, so any tab in same project should refresh
-  const incomingProject = detail.projectName ?? (detail.workspacePath ? projectNameFromPath(detail.workspacePath) : null)
-  const incomingSegment = incomingProject ? safePathSegment(incomingProject, 'global') : detail.conversationId ? safePathSegment(detail.conversationId, 'global') : null
-  if (incomingSegment && incomingSegment === projectSegment.value)
-    void loadPlans()
-  else if (detail.conversationId && detail.conversationId === conversationId.value)
+  if (detail.tabId === props.tabId)
     void loadPlans()
 }
 
@@ -305,16 +293,8 @@ const planLines = computed<PlanLine[]>(() => {
 async function loadPlans() {
   loading.value = true
   try {
-    if (!conversationId.value && !workspacePath.value) {
-      plans.value = []
-      selectedPlanPath.value = null
-      planContent.value = ''
-      return
-    }
-
     const home = await homeDir()
-    const segment = projectSegment.value
-    const plansDir = await join(home, '.emty', 'plans', segment)
+    const plansDir = await join(home, '.emty', 'plans', projectSegment.value, tabSegment.value)
 
     try {
       const entries = await readDir(plansDir)
@@ -443,7 +423,7 @@ onUnmounted(() => {
   window.removeEventListener('emty:plan-created', handleGlobalPlanCreated)
 })
 
-watch([conversationId, workspacePath, projectSegment], () => {
+watch([() => props.tabId, projectSegment, tabSegment], () => {
   void loadPlans()
 })
 </script>

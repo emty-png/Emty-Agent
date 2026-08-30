@@ -93,7 +93,7 @@ This operation is cheap and does not access the filesystem.`,
 Use this when you need the complete description, activeForm, or current status of a specific task.
 Do not use this to list all tasks; use list_tasks for that purpose.`,
 
-  plan: 'Write or replace a production-quality implementation plan for the user to review before modifying files. The plan is saved to ~/.emty/plans/<project_name>/<planName>.md and the result includes a unified diff plus added/removed line counts. Use concise but complete markdown with scope, constraints, affected files, implementation steps, validation, rollback or risk notes, and explicit acceptance criteria.',
+  plan: 'Write or replace a production-quality implementation plan for the user to review before modifying files. The plan is saved to ~/.emty/plans/<tab_id>/<planName>.md and the result includes a unified diff plus added/removed line counts. Use concise but complete markdown with scope, constraints, affected files, implementation steps, validation, rollback or risk notes, and explicit acceptance criteria.',
 
   sleep: `Pause execution for a specified duration. Use when you need to wait — for example, after starting a background server, before checking if a service is ready, or to space out retry attempts.
 

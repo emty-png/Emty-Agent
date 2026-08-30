@@ -19,6 +19,7 @@ export async function buildProfile(ctx: ToolRegistryContext): Promise<ToolSet> {
   const mcpTools = await createMcpTools(ctx.mcpServers)
 
   const planTools = createPlanTools({
+    tabId: ctx.tabId,
     conversationId: ctx.conversationId,
     workspacePath: ctx.workspacePath ?? null,
     onPlanCreated: event => {

@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import type { ConversationRow } from '@/db/database'
-import { CheckSquare, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Square, Trash2, X } from 'lucide-vue-next'
+import type { ConversationRow, ProjectWithLatestChat } from '@/db/database'
+import { Check, CheckSquare, FolderKanban, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, Square, Trash2, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { dbListProjectsWithLatestChat } from '@/db/database'
 import { useHistoryStore } from '@/stores/history'
+import { useProjectStore } from '@/stores/project'
 
 // ── open ──────────────────────────────────────────────────────────────────────
 const emit = defineEmits<{
@@ -11,7 +13,65 @@ const emit = defineEmits<{
   (e: 'openChat'): void
 }>()
 const history = useHistoryStore()
+const projectStore = useProjectStore()
 const { conversations, pinnedConversations, loading, hasMore, isEmpty, searchQuery } = storeToRefs(history)
+
+// ── project filter (left-center panel, per-project true/false) ─────────────
+const selectedProjects = ref<Set<string>>(new Set())
+const projectOptions = ref<ProjectWithLatestChat[]>([])
+
+async function loadProjectOptions() {
+  try {
+    const rows = await dbListProjectsWithLatestChat(50)
+    const merged = [...rows]
+    for (const p of projectStore.openProjects) {
+      if (!merged.some(r => r.workspace_path === p)) {
+        const name = p.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? p
+        merged.push({
+          workspace_path: p,
+          project_name: name,
+          latest_chat_id: '',
+          latest_chat_title: '',
+          latest_chat_updated_at: 0,
+        })
+      }
+    }
+    projectOptions.value = merged
+  }
+  catch {
+    // silent
+  }
+}
+
+onMounted(() => {
+  loadProjectOptions()
+})
+
+watch(() => conversations.value.length, () => {
+  loadProjectOptions()
+})
+
+watch(() => projectStore.openProjects.length, () => {
+  loadProjectOptions()
+})
+
+function toggleProjectFilter(path: string) {
+  const next = new Set(selectedProjects.value)
+  if (next.has(path))
+    next.delete(path)
+  else next.add(path)
+  selectedProjects.value = next
+}
+
+function clearProjectFilters() {
+  selectedProjects.value = new Set()
+}
+
+const filteredConversations = computed(() => {
+  if (selectedProjects.value.size === 0)
+    return conversations.value
+  return conversations.value.filter(c => !!c.workspace_path && selectedProjects.value.has(c.workspace_path))
+})
 
 // ── load on mount ─────────────────────────────────────────────────────────────
 history.load(true)
@@ -49,7 +109,7 @@ function toggleSelect(id: string) {
 
 function selectAll() {
   selectedIds.value = new Set(
-    conversations.value
+    filteredConversations.value
       .filter(c => !isPinned(c.id))
       .map(c => c.id),
   )
@@ -218,79 +278,128 @@ function relativeTime(ts: number): string {
       </div>
     </div>
 
-    <!-- ── list ────────────────────────────────────────────────────────── -->
-    <div class="conv-list" @scroll="onScroll">
-      <!-- empty -->
-      <div v-if="isEmpty" class="list-empty">
-        <MessageSquare :size="22" :stroke-width="1.3" class="empty-icon" />
-        <p>No conversations yet</p>
-      </div>
+    <!-- ── body — left-center project panel + list ─────────────────────── -->
+    <div class="history-body">
+      <!-- left-center project filter panel — projects stacked vertically -->
+      <aside class="project-filter-panel" aria-label="Project filters">
+        <div class="pf-panel-title">
+          <FolderKanban :size="12" :stroke-width="1.8" />
+          Projects
+        </div>
 
-      <template v-else>
-        <div
-          v-for="conv in conversations"
-          :key="conv.id"
-          class="conv-item"
-          :class="{ 'conv-item--menu-open': menuOpen === conv.id }"
-          @click="open(conv)"
-        >
-          <!-- rename input -->
-          <template v-if="renamingId === conv.id">
-            <input
-              ref="renameInputRef"
-              v-model="renameValue"
-              class="rename-input"
-              @keydown.enter="commitRename(conv.id)"
-              @keydown.escape="cancelRename"
-              @blur="commitRename(conv.id)"
-              @click.stop
-            >
-          </template>
+        <div v-if="projectOptions.length === 0" class="pf-empty">
+          No projects yet
+        </div>
 
-          <!-- normal row -->
-          <template v-else>
-            <!-- left slot: Pin icon OR Checkbox -->
-            <div v-if="isPinned(conv.id)" class="conv-pin-slot">
-              <Pin :size="14" :stroke-width="2.2" class="text-(--color-text-dim) rotate-45" />
-            </div>
-            <!-- checkbox (visible on hover or when selecting) -->
+        <div v-else class="pf-list">
+          <label
+            v-for="proj in projectOptions"
+            :key="proj.workspace_path"
+            class="pf-row"
+            :class="{ 'pf-row--active': selectedProjects.has(proj.workspace_path) }"
+            @click.prevent="toggleProjectFilter(proj.workspace_path)"
+          >
             <button
-              v-else
-              class="conv-checkbox"
-              :class="{ 'conv-checkbox--checked': selectedIds.has(conv.id), 'conv-checkbox--visible': isSelecting }"
-              @click.stop="toggleSelect(conv.id)"
+              class="project-filter-box"
+              :class="{ 'project-filter-box--checked': selectedProjects.has(proj.workspace_path) }"
+              :aria-checked="selectedProjects.has(proj.workspace_path)"
+              role="checkbox"
+              tabindex="0"
+              @keydown.space.prevent="toggleProjectFilter(proj.workspace_path)"
+              @keydown.enter.prevent="toggleProjectFilter(proj.workspace_path)"
+              @click.stop="toggleProjectFilter(proj.workspace_path)"
             >
-              <CheckSquare v-if="selectedIds.has(conv.id)" :size="16" :stroke-width="1.8" />
-              <Square v-else :size="16" :stroke-width="1.8" />
+              <Check v-if="selectedProjects.has(proj.workspace_path)" :size="11" :stroke-width="2.8" />
             </button>
+            <span class="pf-name" :title="proj.workspace_path">{{ proj.project_name }}</span>
+          </label>
+        </div>
 
-            <div class="conv-info">
-              <span class="conv-title">{{ conv.title }}</span>
-              <span class="conv-meta">Last message {{ relativeTime(conv.updated_at) }}</span>
-            </div>
+        <button v-if="selectedProjects.size" class="pf-clear-btn" @click="clearProjectFilters">
+          Clear filter
+        </button>
+      </aside>
 
-            <!-- actions (visible on hover / menu open) -->
-            <div class="conv-actions" @click.stop>
-              <button
-                class="action-btn"
-                aria-label="More options"
-                @click="openMenu($event, conv.id)"
+      <!-- ── list ────────────────────────────────────────────────────────── -->
+      <div class="conv-list" @scroll="onScroll">
+        <!-- empty -->
+        <div v-if="isEmpty" class="list-empty">
+          <MessageSquare :size="22" :stroke-width="1.3" class="empty-icon" />
+          <p>No conversations yet</p>
+        </div>
+
+        <div v-else-if="filteredConversations.length === 0" class="list-empty">
+          <FolderKanban :size="22" :stroke-width="1.3" class="empty-icon" />
+          <p>No project conversations</p>
+          <span class="empty-hint">Change the project selection or clear the filter</span>
+        </div>
+
+        <template v-else>
+          <div
+            v-for="conv in filteredConversations"
+            :key="conv.id"
+            class="conv-item"
+            :class="{ 'conv-item--menu-open': menuOpen === conv.id }"
+            @click="open(conv)"
+          >
+            <!-- rename input -->
+            <template v-if="renamingId === conv.id">
+              <input
+                ref="renameInputRef"
+                v-model="renameValue"
+                class="rename-input"
+                @keydown.enter="commitRename(conv.id)"
+                @keydown.escape="cancelRename"
+                @blur="commitRename(conv.id)"
+                @click.stop
               >
-                <MoreHorizontal :size="14" :stroke-width="1.8" />
-              </button>
-            </div>
-          </template>
-        </div>
+            </template>
 
-        <!-- load more spinner -->
-        <div v-if="loading" class="list-loading">
-          <span class="loading-dots">
-            <span />
-            <span />
-            <span />
-          </span>
-        </div>
-      </template>
+            <!-- normal row -->
+            <template v-else>
+              <!-- left slot: Pin icon OR Checkbox -->
+              <div v-if="isPinned(conv.id)" class="conv-pin-slot">
+                <Pin :size="14" :stroke-width="2.2" class="text-(--color-text-dim) rotate-45" />
+              </div>
+              <!-- checkbox (visible on hover or when selecting) -->
+              <button
+                v-else
+                class="conv-checkbox"
+                :class="{ 'conv-checkbox--checked': selectedIds.has(conv.id), 'conv-checkbox--visible': isSelecting }"
+                @click.stop="toggleSelect(conv.id)"
+              >
+                <CheckSquare v-if="selectedIds.has(conv.id)" :size="16" :stroke-width="1.8" />
+                <Square v-else :size="16" :stroke-width="1.8" />
+              </button>
+
+              <div class="conv-info">
+                <span class="conv-title">{{ conv.title }}</span>
+                <span class="conv-meta">Last message {{ relativeTime(conv.updated_at) }}</span>
+              </div>
+
+              <!-- actions (visible on hover / menu open) -->
+              <div class="conv-actions" @click.stop>
+                <button
+                  class="action-btn"
+                  aria-label="More options"
+                  @click="openMenu($event, conv.id)"
+                >
+                  <MoreHorizontal :size="14" :stroke-width="1.8" />
+                </button>
+              </div>
+            </template>
+          </div>
+
+          <!-- load more spinner -->
+          <div v-if="loading" class="list-loading">
+            <span class="loading-dots">
+              <span />
+              <span />
+              <span />
+            </span>
+          </div>
+        </template>
+      </div>
     </div>
 
     <!-- ── context menu ─────────────────────────────────────────────────── -->
@@ -301,7 +410,7 @@ function relativeTime(ts: number): string {
         :style="{ top: `${menuPos.y}px`, left: `${menuPos.x}px` }"
         @click.stop
       >
-        <button class="ctx-item" @click="startRename(conversations.find(c => c.id === menuOpen)!)">
+        <button class="ctx-item" @click="startRename((filteredConversations.find(c => c.id === menuOpen) ?? conversations.find(c => c.id === menuOpen))!)">
           <Pencil :size="13" :stroke-width="1.8" />
           Rename
         </button>
@@ -513,14 +622,218 @@ function relativeTime(ts: number): string {
   border-color: var(--color-border-bright);
 }
 
+/* ── history body (left-center panel + list) ──────────────────────────────── */
+.history-body {
+  position: relative;
+  display: flex;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-inline: 28px;
+  padding-bottom: 40px;
+  box-sizing: border-box;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/* ── project filter panel (left-center, vertical list) ────────────────────── */
+.project-filter-panel {
+  position: absolute;
+  left: 28px;
+  top: 0;
+  z-index: 10;
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 10px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+}
+
+.pf-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  padding: 0 4px 4px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  margin-bottom: 4px;
+}
+
+.pf-empty {
+  padding: 18px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.pf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pf-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 6px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+  border: 1px solid transparent;
+}
+
+.pf-row:hover {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-subtle);
+}
+
+.pf-row--active {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.pf-row--active:hover {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.pf-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  line-height: 1.2;
+}
+
+.pf-row--active .pf-name {
+  color: var(--color-text-primary);
+}
+
+.pf-clear-btn {
+  margin-top: 4px;
+  height: 28px;
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.pf-clear-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-bright);
+}
+
+/* ── true/false box (per-project) ──────────────────────────────────────────── */
+.project-filter-box {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-elevated);
+  color: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 0;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.project-filter-box:hover {
+  border-color: var(--color-border-bright);
+  background: var(--color-bg-hover);
+}
+
+.project-filter-box:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.project-filter-box--checked {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-bg-base);
+}
+
+.project-filter-box--checked:hover {
+  background: var(--color-accent-bright);
+  border-color: var(--color-accent-bright);
+}
+
+.project-filter-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 18px;
+  padding-inline: 5px;
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-elevated);
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.project-filter-value--active {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 32%, transparent);
+  color: var(--color-accent-text);
+}
+
+.empty-hint {
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  opacity: 0.9;
+}
+
 /* ── list ────────────────────────────────────────────────────────────────────── */
 .conv-list {
   flex: 1;
+  min-width: 0;
+  max-width: 680px;
   overflow-y: auto;
-  padding: 0 28px 60px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
 }
 
 /* items and empty state inside the list */

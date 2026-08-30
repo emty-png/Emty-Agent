@@ -14,6 +14,7 @@ export interface PlanCreatedEvent {
 }
 
 export interface CreatePlanToolsOptions {
+  tabId?: string
   conversationId: string
   workspacePath?: string | null
   projectName?: string | null
@@ -61,6 +62,13 @@ function resolveProjectSegment(options: CreatePlanToolsOptions): string {
   return safePathSegment(options.conversationId, 'global')
 }
 
+function resolveTabSegment(options: CreatePlanToolsOptions): string {
+  const trimmed = options.tabId?.trim()
+  if (trimmed)
+    return safePathSegment(trimmed, 'global')
+  return resolveProjectSegment(options)
+}
+
 export function planToolDisplayLabel(name: string, args: Record<string, unknown>): string {
   if (name !== 'plan')
     return `Called ${name}`
@@ -75,6 +83,7 @@ export function planToolDisplayLabel(name: string, args: Record<string, unknown>
 export function createPlanTools(options: CreatePlanToolsOptions) {
   const conversationId = safePathSegment(options.conversationId, 'unknown-conversation')
   const projectSegment = resolveProjectSegment(options)
+  const tabSegment = resolveTabSegment(options)
   const workspacePath = options.workspacePath ?? null
   const projectName = projectNameFromPath(workspacePath) ?? (options.projectName?.trim() || null)
 
@@ -88,7 +97,7 @@ export function createPlanTools(options: CreatePlanToolsOptions) {
       execute: async ({ planContent, planName }) => {
         try {
           const home = await homeDir()
-          const plansDir = await join(home, '.emty', 'plans', projectSegment)
+          const plansDir = await join(home, '.emty', 'plans', projectSegment, tabSegment)
           await ensureDir(plansDir)
 
           const filename = normalizePlanFilename(planName)
