@@ -201,6 +201,7 @@ export const useSettingsStore = defineStore(
       gitCoAuthor: true,
       defaultModelUid: null,
       subagentModelUid: null,
+      commitModelUid: null,
     })
     const toolDisabledIds = ref<{ build: string[]; design: string[] }>({ build: [], design: [] })
 
@@ -849,6 +850,14 @@ export const useSettingsStore = defineStore(
     const subagentActiveModel = computed(
       () =>
         discoveredModels.value.find(m => m.uid === agent.value.subagentModelUid)
+        ?? discoveredModels.value.find(m => m.uid === activeModelUid.value)
+        ?? enabledModels.value[0]
+        ?? null,
+    )
+
+    const commitActiveModel = computed(
+      () =>
+        discoveredModels.value.find(m => m.uid === agent.value.commitModelUid)
         ?? discoveredModels.value.find(m => m.uid === activeModelUid.value)
         ?? enabledModels.value[0]
         ?? null,
@@ -1876,6 +1885,7 @@ export const useSettingsStore = defineStore(
         gitCoAuthor: agent.value.gitCoAuthor !== false,
         defaultModelUid: agent.value.defaultModelUid ?? null,
         subagentModelUid: agent.value.subagentModelUid ?? null,
+        commitModelUid: agent.value.commitModelUid ?? null,
       }
     }
 
@@ -2009,6 +2019,7 @@ export const useSettingsStore = defineStore(
       activeModelUid,
       activeModel,
       subagentActiveModel,
+      commitActiveModel,
       enabledModels,
       setCompactionModelUid,
       getCompactionModelUid,

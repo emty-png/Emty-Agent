@@ -233,6 +233,20 @@ function clearSessionApprovals() {
             </option>
           </select>
         </div>
+        <div class="settings-item settings-item--field">
+          <div class="settings-item-content">
+            <span class="settings-item-label">Commit model</span>
+            <span class="settings-item-desc">Model used to auto-generate commit messages. Defaults to the current tab's model.</span>
+          </div>
+          <select v-model="agent.commitModelUid" class="settings-select">
+            <option :value="null">
+              Same as active model
+            </option>
+            <option v-for="m in enabledModels" :key="m.uid" :value="m.uid">
+              {{ m.name }} — {{ m.providerName }}
+            </option>
+          </select>
+        </div>
       </div>
     </div>
 

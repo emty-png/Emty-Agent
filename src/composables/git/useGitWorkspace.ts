@@ -298,10 +298,11 @@ export function useGitWorkspace(cwd: Ref<string>, tabId: string) {
     if (!diff.trim())
       throw new CommitMessageValidationError('No staged changes to commit')
 
-    if (!settingsStore.activeModel)
+    const model = settingsStore.commitActiveModel
+    if (!model)
       throw new CommitMessageValidationError('Please select an AI model in settings to autogenerate commit message.')
 
-    const languageModel = resolveLanguageModel(settingsStore.activeModel, settingsStore, buildLanguageModel)
+    const languageModel = resolveLanguageModel(model, settingsStore, buildLanguageModel)
     const prompt = buildCommitPrompt(diff, stat, settingsStore.promptOverrides?.['prompt-commit'])
     const generated = await generateText({ model: languageModel, prompt, system: prompt })
     return normalizeCommitMessage(generated.text)

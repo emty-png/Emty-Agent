@@ -196,6 +196,7 @@ export interface AgentConfig {
   gitCoAuthor: boolean
   defaultModelUid?: string | null
   subagentModelUid?: string | null
+  commitModelUid?: string | null
 }
 
 export interface ConfiguredSkill extends SkillMetadata {
