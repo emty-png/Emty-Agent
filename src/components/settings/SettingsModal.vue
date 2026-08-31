@@ -2,7 +2,6 @@
 import type { Component } from 'vue'
 import {
   BookOpen,
-  ChevronRight,
   Puzzle,
   Settings,
   SlidersHorizontal,
@@ -97,12 +96,6 @@ function onKeydown(e: KeyboardEvent) {
             >
               <component :is="item.icon" :size="14" :stroke-width="1.8" class="nav-icon" />
               <span>{{ item.label }}</span>
-              <ChevronRight
-                :size="12"
-                :stroke-width="2"
-                class="nav-arrow"
-                :class="{ 'nav-arrow--active': activeSection === item.id }"
-              />
             </button>
           </nav>
 
@@ -259,22 +252,6 @@ function onKeydown(e: KeyboardEvent) {
 
 .nav-icon {
   flex-shrink: 0;
-}
-
-.nav-arrow {
-  margin-left: auto;
-  color: var(--color-text-tertiary);
-  opacity: 0;
-  transform: translateX(-4px);
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
-}
-
-.nav-item:hover .nav-arrow,
-.nav-arrow--active {
-  opacity: 1;
-  transform: translateX(0);
 }
 
 /*  right content  */

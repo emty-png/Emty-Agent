@@ -1,14 +1,24 @@
 <script setup lang="ts">
 import { getVersion } from '@tauri-apps/api/app'
-import { relaunch } from '@tauri-apps/plugin-process'
-import { check } from '@tauri-apps/plugin-updater'
 import { Trash2, Upload, Volume2, VolumeX, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { onMounted, ref } from 'vue'
+import { useUpdateCheck } from '@/composables/app/useUpdateCheck'
 import { useSettingsStore } from '@/stores/settings'
 
 const settingsStore = useSettingsStore()
 const { sound, developerMode } = storeToRefs(settingsStore)
+const {
+  isCheckingUpdate,
+  isDownloadingUpdate,
+  updateStatus,
+  hasUpdate,
+  showUpdateConfirm,
+  pendingUpdate,
+  cancelUpdate,
+  handleUpdateButtonClick,
+  confirmUpdate,
+} = useUpdateCheck()
 
 function testCompletion() {
   import('@/utils/sounds').then(({ playCompletionSound }) => playCompletionSound(sound.value.volume, sound.value.completionCustomData ?? undefined)).catch(() => {})
@@ -122,78 +132,6 @@ onMounted(async () => {
     // ignore — not in Tauri env or unavailable
   }
 })
-
-const isCheckingUpdate = ref(false)
-const isDownloadingUpdate = ref(false)
-const updateStatus = ref('')
-const hasUpdate = ref(false)
-const showUpdateConfirm = ref(false)
-const pendingUpdate = ref<Awaited<ReturnType<typeof check>> | null>(null)
-
-async function checkForUpdate() {
-  if (isCheckingUpdate.value || isDownloadingUpdate.value)
-    return
-  isCheckingUpdate.value = true
-  updateStatus.value = 'Checking for updates...'
-
-  try {
-    const update = await check()
-    if (update) {
-      hasUpdate.value = true
-      pendingUpdate.value = update
-      showUpdateConfirm.value = true
-      updateStatus.value = `Update ${update.version} available.`
-    }
-    else {
-      updateStatus.value = 'You are on the latest version.'
-      hasUpdate.value = false
-      pendingUpdate.value = null
-    }
-  }
-  catch (error) {
-    updateStatus.value = 'Error checking for updates'
-    console.error(error)
-  }
-  finally {
-    isCheckingUpdate.value = false
-  }
-}
-
-function cancelUpdate() {
-  showUpdateConfirm.value = false
-}
-
-function handleUpdateButtonClick() {
-  if (hasUpdate.value && pendingUpdate.value) {
-    showUpdateConfirm.value = true
-    return
-  }
-  checkForUpdate()
-}
-
-async function confirmUpdate() {
-  const update = pendingUpdate.value
-  if (!update)
-    return
-  showUpdateConfirm.value = false
-  isDownloadingUpdate.value = true
-  updateStatus.value = `Downloading update ${update.version}...`
-  try {
-    await update.downloadAndInstall(event => {
-      if (event.event === 'Finished') {
-        updateStatus.value = 'Download finished. Restarting...'
-      }
-    })
-    await relaunch()
-  }
-  catch (error) {
-    updateStatus.value = 'Failed to download update'
-    console.error(error)
-  }
-  finally {
-    isDownloadingUpdate.value = false
-  }
-}
 </script>
 
 <template>
@@ -415,7 +353,7 @@ async function confirmUpdate() {
   </section>
 
   <Teleport to="body">
-    <div v-if="showUpdateConfirm" class="dialog-backdrop update-confirm-backdrop" @click.self="cancelUpdate">
+    <div v-if="showUpdateConfirm" class="dialog-backdrop update-confirm-backdrop">
       <div class="dialog">
         <button class="dialog-close" @click="cancelUpdate">
           <X :size="14" :stroke-width="1.8" />

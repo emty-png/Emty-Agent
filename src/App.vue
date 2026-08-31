@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import HooksPopup from '@/components/hooks/HooksPopup.vue'
+import { useUpdateCheck } from '@/composables/app/useUpdateCheck'
 import FatalErrorScreen from './components/app/FatalErrorScreen.vue'
 import WelcomeAnimation from './components/app/WelcomeAnimation.vue'
 import ZoomIndicator from './components/app/ZoomIndicator.vue'
@@ -28,6 +29,7 @@ const { activeView, setView } = useAppView()
 const settingsOpen = ref(false)
 const showProviderBrowser = ref(false)
 const showHooksPopup = ref(false)
+const { checkForUpdate } = useUpdateCheck()
 
 function onBrowseProviders() {
   settingsOpen.value = false
@@ -86,7 +88,10 @@ onMounted(async () => {
     })
   }
 
-  // Update check is handled manually via Settings → Others → Check for Updates.
+  // Auto-check for updates on startup — shared state in useUpdateCheck means the
+  // manual "Check" button in Settings → Others will show "Checking..." and be
+  // disabled while this runs, preventing any collision.
+  checkForUpdate()
 })
 
 function reloadApp() {
