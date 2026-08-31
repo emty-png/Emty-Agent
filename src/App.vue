@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { relaunch } from '@tauri-apps/plugin-process'
-import { check } from '@tauri-apps/plugin-updater'
 import { onMounted, ref, watch } from 'vue'
 import HooksPopup from '@/components/hooks/HooksPopup.vue'
 import FatalErrorScreen from './components/app/FatalErrorScreen.vue'
@@ -88,17 +86,7 @@ onMounted(async () => {
     })
   }
 
-  // Check for updates in the background
-  try {
-    const update = await check()
-    if (update) {
-      await update.downloadAndInstall()
-      await relaunch()
-    }
-  }
-  catch (error) {
-    console.error('Failed to check for updates on startup:', error)
-  }
+  // Update check is handled manually via Settings → Others → Check for Updates.
 })
 
 function reloadApp() {
