@@ -1,6 +1,6 @@
 import { relaunch } from '@tauri-apps/plugin-process'
 import { check } from '@tauri-apps/plugin-updater'
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 
 // Module-level refs — shared singleton across all component instances
 const isCheckingUpdate = ref(false)
@@ -8,7 +8,7 @@ const isDownloadingUpdate = ref(false)
 const updateStatus = ref('')
 const hasUpdate = ref(false)
 const showUpdateConfirm = ref(false)
-const pendingUpdate = ref<Awaited<ReturnType<typeof check>> | null>(null)
+const pendingUpdate = shallowRef<Awaited<ReturnType<typeof check>> | null>(null)
 
 async function checkForUpdate() {
   if (isCheckingUpdate.value || isDownloadingUpdate.value)
