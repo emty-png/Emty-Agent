@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { X } from 'lucide-vue-next'
 import { onMounted, ref, watch } from 'vue'
 import HooksPopup from '@/components/hooks/HooksPopup.vue'
 import { useUpdateCheck } from '@/composables/app/useUpdateCheck'
@@ -29,7 +30,7 @@ const { activeView, setView } = useAppView()
 const settingsOpen = ref(false)
 const showProviderBrowser = ref(false)
 const showHooksPopup = ref(false)
-const { checkForUpdate } = useUpdateCheck()
+const { checkForUpdate, showUpdateConfirm, pendingUpdate, cancelUpdate, confirmUpdate } = useUpdateCheck()
 
 function onBrowseProviders() {
   settingsOpen.value = false
@@ -143,4 +144,48 @@ function reloadApp() {
       <HooksPopup v-if="showHooksPopup" @close="showHooksPopup = false" />
     </template>
   </div>
+
+  <Teleport to="body">
+    <div v-if="showUpdateConfirm" class="dialog-backdrop update-confirm-backdrop">
+      <div class="dialog">
+        <button class="dialog-close" @click="cancelUpdate">
+          <X :size="14" :stroke-width="1.8" />
+        </button>
+        <h2 class="dialog-title">
+          Update available
+        </h2>
+        <p class="dialog-body">
+          Version <strong>{{ pendingUpdate?.version }}</strong> is available. Do you want to download and install it now? The app will restart automatically.
+        </p>
+        <div class="dialog-actions">
+          <button class="dialog-btn dialog-btn--cancel" @click="cancelUpdate">
+            Later
+          </button>
+          <button class="dialog-btn dialog-btn--primary" @click="confirmUpdate">
+            Update now
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
+
+<style>
+.update-confirm-backdrop {
+  z-index: 100000 !important;
+}
+
+.update-confirm-backdrop .dialog {
+  z-index: 100001;
+}
+
+.dialog-btn--primary {
+  background: var(--color-text-primary);
+  color: var(--color-bg-base);
+  border-color: transparent;
+}
+
+.dialog-btn--primary:hover {
+  opacity: 0.88;
+}
+</style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { getVersion } from '@tauri-apps/api/app'
-import { Trash2, Upload, Volume2, VolumeX, X } from 'lucide-vue-next'
+import { Trash2, Upload, Volume2, VolumeX } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { onMounted, ref } from 'vue'
 import { useUpdateCheck } from '@/composables/app/useUpdateCheck'
@@ -351,30 +351,6 @@ onMounted(async () => {
       </div>
     </div>
   </section>
-
-  <Teleport to="body">
-    <div v-if="showUpdateConfirm" class="dialog-backdrop update-confirm-backdrop">
-      <div class="dialog">
-        <button class="dialog-close" @click="cancelUpdate">
-          <X :size="14" :stroke-width="1.8" />
-        </button>
-        <h2 class="dialog-title">
-          Update available
-        </h2>
-        <p class="dialog-body">
-          Version <strong>{{ pendingUpdate?.version }}</strong> is available. Do you want to download and install it now? The app will restart automatically.
-        </p>
-        <div class="dialog-actions">
-          <button class="dialog-btn dialog-btn--cancel" @click="cancelUpdate">
-            Later
-          </button>
-          <button class="dialog-btn dialog-btn--primary" @click="confirmUpdate">
-            Update now
-          </button>
-        </div>
-      </div>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>
@@ -610,25 +586,5 @@ onMounted(async () => {
   background: color-mix(in srgb, var(--color-danger, #ef4444) 10%, transparent);
   border-color: color-mix(in srgb, var(--color-danger, #ef4444) 45%, transparent);
   color: var(--color-danger-text, #ef4444);
-}
-</style>
-
-<style>
-.update-confirm-backdrop {
-  z-index: 100000 !important;
-}
-
-.update-confirm-backdrop .dialog {
-  z-index: 100001;
-}
-
-.dialog-btn--primary {
-  background: var(--color-text-primary);
-  color: var(--color-bg-base);
-  border-color: transparent;
-}
-
-.dialog-btn--primary:hover {
-  opacity: 0.88;
 }
 </style>
