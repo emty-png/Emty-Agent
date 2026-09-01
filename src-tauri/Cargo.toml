@@ -1,6 +1,6 @@
 [package]
 name = "emty-agent"
-version = "0.2.8"
+version = "0.2.9"
 description = "A nothing-special coding agent"
 authors = ["emty-png"]
 edition = "2021"
@@ -39,6 +39,7 @@ grep-matcher = "0.1"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

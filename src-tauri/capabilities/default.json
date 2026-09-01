@@ -280,6 +280,7 @@
     "shell:allow-kill",
     "shell:allow-stdin-write",
     "os:default",
+    "notification:default",
     {
       "identifier": "http:default",
       "allow": [

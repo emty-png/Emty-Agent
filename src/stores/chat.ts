@@ -620,13 +620,15 @@ export const useChatStore = defineStore('chat', () => {
     setTabStatus(tab, statusWaitingPermission(request.toolName))
 
     return new Promise(resolve => {
-      tab.pendingPermissions.push({
+      const pendingPermission = {
         requestId,
         toolName: request.toolName,
         toolLabel: request.toolLabel,
         actionTitle: request.actionTitle,
         actionDetails: request.actionDetails,
-      })
+      }
+      tab.pendingPermissions.push(pendingPermission)
+      void import('@/utils/notifications').then(m => m.sendPermissionNotification(pendingPermission, tab.pendingPermissions.length)).catch(() => {})
 
       permissionResolvers.set(requestId, decision => {
         if (decision === 'allow-session' && !sessionToolApprovals.value.includes(request.toolName))
