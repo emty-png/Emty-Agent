@@ -13,11 +13,7 @@ const {
   isDownloadingUpdate,
   updateStatus,
   hasUpdate,
-  showUpdateConfirm,
-  pendingUpdate,
-  cancelUpdate,
   handleUpdateButtonClick,
-  confirmUpdate,
 } = useUpdateCheck()
 
 function testCompletion() {
