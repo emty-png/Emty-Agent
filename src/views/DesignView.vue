@@ -117,6 +117,10 @@ const tabActiveDesign = computed(() => (props.tab as unknown as { activeDesign?:
 const tabDesignManifest = computed(() => (props.tab as unknown as { designManifest?: import('@/stores/chat/core/types').DesignManifest }).designManifest ?? null)
 const tabDesignScreens = computed(() => (props.tab as unknown as { designScreens?: Array<{ name: string; path: string }> }).designScreens ?? null)
 const tabCompareProjectPath = computed(() => (props.tab as unknown as { activeDesign?: { path: string; name: string } }).activeDesign?.path ?? props.tab.activeDesignProject?.path ?? null)
+const tabCompareViewports = computed<Record<string, { width: number; height: number; preset: string }> | null>(() => {
+  const m = tabDesignManifest.value as unknown as { viewports?: Record<string, { width: number; height: number; preset: string }> } | null
+  return m?.viewports ?? null
+})
 
 // ── Resizable split ───────────────────────────────────────────────────────────
 
@@ -259,6 +263,12 @@ watch(
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
+const landingPrompts = [
+  'Design a mobile onboarding flow for a fitness app',
+  'Create login and signup screens with a shared style',
+  'Design a settings screen with a dark mode toggle',
+]
+
 function send(text: string, attachments: Attachment[] = []) {
   chat.sendMessage(text, props.tab.mode, attachments.length > 0 ? attachments : undefined)
 }
@@ -281,6 +291,11 @@ function stop() {
             @send="send"
             @stop="stop"
           />
+          <div class="landing-chips">
+            <button v-for="p in landingPrompts" :key="p" class="landing-chip" @click="send(p)">
+              {{ p }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -381,6 +396,7 @@ function stop() {
       :a-id="compareAId"
       :b-id="compareBId"
       :project-path="tabCompareProjectPath"
+      :viewports="tabCompareViewports"
       @close="showCompareModal = false"
       @restore="onModalRestore"
     />
@@ -420,6 +436,39 @@ function stop() {
   gap: 20px;
   position: relative;
   z-index: 1;
+}
+
+.landing-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.landing-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-mid);
+  background: color-mix(in srgb, var(--color-bg-surface) 78%, transparent);
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.landing-chip:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
 }
 
 /* ── Active Split ──────────────────────────────────────────────────────────── */

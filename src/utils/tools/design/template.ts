@@ -51,8 +51,10 @@ body {
   max-width: 1120px;
   margin: 0 auto;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   padding: 64px 48px;
 }

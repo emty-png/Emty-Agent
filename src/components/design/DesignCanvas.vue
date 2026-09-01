@@ -9,20 +9,24 @@ import {
   Code2,
   Download,
   Expand,
+  LayoutGrid,
   Loader2,
   MessageSquarePlus,
   Minus,
   Plus,
   RefreshCw,
+  Search,
   Shrink,
   Trash2,
   X,
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAppView } from '@/composables/ui/useAppView'
+import { useIllustrationComponent } from '@/composables/ui/useIllustration'
 import { useChatStore } from '@/stores/chat'
 import { createBrowserElementAttachment, isBrowserElementAttachment, parseBrowserElementAttachment } from '@/stores/chat/core/attachmentTypes'
 import { useProjectStore } from '@/stores/project'
+import { useThemeStore } from '@/stores/themes'
 import { VIEWPORT_PRESETS } from '@/utils/tools/design/constants'
 import {
   clearConsoleBuffer,
@@ -251,6 +255,41 @@ function setIframeRef(screen: string, el: unknown) {
   iframeRefs.value[screen] = el as HTMLIFrameElement | null
 }
 
+async function waitForIframeMounted(screen: string, timeoutMs = 15_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const f = iframeRefs.value[screen]
+    if (f?.contentWindow && f.contentDocument?.readyState === 'complete')
+      return
+    await new Promise(resolve => setTimeout(resolve, 80))
+  }
+}
+
+// ── Lazy mounting + screen nav + console state (declared early) ──────────────
+
+const mountedScreens = ref<Set<string>>(new Set())
+const screenWrapRefs = ref<Record<string, HTMLElement | null>>({})
+let screenObserver: IntersectionObserver | null = null
+
+const screenListOpen = ref(false)
+const highlightScreenName = ref<string | null>(null)
+let highlightTimer: ReturnType<typeof setTimeout> | null = null
+
+const canvasRootRef = ref<HTMLElement | null>(null)
+const consoleSearch = ref('')
+const consoleDragging = ref(false)
+const consoleHeight = ref(240)
+try {
+  const storedH = Number(localStorage.getItem('emty.designConsoleHeight'))
+  if (Number.isFinite(storedH) && storedH >= 120 && storedH <= 1200)
+    consoleHeight.value = Math.round(storedH)
+}
+catch {}
+
+function setScreenWrapRef(screen: string, el: unknown) {
+  screenWrapRefs.value[screen] = el as HTMLElement | null
+}
+
 onMounted(() => {
   fitToCanvas()
 })
@@ -312,6 +351,15 @@ function isEditableTarget(e: Event) {
   return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
 }
 
+function onDocPointerDown(e: Event) {
+  if (!screenListOpen.value)
+    return
+  const target = e.target as HTMLElement | null
+  if (target?.closest('.dc-screen-list') || target?.closest('.dc-screen-list-anchor'))
+    return
+  screenListOpen.value = false
+}
+
 function onKeyDown(e: KeyboardEvent) {
   if (exportOpen.value && e.key === 'Escape') {
     e.preventDefault()
@@ -321,6 +369,11 @@ function onKeyDown(e: KeyboardEvent) {
   if (isPicking.value && e.key === 'Escape') {
     e.preventDefault()
     stopPicker()
+    return
+  }
+  if (screenListOpen.value && e.key === 'Escape') {
+    e.preventDefault()
+    screenListOpen.value = false
     return
   }
   if (props.isFullscreen && e.key === 'Escape') {
@@ -436,9 +489,27 @@ onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('message', onWindowMessage)
+  window.addEventListener('pointerdown', onDocPointerDown)
   if (canvasRef.value) {
     resizeObserver = new ResizeObserver(() => clampPan())
     resizeObserver.observe(canvasRef.value)
+  }
+  if (canvasRef.value && typeof IntersectionObserver !== 'undefined') {
+    screenObserver = new IntersectionObserver(obsEntries => {
+      const next = new Set(mountedScreens.value)
+      let changed = false
+      for (const oe of obsEntries) {
+        const screen = (oe.target as HTMLElement).dataset.screen
+        if (!screen)
+          continue
+        if (oe.isIntersecting && !next.has(screen)) {
+          next.add(screen)
+          changed = true
+        }
+      }
+      if (changed)
+        mountedScreens.value = next
+    }, { root: canvasRef.value, rootMargin: '400px' })
   }
   // Expose global capture bridge for screenshot_screen tool
   // Tries modern-screenshot first (higher fidelity, handles CORS), falls back to iframe foreignObject bootstrap
@@ -446,6 +517,13 @@ onMounted(() => {
     const ed = effectiveDesign.value
     if (!ed || ed.name !== design)
       throw new Error(`Active design is "${ed?.name ?? 'none'}", not "${design}" — open the correct design first.`)
+    // Lazy-mount fallback: force the target screen's iframe into the DOM and wait for it
+    if (!iframeRefs.value[screen]) {
+      const next = new Set(mountedScreens.value)
+      next.add(screen)
+      mountedScreens.value = next
+      await waitForIframeMounted(screen)
+    }
     const frame = iframeRefs.value[screen] ?? (screen === '__legacy__' ? iframeRefs.value.__legacy__ : null)
     if (!frame?.contentWindow)
       throw new Error(`Screen "${screen}" preview not ready — ensure DesignCanvas is visible and screen exists.`)
@@ -525,8 +603,15 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
   window.removeEventListener('message', onWindowMessage)
+  window.removeEventListener('pointerdown', onDocPointerDown)
   resizeObserver?.disconnect()
   resizeObserver = null
+  screenObserver?.disconnect()
+  screenObserver = null
+  if (highlightTimer) {
+    clearTimeout(highlightTimer)
+    highlightTimer = null
+  }
   if (exportSuccessTimer) {
     clearTimeout(exportSuccessTimer)
     exportSuccessTimer = null
@@ -619,9 +704,29 @@ function syncAnnotationsToIframe() {
   }
 }
 
+function mountAllScreens() {
+  const names = hasMultiScreen.value
+    ? effectiveScreens.value
+    : isLegacySingle.value ? ['__legacy__'] : []
+  if (names.length === 0)
+    return
+  const next = new Set(mountedScreens.value)
+  let changed = false
+  for (const s of names) {
+    if (!next.has(s)) {
+      next.add(s)
+      changed = true
+    }
+  }
+  if (changed)
+    mountedScreens.value = next
+}
+
 function startPicker() {
   if (!effectiveDesign.value)
     return
+  // Force-mount every screen so each one is annotatable
+  mountAllScreens()
   isPicking.value = true
   sendPickerCommandToAll('startPicker')
   syncAnnotationsToIframe()
@@ -801,8 +906,8 @@ async function buildSrcdocForScreen(screen: string, filesOverride?: Record<strin
   html = injectConsoleBootstrap(html)
   html = injectPickerBootstrap(html)
   html = injectScreenshotBootstrap(html)
-  // ── DEBUG ───────────────────────────────────────────────────────────────
-  const debugEnabled = true
+  // ── DEBUG (dev builds only) ────────────────────────────────────────────────
+  const debugEnabled = import.meta.env.DEV
   function escapeForInlineScript(s: string): string {
     // Escape $ for String.replace replacement semantics, and closing tags to avoid premature closing
     // Split literals to avoid Vite Vue SFC parsing the closing tag
@@ -1098,11 +1203,15 @@ const warnCount = computed(() => entries.value.filter(e => e.level === 'warn').l
 const logCount = computed(() => entries.value.length - errorCount.value - warnCount.value)
 
 const filteredEntries = computed(() => {
-  if (filter.value === 'all')
-    return entries.value
+  let list = entries.value
   if (filter.value === 'log')
-    return entries.value.filter(e => e.level === 'log' || e.level === 'info' || e.level === 'debug')
-  return entries.value.filter(e => e.level === filter.value)
+    list = list.filter(e => e.level === 'log' || e.level === 'info' || e.level === 'debug')
+  else if (filter.value !== 'all')
+    list = list.filter(e => e.level === filter.value)
+  const q = consoleSearch.value.trim().toLowerCase()
+  if (q)
+    list = list.filter(e => e.args.join(' ').toLowerCase().includes(q))
+  return list
 })
 
 const LEVEL_CLASS: Record<DesignConsoleLevel, string> = {
@@ -1367,14 +1476,129 @@ const gridContainerStyle = computed(() => ({
 }))
 
 // Keep legacy frameStyle for single fallback if needed
+
+// ── Screen navigation (zoom-to-screen + list dropdown) ──────────────────────
+
+function highlightScreen(screen: string) {
+  highlightScreenName.value = screen
+  if (highlightTimer)
+    clearTimeout(highlightTimer)
+  highlightTimer = setTimeout(() => {
+    highlightScreenName.value = null
+    highlightTimer = null
+  }, 1200)
+}
+
+function zoomToScreen(screen: string) {
+  const el = canvasRef.value
+  if (!el)
+    return
+  const pos = gridPositions.value.find(p => p.screen === screen)
+  if (!pos)
+    return
+  const rect = el.getBoundingClientRect()
+  const fit = Math.min(
+    (rect.width - FIT_PADDING * 2) / pos.w,
+    (rect.height - FIT_PADDING * 2) / pos.h,
+  )
+  const nextScale = clampScale(Math.min(fit, 1))
+  const gridCx = gridSize.value.w / 2
+  const gridCy = gridSize.value.h / 2
+  panX.value = rect.width / 2 - nextScale * (pos.x + pos.w / 2 - gridCx)
+  panY.value = rect.height / 2 - nextScale * (pos.y + pos.h / 2 - gridCy)
+  scale.value = nextScale
+  clampPan()
+  highlightScreen(screen)
+}
+
+function toggleScreenList() {
+  screenListOpen.value = !screenListOpen.value
+}
+
+function pickScreen(screen: string) {
+  screenListOpen.value = false
+  zoomToScreen(screen)
+}
+
+// Mount lazily: observe screen wraps so offscreen frames stay unmounted
+watch([gridPositions, () => effectiveDesign.value?.path], async () => {
+  await nextTick()
+  if (!screenObserver)
+    return
+  for (const pos of gridPositions.value) {
+    const el = screenWrapRefs.value[pos.screen]
+    if (el)
+      screenObserver.observe(el)
+  }
+}, { immediate: true })
+
+// ── Console resize ───────────────────────────────────────────────────────────
+
+function onConsoleHandleDown(e: PointerEvent) {
+  e.preventDefault()
+  consoleDragging.value = true
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+}
+
+function onConsoleHandleMove(e: PointerEvent) {
+  if (!consoleDragging.value)
+    return
+  const root = canvasRootRef.value
+  if (!root)
+    return
+  const rect = root.getBoundingClientRect()
+  const maxH = Math.max(120, rect.height * 0.6)
+  consoleHeight.value = Math.round(Math.min(maxH, Math.max(120, rect.bottom - e.clientY)))
+}
+
+function onConsoleHandleUp(e: PointerEvent) {
+  if (!consoleDragging.value)
+    return
+  consoleDragging.value = false
+  try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) }
+  catch {}
+  try { localStorage.setItem('emty.designConsoleHeight', String(consoleHeight.value)) }
+  catch {}
+}
+
+// ── Empty-grid CTA ───────────────────────────────────────────────────────────
+
+const theme = useThemeStore()
+const { illustrationComponent } = useIllustrationComponent()
+
+const emptyPrompts = [
+  'Create the first screen for this design',
+  'Create a home screen and a settings screen',
+]
+
+function sendEmptyPrompt(prompt: string) {
+  const tabId = props.tabId
+  if (!tabId)
+    return
+  const tab = chatStore.tabs.find(t => t.id === tabId)
+  if (!tab)
+    return
+  chatStore.sendMessage(prompt, tab.mode)
+}
 </script>
 
 <template>
-  <div class="design-canvas-root">
+  <div ref="canvasRootRef" class="design-canvas-root" :class="{ 'dc-resizing': consoleDragging }">
     <div class="dc-toolbar">
       <div class="dc-toolbar-group">
         <button class="dc-icon-btn" :disabled="!effectiveDesign" title="Show code" @click="openInProjectView">
           <Code2 :size="14" :stroke-width="1.8" />
+        </button>
+      </div>
+
+      <div v-if="hasMultiScreen" class="dc-toolbar-group dc-screen-list-anchor">
+        <button
+          class="dc-icon-btn"
+          :class="{ 'dc-icon-btn--active': screenListOpen }"
+          :title="`Screens (${effectiveScreens.length})`"
+          @click="toggleScreenList"
+        >
+          <LayoutGrid :size="14" :stroke-width="1.8" />
         </button>
       </div>
 
@@ -1419,6 +1643,20 @@ const gridContainerStyle = computed(() => ({
       </div>
     </div>
 
+    <!-- Screen list dropdown -->
+    <div v-if="screenListOpen" class="dc-screen-list">
+      <button
+        v-for="pos in gridPositions"
+        :key="pos.screen"
+        class="dc-screen-item"
+        @click="pickScreen(pos.screen)"
+      >
+        <span class="dc-screen-item-name">{{ pos.screen }}</span>
+        <span v-if="screenLoadErrors[pos.screen]" class="dc-screen-item-err">!</span>
+        <span class="dc-screen-item-meta">{{ getVp(pos.screen).width }}×{{ getVp(pos.screen).height }}</span>
+      </button>
+    </div>
+
     <div
       ref="canvasRef"
       class="dc-canvas"
@@ -1455,15 +1693,23 @@ const gridContainerStyle = computed(() => ({
             </g>
           </svg>
 
-          <!-- Screen frames -->
+          <!-- Screen frames (lazy-mounted via IntersectionObserver) -->
           <div
             v-for="pos in gridPositions"
             :key="pos.screen"
+            :ref="el => setScreenWrapRef(pos.screen, el)"
+            :data-screen="pos.screen"
             class="dc-screen-wrap"
             :style="{ left: `${pos.x}px`, top: `${pos.y}px`, width: `${pos.w}px` }"
+            @dblclick.stop="zoomToScreen(pos.screen)"
           >
-            <div class="dc-frame dc-frame--screen" :style="{ width: `${pos.w}px`, height: `${pos.h}px`, borderRadius: pos.w >= 768 ? '12px' : '16px' }">
+            <div
+              class="dc-frame dc-frame--screen"
+              :class="{ 'dc-frame--highlight': highlightScreenName === pos.screen }"
+              :style="{ width: `${pos.w}px`, height: `${pos.h}px`, borderRadius: pos.w >= 768 ? '12px' : '16px' }"
+            >
               <iframe
+                v-if="mountedScreens.has(pos.screen)"
                 :key="`${iframeKey}-${effectiveDesign.path}-${pos.screen}`"
                 :ref="el => setIframeRef(pos.screen, el)"
                 class="dc-iframe"
@@ -1473,6 +1719,9 @@ const gridContainerStyle = computed(() => ({
                 :title="`Preview ${pos.screen}`"
                 @load="onIframeLoad(pos.screen)"
               />
+              <div v-else class="dc-frame-skeleton">
+                <Loader2 :size="18" class="animate-[spin_0.9s_linear_infinite]" />
+              </div>
             </div>
             <!-- per-connection labels -->
             <div v-for="c in connections.filter(x => x.from === pos.screen)" :key="c.to" class="dc-connection-badge">
@@ -1481,12 +1730,26 @@ const gridContainerStyle = computed(() => ({
           </div>
 
           <div v-if="!hasMultiScreen && !isLegacySingle" class="dc-empty-grid">
+            <div class="dc-empty-art">
+              <component :is="illustrationComponent" v-if="theme.showLandingArt" />
+            </div>
             <p class="dc-empty-grid-title">
               No screens yet
             </p>
             <p class="dc-empty-grid-sub">
               Agent will create screens with <code>create_screen</code> — they appear here in a grid with connections.
             </p>
+            <div class="dc-empty-grid-actions">
+              <button
+                v-for="p in emptyPrompts"
+                :key="p"
+                class="dc-empty-chip"
+                :disabled="!tabId"
+                @click="sendEmptyPrompt(p)"
+              >
+                {{ p }}
+              </button>
+            </div>
           </div>
         </div>
       </Transition>
@@ -1563,9 +1826,29 @@ const gridContainerStyle = computed(() => ({
 
     <!-- Console panel -->
     <Transition name="dc-console-slide">
-      <div v-if="panelOpen" class="dc-console-panel">
+      <div v-if="panelOpen" class="dc-console-panel" :style="{ '--dc-console-h': `${consoleHeight}px` }">
+        <div
+          class="dc-console-resize"
+          :class="{ 'dc-console-resize--active': consoleDragging }"
+          title="Drag to resize"
+          @pointerdown="onConsoleHandleDown"
+          @pointermove="onConsoleHandleMove"
+          @pointerup="onConsoleHandleUp"
+          @pointercancel="onConsoleHandleUp"
+        />
         <div class="dc-console-header">
           <span class="dc-console-title">Console</span>
+
+          <div class="dc-console-search">
+            <Search :size="11" :stroke-width="2" />
+            <input
+              v-model="consoleSearch"
+              type="text"
+              placeholder="Filter logs"
+              spellcheck="false"
+              autocomplete="off"
+            >
+          </div>
 
           <div class="dc-console-filters">
             <button class="dc-filter-chip" :class="{ 'dc-filter-chip--active': filter === 'all' }" @click="filter = 'all'">
@@ -1594,7 +1877,7 @@ const gridContainerStyle = computed(() => ({
 
         <div ref="consoleListRef" class="dc-console-list">
           <div v-if="filteredEntries.length === 0" class="dc-console-empty">
-            No console output yet
+            {{ consoleSearch ? 'No matching entries' : 'No console output yet' }}
           </div>
           <div
             v-for="(entry, i) in filteredEntries"
@@ -1638,6 +1921,16 @@ const gridContainerStyle = computed(() => ({
   height: 100%;
   background: var(--color-bg-base);
   overflow: hidden;
+  position: relative;
+}
+
+.design-canvas-root.dc-resizing {
+  cursor: row-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.design-canvas-root.dc-resizing .dc-canvas {
+  pointer-events: none;
 }
 
 /* ── Toolbar ───────────────────────────────────────────────────────────────── */
@@ -1737,6 +2030,75 @@ const gridContainerStyle = computed(() => ({
   padding: 2px 7px;
 }
 
+/* ── Screen list dropdown ──────────────────────────────────────────────────── */
+.dc-screen-list {
+  position: absolute;
+  top: 42px;
+  left: 8px;
+  z-index: 60;
+  min-width: 230px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-mid);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.dc-screen-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+}
+.dc-screen-item:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+.dc-screen-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.dc-screen-item-meta {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.dc-screen-item-err {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-danger) 18%, transparent);
+  color: var(--color-danger-text);
+  font-size: 9px;
+  font-weight: 700;
+}
+
 /* ── Canvas ────────────────────────────────────────────────────────────────── */
 .dc-canvas {
   flex: 1;
@@ -1803,6 +2165,28 @@ const gridContainerStyle = computed(() => ({
     0 0 0 1px color-mix(in srgb, #000 60%, transparent),
     0 8px 48px rgba(0, 0, 0, 0.55),
     0 2px 12px rgba(0, 0, 0, 0.4);
+  transition: box-shadow 250ms ease;
+}
+.dc-frame--highlight {
+  box-shadow:
+    0 0 0 2px var(--color-accent),
+    0 0 0 7px color-mix(in srgb, var(--color-accent) 22%, transparent),
+    0 8px 48px rgba(0, 0, 0, 0.55);
+}
+.dc-frame-skeleton {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(110deg, #101012 8%, #1b1b1f 18%, #101012 33%);
+  background-size: 200% 100%;
+  animation: dc-shimmer 1.4s linear infinite;
+  color: #4a4a52;
+}
+@keyframes dc-shimmer {
+  to {
+    background-position-x: -200%;
+  }
 }
 .dc-frame--screen {
   border-radius: 16px;
@@ -1836,6 +2220,56 @@ const gridContainerStyle = computed(() => ({
   border-radius: 4px;
   font-size: 11px;
 }
+.dc-empty-art {
+  height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+  margin-bottom: 10px;
+}
+.dc-empty-art :deep(svg),
+.dc-empty-art :deep(img),
+.dc-empty-art :deep(canvas) {
+  max-height: 100%;
+  max-width: 280px;
+  width: auto;
+  height: auto;
+}
+.dc-empty-grid-actions {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.dc-empty-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-mid);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+.dc-empty-chip:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+}
+.dc-empty-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
 .dc-iframe {
   position: absolute;
@@ -1855,13 +2289,28 @@ const gridContainerStyle = computed(() => ({
 
 /* ── Console panel ─────────────────────────────────────────────────────────── */
 .dc-console-panel {
-  height: 240px;
-  min-height: 140px;
+  height: var(--dc-console-h, 240px);
+  min-height: 120px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-surface);
   border-top: 1px solid var(--color-border-subtle);
+  position: relative;
+}
+.dc-console-resize {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: row-resize;
+  z-index: 6;
+  transition: background 120ms ease;
+}
+.dc-console-resize:hover,
+.dc-console-resize--active {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 .dc-console-header {
   display: flex;
@@ -1878,6 +2327,33 @@ const gridContainerStyle = computed(() => ({
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-text-secondary);
+}
+.dc-console-search {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--color-bg-hover);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  transition: box-shadow 120ms ease;
+}
+.dc-console-search:focus-within {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+.dc-console-search input {
+  width: 110px;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+}
+.dc-console-search input::placeholder {
+  color: var(--color-text-dim);
 }
 .dc-console-filters {
   display: flex;
