@@ -354,9 +354,12 @@ export async function loadHooksConfig(workspacePath: string | null): Promise<Hoo
 export async function hooksConfigExists(workspacePath: string | null): Promise<boolean> {
   if (!workspacePath)
     return false
-  const hooksPath = await join(workspacePath, '.emty', 'hooks.json')
-  if (await exists(hooksPath))
-    return true
+  try {
+    const hooksPath = await join(workspacePath, '.emty', 'hooks.json')
+    if (await exists(hooksPath))
+      return true
+  }
+  catch { /* scope denial or missing file -> treat as absent */ }
   // Also check folder
   try {
     const hooksDir = await join(workspacePath, '.emty', 'hooks')
@@ -402,9 +405,12 @@ export async function getGlobalHooksConfigPath(): Promise<string> {
 }
 
 export async function globalHooksConfigExists(): Promise<boolean> {
-  const p = await getGlobalHooksConfigPath()
-  if (await exists(p))
-    return true
+  try {
+    const p = await getGlobalHooksConfigPath()
+    if (await exists(p))
+      return true
+  }
+  catch { /* scope denial -> treat as absent */ }
   // check global folder glob
   try {
     const home = await homeDir()

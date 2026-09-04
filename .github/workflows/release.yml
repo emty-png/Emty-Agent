@@ -70,3 +70,58 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json
+
+  # Native Arch Linux build (covers Arch, CachyOS, Manjaro, EndeavourOS…).
+  # GitHub has no Arch runner, so this builds inside an archlinux container
+  # and uploads to the same draft release. AppImage-only: a .deb/.rpm built
+  # against Arch libs would be broken on Debian/Fedora, and the Ubuntu job
+  # already ships those. (Its AppImage also runs on Arch-based distros.)
+  release-arch:
+    name: Release (archlinux)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      # archlinux:latest ships without git — install it before checkout.
+      - name: Install base system dependencies
+        run: |
+          pacman -Syu --noconfirm git base-devel curl wget file openssl appmenu-gtk-module libayatana-appindicator librsvg webkit2gtk-4.1 xdotool
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: app-v__VERSION__
+          releaseName: App v__VERSION__
+          releaseBody: See the assets below to download and install this version.
+          releaseDraft: true
+          prerelease: false
+          args: --bundles appimage --config src-tauri/tauri.updater.conf.json

@@ -36,6 +36,10 @@
     "allow-grep-search",
     "allow-ddg-search",
     "core:window:allow-scale-factor",
+    "core:window:allow-inner-position",
+    "core:window:allow-outer-position",
+    "core:window:allow-inner-size",
+    "core:window:allow-outer-size",
     "fs:read-all",
     {
       "identifier": "fs:allow-read-dir",
@@ -44,7 +48,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -55,7 +74,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -66,7 +100,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -77,13 +126,31 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
     {
       "identifier": "fs:allow-exists",
       "allow": [
+        {
+          "path": "$HOME/**"
+        },
         {
           "path": "C:\\Program Files\\Git\\bin\\bash.exe"
         },
@@ -106,6 +173,18 @@
           "path": "$HOME/.emty/**"
         },
         {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
+        },
+        {
           "path": "**"
         }
       ]
@@ -117,7 +196,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -128,7 +222,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -139,7 +248,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -150,7 +274,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -161,7 +300,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -172,7 +326,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -183,7 +352,22 @@
           "path": "**"
         },
         {
+          "path": "$HOME/**"
+        },
+        {
           "path": "$HOME/.emty/**"
+        },
+        {
+          "path": "$HOME/**/.emty"
+        },
+        {
+          "path": "$HOME/**/.emty/**"
+        },
+        {
+          "path": "**/.emty"
+        },
+        {
+          "path": "**/.emty/**"
         }
       ]
     },
@@ -192,6 +376,7 @@
     "core:window:allow-unmaximize",
     "core:window:allow-close",
     "core:window:allow-is-maximized",
+    "core:window:allow-start-dragging",
     "core:event:allow-listen",
     "sql:default",
     "sql:allow-execute",

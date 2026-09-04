@@ -117,6 +117,129 @@ fn hide_surfaces<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     Ok(())
 }
 
+/// Linux-only overlay layer for browser surfaces.
+///
+/// Tauri packs `WindowChild` webviews into the window's vertical `GtkBox`,
+/// which stacks children and ignores the requested position/size (upstream
+/// tauri#10420, fix PR tauri#15704 still open). Wry honors bounds only for
+/// `GtkFixed` parents. So on Linux we restructure the window once into
+/// `GtkWindow > GtkOverlay > [vbox(main content), GtkFixed(layer)]` and
+/// reparent every browser surface into the fixed layer, positioning with
+/// `fixed.move_/put` + size request (client-side GTK calls, Wayland-safe).
+#[cfg(target_os = "linux")]
+mod linux_overlay {
+    use gtk::prelude::*;
+
+    const LAYER_NAME: &str = "emty-browser-layer";
+
+    fn as_fixed(widget: &gtk::Widget) -> Option<gtk::Fixed> {
+        widget.clone().dynamic_cast::<gtk::Fixed>().ok()
+    }
+
+    fn find_layer_in_overlay(overlay: &gtk::Overlay) -> Option<gtk::Fixed> {
+        overlay
+            .children()
+            .into_iter()
+            .filter_map(|child| as_fixed(&child))
+            .find(|fixed| fixed.widget_name() == LAYER_NAME)
+    }
+
+    /// Ensure the overlay restructure exists for the window containing
+    /// `container` (the surface's current direct parent) and return the
+    /// fixed layer, creating it on first use.
+    fn ensure_layer(container: &gtk::Container) -> Result<gtk::Fixed, String> {
+        let win = container
+            .parent()
+            .and_then(|p| p.dynamic_cast::<gtk::Container>().ok())
+            .ok_or_else(|| String::from("browser surface has no window parent"))?;
+
+        // Restructure already done before: reuse the tagged layer.
+        if let Ok(overlay) = win.clone().dynamic_cast::<gtk::Overlay>() {
+            if let Some(layer) = find_layer_in_overlay(&overlay) {
+                // Events pass through the layer except on the surfaces
+                // themselves, so the app stays clickable beside/around them.
+                overlay.set_overlay_pass_through(&layer, true);
+                return Ok(layer);
+            }
+            let layer = gtk::Fixed::new();
+            layer.set_widget_name(LAYER_NAME);
+            overlay.add_overlay(&layer);
+            overlay.set_overlay_pass_through(&layer, true);
+            overlay.show();
+            return Ok(layer);
+        }
+
+        // First surface: wrap `container` (the window vbox) in an overlay.
+        let overlay = gtk::Overlay::new();
+        let layer = gtk::Fixed::new();
+        layer.set_widget_name(LAYER_NAME);
+        win.remove(container);
+        overlay.add(container);
+        overlay.add_overlay(&layer);
+        overlay.set_overlay_pass_through(&layer, true);
+        win.add(&overlay);
+        overlay.show();
+        // `layer` stays hidden until the first placement so an empty overlay
+        // never intercepts input.
+        Ok(layer)
+    }
+
+    /// Move `widget` into the fixed layer at `bounds` (logical px, rounded).
+    /// Must run on the GTK main thread.
+    pub fn place_surface(
+        widget: &webkit2gtk::WebView,
+        bounds: &super::BrowserBounds,
+    ) -> Result<(), String> {
+        let x = bounds.x.round() as i32;
+        let y = bounds.y.round() as i32;
+        let width = bounds.width.max(1.0).round() as i32;
+        let height = bounds.height.max(1.0).round() as i32;
+
+        if let Some(fixed) = widget.parent().and_then(|p| as_fixed(&p)) {
+            // Already layered (any GtkFixed positions): move_ persists
+            // across relayouts, unlike a bare size_allocate (wry#1745).
+            fixed.move_(widget, x, y);
+        } else {
+            let container = widget
+                .parent()
+                .and_then(|p| p.dynamic_cast::<gtk::Container>().ok())
+                .ok_or_else(|| String::from("browser surface has no parent"))?;
+            let layer = ensure_layer(&container)?;
+            container.remove(widget);
+            widget.set_size_request(width, height);
+            layer.put(widget, x, y);
+        }
+        widget.set_size_request(width, height);
+        widget.size_allocate(&gtk::Allocation::new(x, y, width, height));
+        if let Some(fixed) = widget.parent().and_then(|p| as_fixed(&p)) {
+            fixed.show();
+        }
+        Ok(())
+    }
+
+    /// Hide the overlay layer reachable from `widget`, if any.
+    /// Must run on the GTK main thread.
+    pub fn hide_layer_for(widget: &webkit2gtk::WebView) {
+        let mut current = widget.parent();
+        while let Some(parent) = current {
+            if let Some(fixed) = as_fixed(&parent) {
+                if fixed.widget_name() == LAYER_NAME {
+                    fixed.hide();
+                    return;
+                }
+            }
+            current = parent.parent();
+        }
+    }
+}
+
+/// Wayland compositors (e.g. KWin) clamp negative child coordinates into the
+/// visible area instead of parking the webview off-screen. Treat far-negative
+/// bounds as "hide" so background tabs can't bleed through at the wrong origin.
+fn is_offscreen_bounds(bounds: &BrowserBounds) -> bool {
+    bounds.x < -5000.0 || bounds.y < -5000.0
+}
+
 fn close_surface_if_present<R: Runtime>(
     app: &AppHandle<R>,
     session_id: &str,
@@ -169,18 +292,52 @@ pub async fn browser_mount_surface<R: Runtime>(
 
     hide_other_surfaces(&app, &label)?;
 
-    if let Some(surface) = app.get_webview(&label) {
-        let x = bounds.x;
-        let y = bounds.y;
-        let width = bounds.width.max(1.0);
-        let height = bounds.height.max(1.0);
+    if is_offscreen_bounds(&bounds) {
+        if let Some(surface) = app.get_webview(&label) {
+            hide_surface(&surface)?;
+        }
+        #[cfg(target_os = "linux")]
+        if browser_surfaces(&app).len() <= 1 {
+            if let Some(surface) = browser_surfaces(&app).into_iter().next() {
+                let _ = surface.with_webview(move |platform| {
+                    linux_overlay::hide_layer_for(&platform.inner());
+                });
+            }
+        }
+        return Ok(());
+    }
 
-        surface
-            .set_position(LogicalPosition::new(x, y))
-            .map_err(|e| e.to_string())?;
-        surface
-            .set_size(LogicalSize::new(width, height))
-            .map_err(|e| e.to_string())?;
+    if let Some(surface) = app.get_webview(&label) {
+        // Linux positions via the GtkOverlay layer (Tauri set_position /
+        // set_size are no-ops there); other platforms use Tauri directly.
+        // The with_webview closure runs on the GTK main thread.
+        #[cfg(target_os = "linux")]
+        {
+            let bounds_for_place = bounds.clone();
+            surface
+                .with_webview(move |platform| {
+                    if let Err(e) =
+                        linux_overlay::place_surface(&platform.inner(), &bounds_for_place)
+                    {
+                        eprintln!("[browser] linux overlay placement failed: {e}");
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let x = bounds.x;
+            let y = bounds.y;
+            let width = bounds.width.max(1.0);
+            let height = bounds.height.max(1.0);
+
+            surface
+                .set_position(LogicalPosition::new(x, y))
+                .map_err(|e| e.to_string())?;
+            surface
+                .set_size(LogicalSize::new(width, height))
+                .map_err(|e| e.to_string())?;
+        }
         surface.show().map_err(|e| e.to_string())?;
 
         emit_state(&app, &session_id, "shown", Some(url), None);
@@ -249,18 +406,49 @@ pub async fn browser_mount_surface<R: Runtime>(
         })
         .initialization_script(browser_bridge_script(&session_id)?);
 
+    if is_offscreen_bounds(&bounds) {
+        window
+            .add_child(
+                builder,
+                LogicalPosition::new(0.0, 0.0),
+                LogicalSize::new(1.0, 1.0),
+            )
+            .map_err(|e| e.to_string())?;
+        hide_surfaces(&app)?;
+
+        emit_state(&app, &session_id, "mounted", Some(url), None);
+
+        return Ok(());
+    }
+
     let x = bounds.x;
     let y = bounds.y;
     let width = bounds.width.max(1.0);
     let height = bounds.height.max(1.0);
 
-    window
+    let surface = window
         .add_child(
             builder,
             LogicalPosition::new(x, y),
             LogicalSize::new(width, height),
         )
         .map_err(|e| e.to_string())?;
+
+    // On Linux add_child packs into the GtkBox (position ignored); move the
+    // fresh surface into the overlay layer at the requested bounds.
+    #[cfg(target_os = "linux")]
+    {
+        let bounds_for_place = bounds.clone();
+        surface
+            .with_webview(move |platform| {
+                if let Err(e) =
+                    linux_overlay::place_surface(&platform.inner(), &bounds_for_place)
+                {
+                    eprintln!("[browser] linux overlay placement failed: {e}");
+                }
+            })
+            .map_err(|e| e.to_string())?;
+    }
 
     emit_state(&app, &session_id, "mounted", Some(url), None);
 
@@ -273,33 +461,73 @@ pub async fn browser_resize_surface<R: Runtime>(
     session_id: Option<String>,
     bounds: BrowserBounds,
 ) -> Result<(), String> {
+    if is_offscreen_bounds(&bounds) {
+        hide_surfaces(&app)?;
+        #[cfg(target_os = "linux")]
+        if let Some(surface) = browser_surfaces(&app).into_iter().next() {
+            let _ = surface.with_webview(move |platform| {
+                linux_overlay::hide_layer_for(&platform.inner());
+            });
+        }
+        return Ok(());
+    }
+
     let surfaces = if let Some(session_id) = session_id {
         get_surface(&app, &session_id).map(|surface| vec![surface])?
     } else {
         browser_surfaces(&app)
     };
 
-    let x = bounds.x;
-    let y = bounds.y;
-    let width = bounds.width.max(1.0);
-    let height = bounds.height.max(1.0);
+    #[cfg(target_os = "linux")]
+    {
+        for surface in &surfaces {
+            let bounds_for_place = bounds.clone();
+            surface
+                .with_webview(move |platform| {
+                    if let Err(e) =
+                        linux_overlay::place_surface(&platform.inner(), &bounds_for_place)
+                    {
+                        eprintln!("[browser] linux overlay placement failed: {e}");
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+            surface.show().map_err(|e| e.to_string())?;
+        }
 
-    for surface in surfaces {
-        surface
-            .set_position(LogicalPosition::new(x, y))
-            .map_err(|e| e.to_string())?;
-        surface
-            .set_size(LogicalSize::new(width, height))
-            .map_err(|e| e.to_string())?;
-        surface.show().map_err(|e| e.to_string())?;
+        return Ok(());
     }
 
-    Ok(())
+    #[cfg(not(target_os = "linux"))]
+    {
+        let x = bounds.x;
+        let y = bounds.y;
+        let width = bounds.width.max(1.0);
+        let height = bounds.height.max(1.0);
+
+        for surface in surfaces {
+            surface
+                .set_position(LogicalPosition::new(x, y))
+                .map_err(|e| e.to_string())?;
+            surface
+                .set_size(LogicalSize::new(width, height))
+                .map_err(|e| e.to_string())?;
+            surface.show().map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
+    }
 }
 
 #[tauri::command]
 pub async fn browser_unmount_surface<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    hide_surfaces(&app)
+    hide_surfaces(&app)?;
+    #[cfg(target_os = "linux")]
+    if let Some(surface) = browser_surfaces(&app).into_iter().next() {
+        let _ = surface.with_webview(move |platform| {
+            linux_overlay::hide_layer_for(&platform.inner());
+        });
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -307,7 +535,18 @@ pub async fn browser_close_surface<R: Runtime>(
     app: AppHandle<R>,
     session_id: String,
 ) -> Result<(), String> {
-    close_surface_if_present(&app, &session_id)
+    // Hide the overlay layer first (queued on the main thread ahead of the
+    // destroy) when this is the last surface.
+    #[cfg(target_os = "linux")]
+    if browser_surfaces(&app).len() <= 1 {
+        if let Some(surface) = app.get_webview(&surface_label(&session_id)) {
+            let _ = surface.with_webview(move |platform| {
+                linux_overlay::hide_layer_for(&platform.inner());
+            });
+        }
+    }
+    close_surface_if_present(&app, &session_id)?;
+    Ok(())
 }
 
 #[tauri::command]

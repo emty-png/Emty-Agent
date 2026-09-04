@@ -1146,12 +1146,13 @@ checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
 
 [[package]]
 name = "emty-agent"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "globset",
  "grep-matcher",
  "grep-regex",
  "grep-searcher",
+ "gtk",
  "ignore",
  "portable-pty",
  "reqwest 0.12.28",
@@ -1173,6 +1174,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "urlencoding",
+ "webkit2gtk",
  "webview2-com",
 ]
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
   AlertTriangle,
   Camera,
@@ -193,18 +194,11 @@ function syncNow() {
 
   if (shouldHide) {
     lastSyncKey = null
-    // Mount off-screen if there's a URL so agent tools still work in the background.
-    if (activePage.value?.url) {
-      void applySurface(`offscreen-${activePage.value.sessionId}`, () => syncSurface({
-        visible: true,
-        sessionId: activePage.value!.sessionId,
-        url: activePage.value!.url,
-        bounds: { x: -10000, y: -10000, width: 1280, height: 720 },
-      }))
-    }
-    else {
-      void applySurface('hidden', () => syncSurface({ visible: false }))
-    }
+    // Hide the native surface instead of parking it off-screen. Negative
+    // coordinates (e.g. x:-10000) get clamped to the visible area by
+    // Wayland compositors (KWin), causing background tabs to bleed through
+    // at the wrong position. hide() preserves webview JS/tab state.
+    void applySurface('hidden', () => syncSurface({ visible: false }))
     return
   }
 
@@ -230,14 +224,23 @@ function syncNow() {
       return
     }
 
+    // Native overlay uses the visually scaled placeholder rect as-is.
+    // getBoundingClientRect() is post-zoom, matching what the user sees.
+    const bounds = {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+    }
+
     // Rounding coordinates avoids sub-pixel jitter breaking memoization
     const key = JSON.stringify({
       s: activePage.value.sessionId,
       u: activePage.value.url,
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      w: Math.round(rect.width),
-      h: Math.round(rect.height),
+      x: Math.round(bounds.x),
+      y: Math.round(bounds.y),
+      w: Math.round(bounds.width),
+      h: Math.round(bounds.height),
     })
 
     await applySurface(key, () =>
@@ -245,12 +248,7 @@ function syncNow() {
         visible: true,
         sessionId: activePage.value!.sessionId,
         url: activePage.value!.url,
-        bounds: {
-          x: rect.left,
-          y: rect.top,
-          width: rect.width,
-          height: rect.height,
-        },
+        bounds,
       }))
   }, 30)
 }
@@ -439,6 +437,8 @@ let resizeObserver: ResizeObserver | null = null
 let mutationObserver: MutationObserver | null = null
 let intersectionObserver: IntersectionObserver | null = null
 let unlistenElementPicked: (() => void) | null = null
+let unlistenWindowMoved: (() => void) | null = null
+let unlistenWindowResized: (() => void) | null = null
 
 function observeViewport(node: HTMLElement | null) {
   resizeObserver?.disconnect()
@@ -469,6 +469,12 @@ onMounted(() => {
     subtree: true,
     attributes: true,
     attributeFilter: ['aria-hidden', 'aria-modal', 'data-state', 'data-overlay', 'open'],
+  })
+  // App zoom (Ctrl±) sets documentElement.style.zoom, which rescales the
+  // placeholder without touching body attributes — observe it explicitly.
+  mutationObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['style'],
   })
 
   // Detect when the component is hidden via v-show (display: none).
@@ -507,6 +513,22 @@ onMounted(() => {
     console.warn('[Browser Picker] Failed to listen for picked elements:', err)
   })
 
+  // Native child position is window-relative. Re-sync after frameless
+  // window drags / resizes / scale changes (KWin Wayland) so the surface
+  // can't be left at a stale offset.
+  try {
+    const appWindow = getCurrentWindow()
+    void appWindow.onMoved(() => syncNow()).then(u => {
+      unlistenWindowMoved = u
+    }).catch(() => {})
+    void appWindow.onResized(() => syncNow()).then(u => {
+      unlistenWindowResized = u
+    }).catch(() => {})
+  }
+  catch {
+    // Not running under Tauri (vitest / browser preview) — DOM observers suffice.
+  }
+
   syncNow()
 })
 
@@ -520,6 +542,8 @@ onUnmounted(() => {
   mutationObserver?.disconnect()
   intersectionObserver?.disconnect()
   unlistenElementPicked?.()
+  unlistenWindowMoved?.()
+  unlistenWindowResized?.()
   window.removeEventListener('resize', onWindowResize)
   document.removeEventListener('keydown', onDocumentKeydown)
 

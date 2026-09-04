@@ -1,6 +1,6 @@
 [package]
 name = "emty-agent"
-version = "0.2.9"
+version = "0.2.10"
 description = "A nothing-special coding agent"
 authors = ["emty-png"]
 edition = "2021"
@@ -47,3 +47,11 @@ tauri-plugin-window-state = "2"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38.2"
+
+# Linux-only: reparent browser child webviews into a GtkOverlay+GtkFixed
+# layer so absolute positioning works. Tauri packs WindowChild webviews
+# into the window's GtkBox (vertical stack, position ignored) — see
+# src/browser.rs linux_overlay module.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+webkit2gtk = "2.0"

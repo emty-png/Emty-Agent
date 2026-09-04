@@ -155,15 +155,15 @@ async function close() {
   await appWindow.close()
 }
 
-const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-none bg-transparent text-[var(--color-text-secondary)] cursor-default [-webkit-app-region:no-drag] transition-colors duration-[120ms] ease-in-out hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] active:bg-[var(--color-bg-elevated)]'
+const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-none bg-transparent text-[var(--color-text-secondary)] cursor-default transition-colors duration-[120ms] ease-in-out hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] active:bg-[var(--color-bg-elevated)]'
 </script>
 
 <template>
-  <header class="flex items-center h-[26px] min-h-[26px] max-h-[26px] bg-[var(--color-bg-surface)] border-b border-[var(--color-border-mid)] select-none relative z-[9999] shrink-0 [-webkit-app-region:drag]">
-    <div class="flex items-center gap-1.5 flex-none min-w-0 max-w-[40%]">
+  <header data-tauri-drag-region class="flex items-center h-[26px] min-h-[26px] max-h-[26px] bg-[var(--color-bg-surface)] border-b border-[var(--color-border-mid)] select-none relative z-[9999] shrink-0">
+    <div data-tauri-drag-region class="flex items-center gap-1.5 flex-none min-w-0 max-w-[40%]">
       <div
         ref="sidebarTriggerRef"
-        class="flex items-center shrink-0 [-webkit-app-region:no-drag]"
+        class="flex items-center shrink-0"
         @mouseenter="openSidebarFlyout"
         @mouseleave="scheduleCloseSidebarFlyout"
       >
@@ -183,13 +183,13 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
       <slot name="icon" />
     </div>
 
-    <div class="flex-1 flex items-center justify-center min-w-0">
+    <div data-tauri-drag-region class="flex-1 flex items-center justify-center min-w-0">
       <slot name="center" />
     </div>
 
     <div
       v-if="!isOnline"
-      class="flex items-center gap-1 shrink-0 [-webkit-app-region:no-drag] px-2 py-0.5 mx-1 rounded-[var(--radius-sm)] bg-[var(--color-danger-muted)] animate-pulse-subtle"
+      class="flex items-center gap-1 shrink-0 px-2 py-0.5 mx-1 rounded-[var(--radius-sm)] bg-[var(--color-danger-muted)] animate-pulse-subtle"
       title="No internet connection"
     >
       <WifiOff
@@ -200,7 +200,7 @@ const ctrlBtnClass = 'flex items-center justify-center w-[46px] h-full border-no
       <span class="text-[11px] font-medium text-[var(--color-danger-hover)] leading-none">Offline</span>
     </div>
 
-    <div class="flex items-stretch flex-none h-[29px] ml-auto [-webkit-app-region:no-drag]">
+    <div class="flex items-stretch flex-none h-[29px] ml-auto">
       <button :class="ctrlBtnClass" aria-label="Minimize" @click.stop="minimize">
         <Minus :size="15" :stroke-width="1.8" />
       </button>
