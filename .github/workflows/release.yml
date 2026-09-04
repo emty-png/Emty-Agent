@@ -85,7 +85,7 @@ jobs:
       # archlinux:latest ships without git — install it before checkout.
       - name: Install base system dependencies
         run: |
-          pacman -Syu --noconfirm git base-devel curl wget file openssl appmenu-gtk-module libayatana-appindicator librsvg webkit2gtk-4.1 xdotool
+          pacman -Syu --noconfirm git base-devel curl wget file openssl appmenu-gtk-module libayatana-appindicator librsvg webkit2gtk-4.1 xdotool xdg-utils
 
       - name: Checkout
         uses: actions/checkout@v4
